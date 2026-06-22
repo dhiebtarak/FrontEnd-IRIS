@@ -1,0 +1,30 @@
+@import "tailwindcss";
+@import "ngx-toastr/toastr";
+
+@theme {
+  --color-iris-bg: #F2F7FB;
+  --color-iris-card: #FFFFFF;
+  --color-iris-secondary-bg: #E4EFF6;
+  --color-iris-navy: #0D2F4F;
+  --color-iris-navy-mid: #1A4A6E;
+  --color-iris-navy-light: #2A6090;
+  --color-iris-teal: #0097C4;
+  --color-iris-teal-light: #00B4D8;
+  --color-iris-teal-extralight: #00D4F0;
+  --color-iris-slate: #52707F;
+  --color-iris-border: #C0DAEA;
+  --color-iris-divider: #D8EDF5;
+  --color-iris-navy-dark: #0A2238;
+
+  --font-cambria: "Cambria", Georgia, serif;
+  --font-calibri: "Calibri", Arial, sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-iris-bg);
+    color: var(--color-iris-slate);
+    font-family: var(--font-calibri);
+    margin: 0;
+  }
+}

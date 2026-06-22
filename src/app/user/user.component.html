@@ -1,0 +1,51 @@
+<div class="min-h-screen bg-iris-bg font-calibri">
+  <header class="bg-iris-navy text-white border-b border-iris-navy-mid">
+    <div class="max-w-6xl mx-auto px-4 md:px-8 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal-light block mb-1">
+          SECURE PORTAL
+        </span>
+        <h1 class="font-cambria text-2xl font-bold">OPTIMARE Workspace</h1>
+      </div>
+
+      <button
+        type="button"
+        (click)="logout()"
+        class="bg-iris-teal hover:bg-iris-teal-light text-white font-bold py-2.5 px-5 rounded-lg text-sm transition focus:outline-none focus:ring-2 focus:ring-iris-teal-extralight"
+      >
+        Logout
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 md:px-8 py-8">
+    <section class="bg-iris-card border border-iris-border rounded-xl shadow-xl p-6 md:p-8">
+      <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal block mb-2">
+        AUTHENTICATED SESSION
+      </span>
+      <h2 class="font-cambria text-3xl font-bold text-iris-navy mb-3">
+        Welcome, {{ displayName }}
+      </h2>
+      <p class="text-[11pt] text-iris-slate leading-relaxed max-w-2xl">
+        Your account session is active. Use the logout button when you need to end access from this device.
+      </p>
+
+      <div class="mt-6 flex flex-col sm:flex-row gap-3">
+        @if (hasOfficerWorkspace) {
+          <a
+            [routerLink]="workspaceRoute"
+            class="inline-flex justify-center bg-iris-teal hover:bg-iris-teal-light text-white font-bold py-3 px-6 rounded-lg text-sm transition"
+          >
+            Open My Workspace
+          </a>
+        }
+        <a
+          routerLink="/register"
+          class="inline-flex justify-center bg-iris-secondary-bg hover:bg-iris-border/50 text-iris-navy font-bold py-3 px-6 rounded-lg text-sm border border-iris-border transition"
+        >
+          Create Another Account
+        </a>
+      </div>
+    </section>
+  </main>
+</div>

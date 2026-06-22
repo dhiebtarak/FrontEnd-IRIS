@@ -1,0 +1,49 @@
+<div class="min-h-screen bg-iris-bg font-calibri">
+  <header class="bg-iris-navy text-white border-b border-iris-navy-mid">
+    <div class="max-w-6xl mx-auto px-4 md:px-8 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal-light block mb-1">
+          REASSURANCE
+        </span>
+        <h1 class="font-cambria text-2xl font-bold">Finance Officer Workspace</h1>
+      </div>
+
+      <button
+        type="button"
+        (click)="logout()"
+        class="bg-iris-teal hover:bg-iris-teal-light text-white font-bold py-2.5 px-5 rounded-lg text-sm transition focus:outline-none focus:ring-2 focus:ring-iris-teal-extralight"
+      >
+        Logout
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-6">
+    <section class="bg-iris-card border border-iris-border rounded-xl shadow-xl p-6 md:p-8">
+      <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal block mb-2">
+        FINANCIAL REVIEW
+      </span>
+      <h2 class="font-cambria text-3xl font-bold text-iris-navy mb-3">
+        Reassurance Finance Desk
+      </h2>
+      <p class="text-[11pt] text-iris-slate leading-relaxed max-w-2xl">
+        Handle financial verification, payment preparation, and settlement tracking for approved reassurance files.
+      </p>
+    </section>
+
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-iris-card border border-iris-border rounded-lg p-5">
+        <p class="text-sm font-bold text-iris-navy">Finance Queue</p>
+        <p class="text-3xl font-bold text-iris-teal mt-2">0</p>
+      </div>
+      <div class="bg-iris-card border border-iris-border rounded-lg p-5">
+        <p class="text-sm font-bold text-iris-navy">Pending Payment</p>
+        <p class="text-3xl font-bold text-iris-teal mt-2">0</p>
+      </div>
+      <div class="bg-iris-card border border-iris-border rounded-lg p-5">
+        <p class="text-sm font-bold text-iris-navy">Completed Settlements</p>
+        <p class="text-3xl font-bold text-iris-teal mt-2">0</p>
+      </div>
+    </section>
+  </main>
+</div>

@@ -1,0 +1,117 @@
+<div class="min-h-screen bg-iris-bg flex items-center justify-center p-4 md:p-8 font-calibri">
+  <div class="max-w-5xl w-full bg-iris-card rounded-xl shadow-2xl border border-iris-border overflow-hidden grid grid-cols-1 md:grid-cols-12">
+    <div class="md:col-span-5 bg-iris-navy p-8 md:p-12 flex flex-col justify-between text-white relative overflow-hidden">
+      <div class="absolute top-0 right-0 w-64 h-64 bg-iris-navy-light/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
+      <div class="absolute bottom-0 left-0 w-64 h-64 bg-iris-teal/5 rounded-full blur-3xl -ml-16 -mb-16"></div>
+
+      <div class="relative z-10">
+        <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal-light block mb-2 font-calibri">
+          SECURE PORTAL
+        </span>
+        <h2 class="font-cambria text-3xl md:text-4xl font-bold leading-tight text-white mb-6">
+          OPTIMARE
+        </h2>
+
+        <div class="w-12 h-1 bg-iris-teal mb-8"></div>
+
+        <p class="text-[11pt] text-iris-divider/80 leading-relaxed mb-8 font-calibri">
+          Sign in with your operator credentials to access the protected IRIS workspace.
+        </p>
+
+        <div class="space-y-4">
+          <div class="flex items-start space-x-3 text-sm">
+            <span class="text-iris-teal-light mt-0.5">â– </span>
+            <span class="text-iris-divider/90">Session tokens are stored locally for authenticated access.</span>
+          </div>
+          <div class="flex items-start space-x-3 text-sm">
+            <span class="text-iris-teal-light mt-0.5">â– </span>
+            <span class="text-iris-divider/90">Use logout when leaving a shared workstation.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="relative z-10 mt-12 pt-6 border-t border-iris-navy-mid text-[8pt] text-iris-divider/60 font-calibri flex justify-between">
+        <span>SYSTEM VERSION 0.0.1</span>
+        <span>Â© IRIS NETWORKS</span>
+      </div>
+    </div>
+
+    <div class="md:col-span-7 p-8 md:p-12 flex flex-col justify-center">
+      <div class="mb-8">
+        <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal block mb-2 font-calibri">
+          AUTHENTICATION
+        </span>
+        <h1 class="font-cambria text-3xl font-bold text-iris-navy">
+          Operator Login
+        </h1>
+        <p class="text-[11pt] text-iris-slate mt-2 font-calibri">
+          Enter your institutional email and password to continue.
+        </p>
+      </div>
+
+      <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="space-y-5 font-calibri">
+        <div>
+          <label class="block text-sm font-bold text-iris-navy mb-1.5" for="emailOrUsername">Email or Username</label>
+          <input
+            id="emailOrUsername"
+            type="text"
+            formControlName="emailOrUsername"
+            placeholder="j.doe@iris.internal or jdoe"
+            class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy placeholder-iris-slate/50 transition focus:outline-none focus:ring-2 focus:ring-iris-teal"
+            [ngClass]="(submitted || f['emailOrUsername'].touched) && f['emailOrUsername'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+          />
+          @if ((submitted || f['emailOrUsername'].touched) && f['emailOrUsername'].errors) {
+            <div
+              class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5"
+              [ngSwitch]="f['emailOrUsername'].errors | firstKey"
+            >
+              <span>ðŸ›ˆ</span>
+              <span *ngSwitchCase="'required'">Email or username is required.</span>
+              <span *ngSwitchDefault>Credential is invalid.</span>
+            </div>
+          }
+        </div>
+
+        <div>
+          <label class="block text-sm font-bold text-iris-navy mb-1.5" for="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            formControlName="password"
+            placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+            class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy placeholder-iris-slate/50 transition focus:outline-none focus:ring-2 focus:ring-iris-teal"
+            [ngClass]="(submitted || f['password'].touched) && f['password'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+          />
+          @if ((submitted || f['password'].touched) && f['password'].errors) {
+            <div class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5">
+              <span>ðŸ›ˆ</span>
+              <span>Password is required.</span>
+            </div>
+          }
+        </div>
+
+        <div class="pt-4 flex flex-col sm:flex-row gap-3">
+          <button
+            type="submit"
+            [disabled]="isSubmitting"
+            class="flex-1 bg-iris-teal hover:bg-iris-teal-light disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg text-sm transition shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-iris-teal-extralight flex items-center justify-center space-x-2"
+          >
+            <span>{{ isSubmitting ? 'Authenticating...' : 'Access Portal' }}</span>
+          </button>
+          <button
+            type="button"
+            (click)="resetLoginForm()"
+            class="bg-iris-secondary-bg hover:bg-iris-border/50 text-iris-navy font-bold py-3 px-6 rounded-lg text-sm border border-iris-border transition focus:outline-none"
+          >
+            Clear Fields
+          </button>
+        </div>
+
+        <p class="text-sm text-iris-slate">
+          Need an operator account?
+          <a routerLink="/register" class="font-bold text-iris-teal hover:text-iris-teal-light">Create one</a>
+        </p>
+      </form>
+    </div>
+  </div>
+</div>

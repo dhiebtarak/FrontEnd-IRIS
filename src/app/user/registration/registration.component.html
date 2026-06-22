@@ -1,0 +1,304 @@
+<div class="min-h-screen bg-iris-bg flex items-center justify-center p-4 md:p-8 font-calibri">
+  <div class="max-w-5xl w-full bg-iris-card rounded-xl shadow-2xl border border-iris-border overflow-hidden grid grid-cols-1 md:grid-cols-12">
+    
+    <!-- Left Panel: Summary Slide / Info Panel (Deep Navy Background) -->
+    <div class="md:col-span-5 bg-iris-navy p-8 md:p-12 flex flex-col justify-between text-white relative overflow-hidden">
+      <!-- Decorative background shapes using permitted colors -->
+      <div class="absolute top-0 right-0 w-64 h-64 bg-iris-navy-light/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
+      <div class="absolute bottom-0 left-0 w-64 h-64 bg-iris-teal/5 rounded-full blur-3xl -ml-16 -mb-16"></div>
+
+      <div class="relative z-10">
+        <!-- Eyebrow label -->
+        <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal-light block mb-2 font-calibri">
+          SECURE PORTAL
+        </span>
+        <!-- Title -->
+        <h2 class="font-cambria text-3xl md:text-4xl font-bold leading-tight text-white mb-6">
+          OPTIMARE
+        </h2>
+        
+        <!-- Divider -->
+        <div class="w-12 h-1 bg-iris-teal mb-8"></div>
+        
+        <p class="text-[11pt] text-iris-divider/80 leading-relaxed mb-8 font-calibri">
+          Access the secure telemetry and threat analysis platform. Establish your operator identity to proceed.
+        </p>
+
+        <div class="space-y-4">
+          <div class="flex items-start space-x-3 text-sm">
+            <span class="text-iris-teal-light mt-0.5">■</span>
+            <span class="text-iris-divider/90">Zero-trust authentication policies enforced.</span>
+          </div>
+          <div class="flex items-start space-x-3 text-sm">
+            <span class="text-iris-teal-light mt-0.5">■</span>
+            <span class="text-iris-divider/90">Identity verification matching institutional roles.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer / Muted label -->
+      <div class="relative z-10 mt-12 pt-6 border-t border-iris-navy-mid text-[8pt] text-iris-divider/60 font-calibri flex justify-between">
+        <span>SYSTEM VERSION 0.0.1</span>
+        <span>© IRIS NETWORKS</span>
+      </div>
+    </div>
+
+    <!-- Right Panel: Registration Form -->
+    <div class="md:col-span-7 p-8 md:p-12 flex flex-col justify-center">
+      <div class="mb-8">
+        <!-- Eyebrow label -->
+        <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal block mb-2 font-calibri">
+          USER ACQUISITION
+        </span>
+        <!-- Heading -->
+        <h1 class="font-cambria text-3xl font-bold text-iris-navy">
+          Create Operator Account
+        </h1>
+        <p class="text-[11pt] text-iris-slate mt-2 font-calibri">
+          Please fill in the authorization details to construct your profile.
+        </p>
+      </div>
+
+      <!-- Success Notification (Navy / Teal contrast, no warm red/orange) -->
+      @if (successMessage) {
+        <div class="bg-iris-navy border border-iris-teal text-white rounded-lg p-4 mb-6 relative overflow-hidden font-calibri">
+          <div class="flex items-center space-x-3">
+            <div class="w-6 h-6 rounded-full bg-iris-teal flex items-center justify-center text-iris-navy font-bold text-sm">✓</div>
+            <div>
+              <p class="font-bold text-iris-teal-light text-sm">Action Confirmed</p>
+              <p class="text-xs text-iris-divider/90 mt-0.5">{{ successMessage }}</p>
+            </div>
+          </div>
+        </div>
+      }
+
+      <form [formGroup]="registrationForm" (ngSubmit)="onSubmit()" class="space-y-5 font-calibri">
+        <!-- Full Name -->
+        <div>
+          <label class="block text-sm font-bold text-iris-navy mb-1.5" for="fullName">Full Name</label>
+          <input
+            id="fullName"
+            type="text"
+            formControlName="fullName"
+            placeholder="John Doe"
+            class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy placeholder-iris-slate/50 transition focus:outline-none focus:ring-2 focus:ring-iris-teal"
+            [ngClass]="(submitted || f['fullName'].touched) && f['fullName'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+          />
+          @if ((submitted || f['fullName'].touched) && f['fullName'].errors) {
+            <div class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5">
+              <span>🛈</span>
+              <span>Full Name is required (min 2 characters).</span>
+            </div>
+          }
+        </div>
+
+        <!-- Username & Email (Grid) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Username -->
+          <div>
+            <label class="block text-sm font-bold text-iris-navy mb-1.5" for="username">Username</label>
+            <input
+              id="username"
+              type="text"
+              formControlName="username"
+              placeholder="operator_jdoe"
+              class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy placeholder-iris-slate/50 transition focus:outline-none focus:ring-2 focus:ring-iris-teal"
+              [ngClass]="(submitted || f['username'].touched) && f['username'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+            />
+            @if ((submitted || f['username'].touched) && f['username'].errors) {
+              <div class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5">
+                <span>🛈</span>
+                <span>Username is required (min 4 characters).</span>
+              </div>
+            }
+          </div>
+
+          <!-- Email -->
+          <div>
+            <label class="block text-sm font-bold text-iris-navy mb-1.5" for="email">Institutional Email</label>
+            <input
+              id="email"
+              type="email"
+              formControlName="email"
+              placeholder="j.doe@iris.internal"
+              class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy placeholder-iris-slate/50 transition focus:outline-none focus:ring-2 focus:ring-iris-teal"
+              [ngClass]="(submitted || f['email'].touched) && f['email'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+            />
+            @if ((submitted || f['email'].touched) && f['email'].errors) {
+              <div class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5">
+                <span>🛈</span>
+                <span>Please provide a valid institutional email.</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Password & Confirm Password (Grid) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Password -->
+          <div>
+            <label class="block text-sm font-bold text-iris-navy mb-1.5" for="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              formControlName="password"
+              placeholder="••••••••"
+              class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy placeholder-iris-slate/50 transition focus:outline-none focus:ring-2 focus:ring-iris-teal"
+              [ngClass]="(submitted || f['password'].touched) && f['password'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+            />
+            @if ((submitted || f['password'].touched) && f['password'].errors) {
+              <div
+                class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5"
+                [ngSwitch]="f['password'].errors | firstKey"
+              >
+                <span>🛈</span>
+                <span *ngSwitchCase="'required'">Password is required.</span>
+                <span *ngSwitchCase="'minlength'">Password must be at least 6 characters.</span>
+                <span *ngSwitchCase="'pattern'">Use uppercase, lowercase, number, and special character.</span>
+                <span *ngSwitchDefault>Password is invalid.</span>
+              </div>
+            }
+          </div>
+
+          <!-- Confirm Password -->
+          <div>
+            <label class="block text-sm font-bold text-iris-navy mb-1.5" for="confirmPassword">Confirm Password</label>
+            <input
+              id="confirmPassword"
+              type="password"
+              formControlName="confirmPassword"
+              placeholder="••••••••"
+              class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy placeholder-iris-slate/50 transition focus:outline-none focus:ring-2 focus:ring-iris-teal"
+              [ngClass]="(submitted || f['confirmPassword'].touched) && (f['confirmPassword'].invalid || registrationForm.errors?.['passwordMismatch']) ? 'border-iris-navy border-2' : 'border-iris-border'"
+            />
+            @if ((submitted || f['confirmPassword'].touched) && f['confirmPassword'].errors) {
+              <div
+                class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5"
+                [ngSwitch]="f['confirmPassword'].errors | firstKey"
+              >
+                <span>🛈</span>
+                <span *ngSwitchCase="'required'">Confirmation password is required.</span>
+                <span *ngSwitchDefault>Confirmation password is invalid.</span>
+              </div>
+            }
+            @if ((submitted || f['confirmPassword'].touched) && !f['confirmPassword'].errors && registrationForm.errors?.['passwordMismatch']) {
+              <div
+                class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5"
+                [ngSwitch]="registrationForm.errors | firstKey"
+              >
+                <span>🛈</span>
+                <span *ngSwitchCase="'passwordMismatch'">Passwords must match exactly.</span>
+                <span *ngSwitchDefault>Confirmation password is invalid.</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Department/Role Dropdown -->
+        <div>
+          <label class="block text-sm font-bold text-iris-navy mb-1.5" for="department">Department</label>
+          <div class="relative">
+            <select
+              id="department"
+              formControlName="department"
+              class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy appearance-none transition focus:outline-none focus:ring-2 focus:ring-iris-teal"
+              [ngClass]="(submitted || f['department'].touched) && f['department'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+            >
+              <option value="" disabled selected>Select an operational department...</option>
+              <option value="Reassurance">Reassurance</option>
+              <option value="Operation">Operation</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-iris-navy">
+              <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
+              </svg>
+            </div>
+          </div>
+          @if ((submitted || f['department'].touched) && f['department'].errors) {
+            <div class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5">
+              <span>🛈</span>
+              <span>Please select your operational department.</span>
+            </div>
+          }
+        </div>
+
+        <!-- Position Dropdown -->
+        <div>
+          <label class="block text-sm font-bold text-iris-navy mb-1.5" for="position">Position</label>
+          <div class="relative">
+            <select
+              id="position"
+              formControlName="position"
+              class="w-full bg-iris-secondary-bg border rounded-lg px-4 py-2.5 text-sm text-iris-navy appearance-none transition focus:outline-none focus:ring-2 focus:ring-iris-teal disabled:opacity-60 disabled:cursor-not-allowed"
+              [ngClass]="(submitted || f['position'].touched) && f['position'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+            >
+              <option value="" disabled>Select a position...</option>
+              @for (position of availablePositions; track position) {
+                <option [value]="position">{{ position }}</option>
+              }
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-iris-navy">
+              <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
+              </svg>
+            </div>
+          </div>
+          @if ((submitted || f['position'].touched) && f['position'].errors) {
+            <div class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5">
+              <span>ðŸ›ˆ</span>
+              <span>Please select your department position.</span>
+            </div>
+          }
+        </div>
+
+        <!-- Terms and Conditions Checkbox -->
+        <div class="pt-2">
+          <div class="flex items-start">
+            <div class="flex items-center h-5">
+              <input
+                id="agreeTerms"
+                type="checkbox"
+                formControlName="agreeTerms"
+                class="h-4.5 w-4.5 text-iris-teal border-iris-border rounded bg-iris-secondary-bg focus:ring-iris-teal transition"
+                [ngClass]="(submitted || f['agreeTerms'].touched) && f['agreeTerms'].invalid ? 'border-iris-navy border-2' : 'border-iris-border'"
+              />
+            </div>
+            <div class="ml-3 text-sm">
+              <label for="agreeTerms" class="text-iris-slate leading-normal">
+                I accept all policies regarding secure data handling and operator authentication terms.
+              </label>
+            </div>
+          </div>
+          @if ((submitted || f['agreeTerms'].touched) && f['agreeTerms'].errors) {
+            <div class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5 w-max">
+              <span>🛈</span>
+              <span>You must accept the terms to continue.</span>
+            </div>
+          }
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="pt-4 flex flex-col sm:flex-row gap-3">
+          <button
+            type="submit"
+            class="flex-1 bg-iris-teal hover:bg-iris-teal-light text-white font-bold py-3 px-6 rounded-lg text-sm transition shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-iris-teal-extralight flex items-center justify-center space-x-2"
+          >
+            <span>Initialize Account</span>
+          </button>
+          <button
+            type="button"
+            (click)="resetRegistrationForm()"
+            class="bg-iris-secondary-bg hover:bg-iris-border/50 text-iris-navy font-bold py-3 px-6 rounded-lg text-sm border border-iris-border transition focus:outline-none"
+          >
+            Clear Fields
+          </button>
+        </div>
+
+        <p class="text-sm text-iris-slate">
+          Already have an operator account?
+          <a routerLink="/login" class="font-bold text-iris-teal hover:text-iris-teal-light">Login</a>
+        </p>
+      </form>
+    </div>
+  </div>
+</div>
