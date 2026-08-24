@@ -45,5 +45,61 @@
         <p class="text-3xl font-bold text-iris-teal mt-2">0</p>
       </div>
     </section>
+
+    @if (canCreateContract) {
+      <section class="bg-iris-card border border-iris-border rounded-xl shadow-xl p-6 md:p-8">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal block mb-2">
+              CONTRACTS
+            </span>
+            <h2 class="font-cambria text-3xl font-bold text-iris-navy mb-3">
+              Create a New Contract
+            </h2>
+            <p class="text-[11pt] text-iris-slate leading-relaxed max-w-2xl">
+              Start a new facultative contract draft from the Front Officer workspace using the live contract-type reference data.
+            </p>
+          </div>
+
+          <a
+            [routerLink]="createContractRoute"
+            class="inline-flex justify-center bg-iris-teal hover:bg-iris-teal-light text-white font-bold py-3 px-6 rounded-lg text-sm transition"
+          >
+            Create Contract
+          </a>
+        </div>
+      </section>
+    }
+
+    <section class="bg-iris-card border border-iris-border rounded-xl shadow-xl p-6 md:p-8">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal block mb-2">
+            MASTER DATA
+          </span>
+          <h2 class="font-cambria text-3xl font-bold text-iris-navy mb-3">
+            Counterparty Management
+          </h2>
+          <p class="text-[11pt] text-iris-slate leading-relaxed max-w-2xl">
+            Create and maintain cedent, reinsurer, and client records using the enterprise-aligned counterparty workflow.
+          </p>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-3">
+          <a
+            routerLink="/workspace/reassurance/front-officer/counterparties"
+            class="inline-flex justify-center bg-iris-secondary-bg hover:bg-iris-border/50 text-iris-navy font-bold py-3 px-6 rounded-lg text-sm border border-iris-border transition"
+          >
+            View Counterparties
+          </a>
+          <a
+            routerLink="/workspace/reassurance/front-officer/counterparties/new"
+            class="inline-flex justify-center bg-iris-teal hover:bg-iris-teal-light text-white font-bold py-3 px-6 rounded-lg text-sm transition"
+          >
+            Add Counterparty
+          </a>
+        </div>
+      </div>
+    </section>
   </main>
 </div>

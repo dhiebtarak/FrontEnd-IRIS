@@ -1,0 +1,33 @@
+<ol class="grid gap-3 sm:grid-cols-4" aria-label="Contract creation steps">
+  @for (step of steps; track step.index) {
+    <li
+      class="rounded-2xl border px-4 py-3 transition"
+      [ngClass]="{
+        'border-iris-teal bg-sky-50 text-iris-navy': step.index === activeStep(),
+        'border-emerald-200 bg-emerald-50 text-emerald-900': step.index < activeStep(),
+        'border-iris-border bg-white text-iris-slate': step.index > activeStep()
+      }"
+    >
+      <div class="flex items-center gap-3">
+        <span
+          class="flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold"
+          [ngClass]="{
+            'bg-iris-teal text-white': step.index === activeStep(),
+            'bg-emerald-600 text-white': step.index < activeStep(),
+            'bg-iris-bg text-iris-navy': step.index > activeStep()
+          }"
+        >
+          @if (step.index < activeStep()) {
+            <span aria-hidden="true">✓</span>
+          } @else {
+            {{ step.index }}
+          }
+        </span>
+        <div>
+          <p class="text-[11px] font-bold uppercase tracking-[0.22em]">Step {{ step.index }}</p>
+          <p class="mt-1 text-sm font-semibold">{{ step.label }}</p>
+        </div>
+      </div>
+    </li>
+  }
+</ol>

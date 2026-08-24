@@ -11,6 +11,8 @@ export const workspaceGuard: CanActivateFn = (_route, state) => {
   }
 
   const workspaceRoute = authService.getWorkspaceRoute();
+  const requestedUrl = state.url.split('?')[0].split('#')[0];
+  const isWorkspaceChildRoute = requestedUrl === workspaceRoute || requestedUrl.startsWith(`${workspaceRoute}/`);
 
-  return workspaceRoute === state.url ? true : router.createUrlTree([workspaceRoute]);
+  return isWorkspaceChildRoute ? true : router.createUrlTree([workspaceRoute]);
 };

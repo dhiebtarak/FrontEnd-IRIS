@@ -1,5 +1,11 @@
 import { Routes } from '@angular/router';
+import { ContractConditionsPlaceholderComponent } from './contracts/contract-conditions-placeholder/contract-conditions-placeholder.component';
+import { ContractTypeSelectionComponent } from './contracts/contract-type-selection/contract-type-selection.component';
+import { FacultativeInformationComponent } from './contracts/facultative-information/facultative-information.component';
+import { AddCounterpartyComponent } from './counterparties/add-counterparty/add-counterparty.component';
+import { CounterpartyListComponent } from './counterparties/counterparty-list/counterparty-list.component';
 import { authGuard } from './shared/guards/auth.guard';
+import { pendingChangesGuard } from './shared/guards/pending-changes.guard';
 import { workspaceGuard } from './shared/guards/workspace.guard';
 import { LoginComponent } from './user/login/login.component';
 import { RegistrationComponent } from './user/registration/registration.component';
@@ -16,6 +22,37 @@ export const routes: Routes = [
   {
     path: 'workspace/reassurance/front-officer',
     component: FrontOfficerWorkspaceComponent,
+    canActivate: [workspaceGuard]
+  },
+  {
+    path: 'workspace/reassurance/front-officer/counterparties',
+    component: CounterpartyListComponent,
+    canActivate: [workspaceGuard]
+  },
+  {
+    path: 'workspace/reassurance/front-officer/counterparties/new',
+    component: AddCounterpartyComponent,
+    canActivate: [workspaceGuard]
+  },
+  {
+    path: 'workspace/reassurance/front-officer/counterparties/:id',
+    component: AddCounterpartyComponent,
+    canActivate: [workspaceGuard]
+  },
+  {
+    path: 'workspace/reassurance/front-officer/contracts/new/type',
+    component: ContractTypeSelectionComponent,
+    canActivate: [workspaceGuard]
+  },
+  {
+    path: 'workspace/reassurance/front-officer/contracts/new/facultative',
+    component: FacultativeInformationComponent,
+    canActivate: [workspaceGuard],
+    canDeactivate: [pendingChangesGuard]
+  },
+  {
+    path: 'workspace/reassurance/front-officer/contracts/new/conditions',
+    component: ContractConditionsPlaceholderComponent,
     canActivate: [workspaceGuard]
   },
   {

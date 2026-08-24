@@ -1,0 +1,668 @@
+<div class="min-h-screen bg-[linear-gradient(180deg,#f7fbfe_0%,#eef5fb_52%,#f7fbfe_100%)] font-calibri text-iris-slate">
+  <header class="border-b border-iris-border/70 bg-white/90 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 md:px-8 lg:flex-row lg:items-center lg:justify-between">
+      <div class="min-w-0">
+        <div class="flex items-center gap-3">
+          <a
+            [routerLink]="listRoute"
+            class="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-iris-border bg-white text-iris-navy transition hover:border-iris-navy-light hover:text-iris-navy"
+            aria-label="Back to counterparties"
+          >
+            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M12.5 4.5 7 10l5.5 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <div>
+            <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-iris-teal">Counterparties</p>
+            <h1 class="mt-1 font-cambria text-3xl font-bold text-iris-navy md:text-4xl">{{ pageTitle }}</h1>
+            <p class="mt-2 text-sm text-iris-slate md:text-base">{{ pageSubtitle }}</p>
+          </div>
+        </div>
+
+        <nav aria-label="Breadcrumb" class="mt-4 text-sm">
+          <a [routerLink]="dashboardRoute" class="transition hover:text-iris-navy">Dashboard</a>
+          <span class="mx-2 text-iris-border">/</span>
+          <a [routerLink]="listRoute" class="transition hover:text-iris-navy">Counterparties</a>
+          <span class="mx-2 text-iris-border">/</span>
+          <span class="font-semibold text-iris-navy">{{ breadcrumbLabel }}</span>
+        </nav>
+      </div>
+
+      <div class="flex flex-col gap-3 lg:items-end">
+        @if (canConfirmUpdate) {
+          <button
+            type="button"
+            (click)="onSubmit()"
+            [disabled]="counterpartyForm.invalid || isBusy"
+            class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-navy px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-100 transition hover:bg-iris-navy-light disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            @if (isSubmitting()) {
+              <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+            }
+            <span>{{ topActionLabel }}</span>
+          </button>
+        }
+
+        <div class="hidden rounded-2xl border border-iris-border bg-white px-5 py-4 shadow-sm lg:block">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-iris-slate">Completion</p>
+          <div class="mt-3 flex items-center gap-3">
+            <div class="h-2.5 w-36 overflow-hidden rounded-full bg-iris-divider">
+              <div class="h-full rounded-full bg-iris-teal transition-all" [style.width.%]="completionPercentage"></div>
+            </div>
+            <span class="text-sm font-bold text-iris-navy">{{ completionPercentage }}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-7xl px-4 py-8 md:px-8">
+    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <section class="space-y-6">
+        @if (selectedType) {
+          <div class="rounded-2xl border px-5 py-4 shadow-sm"
+            [ngClass]="{
+              'border-sky-200 bg-sky-50 text-sky-950': selectedType === 'Cedent',
+              'border-cyan-200 bg-cyan-50 text-cyan-950': selectedType === 'Reinsurer',
+              'border-indigo-200 bg-indigo-50 text-indigo-950': selectedType === 'Client'
+            }"
+          >
+            <p class="text-sm font-semibold">
+              @switch (selectedType) {
+                @case ('Cedent') { The counterparty will be registered as a cedent. }
+                @case ('Reinsurer') { The counterparty will be registered as a reinsurer. }
+                @case ('Client') { The counterparty will be registered as a client. }
+              }
+            </p>
+            <p class="mt-1 text-sm opacity-80">
+              All displayed fields map directly to the backend counterparty model.
+            </p>
+          </div>
+        }
+
+        @if (formErrorMessage()) {
+          <div class="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-900 shadow-sm">
+            {{ formErrorMessage() }}
+          </div>
+        }
+
+        @if (isLoadingRecord()) {
+          <div class="rounded-[28px] border border-iris-border/80 bg-white p-10 shadow-[0_24px_60px_rgba(13,47,79,0.08)]">
+            <div class="flex flex-col items-center justify-center gap-4 py-16 text-center">
+              <div class="h-12 w-12 animate-spin rounded-full border-4 border-iris-divider border-t-iris-teal"></div>
+              <div>
+                <h2 class="font-cambria text-2xl font-bold text-iris-navy">Loading counterparty details</h2>
+                <p class="mt-2 text-sm text-iris-slate">The latest information is being loaded into the form.</p>
+              </div>
+            </div>
+          </div>
+        } @else {
+        <form [formGroup]="counterpartyForm" (ngSubmit)="onSubmit()" class="space-y-6">
+          <article class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+            <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 01</p>
+              <h2 class="font-cambria text-2xl font-bold text-iris-navy">General Information</h2>
+            </div>
+
+            <div class="mt-6 grid gap-5 md:grid-cols-2">
+              <div class="md:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="name">Counterparty Name</label>
+                <input
+                  id="name"
+                  type="text"
+                  formControlName="name"
+                  [attr.aria-invalid]="hasError('name', 'required') || hasError('name', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('name', 'required') || hasError('name', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  placeholder="Enter the enterprise or institution name"
+                />
+                @if (hasError('name', 'required')) {
+                  <p class="mt-2 text-sm text-rose-700">Counterparty name is required.</p>
+                }
+                @if (hasError('name', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.name.errors?.['serverError'] }}</p>
+                }
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="type">Counterparty Type</label>
+                <div class="relative">
+                  <select
+                    id="type"
+                    formControlName="type"
+                    [attr.aria-invalid]="hasError('type', 'required') || hasError('type', 'serverError')"
+                    class="w-full appearance-none rounded-2xl border bg-white px-4 py-3 pr-11 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                    [ngClass]="hasError('type', 'required') || hasError('type', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  >
+                    <option value="">Select a type</option>
+                    @for (type of counterpartyTypes; track type) {
+                      <option [value]="type">{{ type }}</option>
+                    }
+                  </select>
+                  <span class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-iris-slate">
+                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path d="M5.5 7.5 10 12l4.5-4.5" />
+                    </svg>
+                  </span>
+                </div>
+                @if (hasError('type', 'required')) {
+                  <p class="mt-2 text-sm text-rose-700">Counterparty type is required.</p>
+                }
+                @if (hasError('type', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.type.errors?.['serverError'] }}</p>
+                }
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="status">Status</label>
+                <div class="relative">
+                  <select
+                    id="status"
+                    formControlName="status"
+                    class="w-full appearance-none rounded-2xl border border-iris-border bg-white px-4 py-3 pr-11 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  >
+                    @for (status of statusOptions; track status) {
+                      <option [value]="status">{{ status }}</option>
+                    }
+                  </select>
+                  <span class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-iris-slate">
+                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path d="M5.5 7.5 10 12l4.5-4.5" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="activity">Business Activity</label>
+                <input
+                  id="activity"
+                  type="text"
+                  formControlName="activity"
+                  class="w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  placeholder="Insurance, brokerage, claims, underwriting..."
+                />
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="website">Website</label>
+                <input
+                  id="website"
+                  type="url"
+                  formControlName="website"
+                  [attr.aria-invalid]="hasError('website', 'invalidUrl') || hasError('website', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('website', 'invalidUrl') || hasError('website', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  placeholder="https://example.com"
+                />
+                @if (hasError('website', 'invalidUrl')) {
+                  <p class="mt-2 text-sm text-rose-700">Provide a valid website URL using http or https.</p>
+                }
+                @if (hasError('website', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.website.errors?.['serverError'] }}</p>
+                }
+              </div>
+            </div>
+          </article>
+
+          <article class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+            <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 02</p>
+              <h2 class="font-cambria text-2xl font-bold text-iris-navy">Legal and Registration Information</h2>
+              <p class="text-sm text-iris-slate">
+                Registration and tax information should match the counterparty's official legal documents.
+              </p>
+            </div>
+
+            <div class="mt-6 grid gap-5 md:grid-cols-2">
+              <div [ngClass]="selectedType === 'Cedent' ? 'rounded-2xl border border-sky-200 bg-sky-50 p-4 md:col-span-2' : 'md:col-span-2'">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="cedantLegalEntity">Legal Entity</label>
+                <input
+                  id="cedantLegalEntity"
+                  type="text"
+                  formControlName="cedantLegalEntity"
+                  [attr.aria-invalid]="hasError('cedantLegalEntity', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('cedantLegalEntity', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  placeholder="Official registered legal entity"
+                />
+                @if (selectedType === 'Cedent') {
+                  <p class="mt-2 text-sm text-sky-900">Cedent records typically rely on an exact legal entity match.</p>
+                }
+                @if (hasError('cedantLegalEntity', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.cedantLegalEntity.errors?.['serverError'] }}</p>
+                }
+              </div>
+
+              <section formGroupName="commercialRegisterAttachment" class="rounded-3xl border border-iris-border/80 bg-iris-bg/40 p-5 md:col-span-2">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-iris-teal">Attachment</p>
+                    <h3 class="mt-1 font-cambria text-xl font-bold text-iris-navy">Commercial Register</h3>
+                    <p class="mt-2 text-sm text-iris-slate">Upload a PDF or image copy of the commercial register document.</p>
+                  </div>
+                  <span class="rounded-full bg-white px-3 py-1 text-xs font-semibold text-iris-navy ring-1 ring-iris-border">Document</span>
+                </div>
+
+                <div class="mt-5 space-y-4">
+                  <input type="hidden" formControlName="originalFileName" />
+                  <input
+                    #commercialRegisterFileInput
+                    id="commercialRegisterFileInput"
+                    type="file"
+                    class="hidden"
+                    [accept]="attachmentAccept"
+                    (change)="onAttachmentSelected('commercialRegisterAttachment', $event)"
+                  />
+
+                  <div class="flex flex-col gap-3 rounded-3xl border bg-white px-4 py-4 shadow-sm md:flex-row md:items-center md:justify-between" [ngClass]="hasError('commercialRegisterAttachment.originalFileName', 'serverError') || hasError('commercialRegisterAttachment.originalFileName', 'invalidAttachmentType') || hasError('commercialRegisterAttachment.originalFileName', 'attachmentTooLarge') ? 'border-rose-300' : 'border-iris-border'">
+                    <div class="min-w-0">
+                      <p class="text-sm font-semibold text-iris-navy">Selected file</p>
+                      <p class="mt-1 truncate text-sm text-iris-slate">{{ getAttachmentDisplayName('commercialRegisterAttachment') }}</p>
+                      <p class="mt-2 text-xs text-iris-slate">Accepted formats: PDF, PNG, JPG, JPEG. Maximum size: {{ maxAttachmentSizeInMb }} MB.</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        (click)="commercialRegisterFileInput.click()"
+                        [disabled]="isBusy"
+                        class="inline-flex items-center justify-center rounded-2xl bg-iris-teal px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Upload document
+                      </button>
+                      @if (hasPendingAttachmentFile('commercialRegisterAttachment')) {
+                        <button
+                          type="button"
+                          (click)="removeSelectedFile('commercialRegisterAttachment', commercialRegisterFileInput)"
+                          [disabled]="isBusy"
+                          class="inline-flex items-center justify-center rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Remove file
+                        </button>
+                      }
+                    </div>
+                  </div>
+
+                  @if (hasError('commercialRegisterAttachment.originalFileName', 'invalidAttachmentType')) {
+                    <p class="text-sm text-rose-700">Unsupported file format. Please choose a PDF, PNG, JPG, or JPEG file.</p>
+                  }
+                  @if (hasError('commercialRegisterAttachment.originalFileName', 'attachmentTooLarge')) {
+                    <p class="text-sm text-rose-700">File size exceeds 10 MB. Please choose a smaller file.</p>
+                  }
+                  @if (hasError('commercialRegisterAttachment.originalFileName', 'serverError')) {
+                    <p class="text-sm text-rose-700">{{ getAttachmentGroup('commercialRegisterAttachment').controls.originalFileName.errors?.['serverError'] }}</p>
+                  }
+                </div>
+              </section>
+
+              <section formGroupName="taxIdentificationNumberAttachment" class="rounded-3xl border border-iris-border/80 bg-iris-bg/40 p-5 md:col-span-2">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-iris-teal">Attachment</p>
+                    <h3 class="mt-1 font-cambria text-xl font-bold text-iris-navy">Tax Identification Number</h3>
+                    <p class="mt-2 text-sm text-iris-slate">Upload the tax identification support document directly from the user device.</p>
+                  </div>
+                  <span class="rounded-full bg-white px-3 py-1 text-xs font-semibold text-iris-navy ring-1 ring-iris-border">Document</span>
+                </div>
+
+                <div class="mt-5 space-y-4">
+                  <input type="hidden" formControlName="originalFileName" />
+                  <input
+                    #taxIdFileInput
+                    id="taxIdFileInput"
+                    type="file"
+                    class="hidden"
+                    [accept]="attachmentAccept"
+                    (change)="onAttachmentSelected('taxIdentificationNumberAttachment', $event)"
+                  />
+
+                  <div class="flex flex-col gap-3 rounded-3xl border bg-white px-4 py-4 shadow-sm md:flex-row md:items-center md:justify-between" [ngClass]="hasError('taxIdentificationNumberAttachment.originalFileName', 'serverError') || hasError('taxIdentificationNumberAttachment.originalFileName', 'invalidAttachmentType') || hasError('taxIdentificationNumberAttachment.originalFileName', 'attachmentTooLarge') ? 'border-rose-300' : 'border-iris-border'">
+                    <div class="min-w-0">
+                      <p class="text-sm font-semibold text-iris-navy">Selected file</p>
+                      <p class="mt-1 truncate text-sm text-iris-slate">{{ getAttachmentDisplayName('taxIdentificationNumberAttachment') }}</p>
+                      <p class="mt-2 text-xs text-iris-slate">Accepted formats: PDF, PNG, JPG, JPEG. Maximum size: {{ maxAttachmentSizeInMb }} MB.</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        (click)="taxIdFileInput.click()"
+                        [disabled]="isBusy"
+                        class="inline-flex items-center justify-center rounded-2xl bg-iris-teal px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Choose file
+                      </button>
+                      @if (hasPendingAttachmentFile('taxIdentificationNumberAttachment')) {
+                        <button
+                          type="button"
+                          (click)="removeSelectedFile('taxIdentificationNumberAttachment', taxIdFileInput)"
+                          [disabled]="isBusy"
+                          class="inline-flex items-center justify-center rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Remove file
+                        </button>
+                      }
+                    </div>
+                  </div>
+
+                  @if (hasError('taxIdentificationNumberAttachment.originalFileName', 'invalidAttachmentType')) {
+                    <p class="text-sm text-rose-700">Unsupported file format. Please choose a PDF, PNG, JPG, or JPEG file.</p>
+                  }
+                  @if (hasError('taxIdentificationNumberAttachment.originalFileName', 'attachmentTooLarge')) {
+                    <p class="text-sm text-rose-700">File size exceeds 10 MB. Please choose a smaller file.</p>
+                  }
+                  @if (hasError('taxIdentificationNumberAttachment.originalFileName', 'serverError')) {
+                    <p class="text-sm text-rose-700">{{ getAttachmentGroup('taxIdentificationNumberAttachment').controls.originalFileName.errors?.['serverError'] }}</p>
+                  }
+                </div>
+              </section>
+            </div>
+          </article>
+
+          <article class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+            <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 03</p>
+              <h2 class="font-cambria text-2xl font-bold text-iris-navy">Contact Information</h2>
+            </div>
+
+            <div class="mt-6 grid gap-5 md:grid-cols-2">
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="email">Email Address</label>
+                <input
+                  id="email"
+                  type="email"
+                  formControlName="email"
+                  [attr.aria-invalid]="hasError('email', 'email') || hasError('email', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('email', 'email') || hasError('email', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  placeholder="contact@company.com"
+                />
+                @if (hasError('email', 'email')) {
+                  <p class="mt-2 text-sm text-rose-700">Provide a valid email address.</p>
+                }
+                @if (hasError('email', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.email.errors?.['serverError'] }}</p>
+                }
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="phoneNumber">Phone Number</label>
+                <input
+                  id="phoneNumber"
+                  type="tel"
+                  formControlName="phoneNumber"
+                  [attr.aria-invalid]="hasError('phoneNumber', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('phoneNumber', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  placeholder="+212 6 00 00 00 00"
+                />
+                <p class="mt-2 text-sm text-iris-slate">Use the international dialing format when available.</p>
+                @if (hasError('phoneNumber', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.phoneNumber.errors?.['serverError'] }}</p>
+                }
+              </div>
+            </div>
+          </article>
+
+          <article class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+            <div class="flex items-start gap-4 border-b border-iris-divider pb-5">
+              <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-iris-teal">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 21s6-5.33 6-11a6 6 0 1 0-12 0c0 5.67 6 11 6 11Z" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+              </div>
+              <div>
+                <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 04</p>
+                <h2 class="mt-2 font-cambria text-2xl font-bold text-iris-navy">Address Information</h2>
+              </div>
+            </div>
+
+            <div class="mt-6 grid gap-5 md:grid-cols-2">
+              <div class="md:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="addressLine">Address</label>
+                <input
+                  id="addressLine"
+                  type="text"
+                  formControlName="addressLine"
+                  [attr.aria-invalid]="hasError('addressLine', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('addressLine', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                />
+                @if (hasError('addressLine', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.addressLine.errors?.['serverError'] }}</p>
+                }
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="city">City</label>
+                <input
+                  id="city"
+                  type="text"
+                  formControlName="city"
+                  [attr.aria-invalid]="hasError('city', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('city', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                />
+                @if (hasError('city', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.city.errors?.['serverError'] }}</p>
+                }
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="postalCode">Postal Code</label>
+                <input
+                  id="postalCode"
+                  type="text"
+                  formControlName="postalCode"
+                  [attr.aria-invalid]="hasError('postalCode', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('postalCode', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                />
+                @if (hasError('postalCode', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.postalCode.errors?.['serverError'] }}</p>
+                }
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="country">Country</label>
+                <input
+                  id="country"
+                  type="text"
+                  formControlName="country"
+                  list="counterparty-country-options"
+                  [attr.aria-invalid]="hasError('country', 'serverError')"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="hasError('country', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  placeholder="Search or enter a country"
+                />
+                <datalist id="counterparty-country-options">
+                  @for (country of countries; track country) {
+                    <option [value]="country"></option>
+                  }
+                </datalist>
+                @if (hasError('country', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.country.errors?.['serverError'] }}</p>
+                }
+              </div>
+            </div>
+          </article>
+
+          <article class="overflow-hidden rounded-[28px] border border-iris-border/80 bg-white shadow-[0_24px_60px_rgba(13,47,79,0.08)]">
+            <button
+              type="button"
+              (click)="toggleLegacySection()"
+              class="flex w-full items-center justify-between px-6 py-5 text-left transition hover:bg-iris-bg/60 md:px-7"
+              [attr.aria-expanded]="isLegacyOpen()"
+            >
+              <div>
+                <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 05</p>
+                <h2 class="mt-2 font-cambria text-2xl font-bold text-iris-navy">Legacy Information</h2>
+                <p class="mt-2 text-sm text-iris-slate">
+                  Primarily used for migrated or imported counterparties.
+                  @if (selectedType === 'Client') {
+                    <span class="font-semibold text-iris-navy">Client records can also capture legacy identifiers here.</span>
+                  }
+                </p>
+              </div>
+              <span class="flex h-10 w-10 items-center justify-center rounded-2xl border border-iris-border bg-white text-iris-navy">
+                <svg class="h-4 w-4 transition" [ngClass]="isLegacyOpen() ? 'rotate-180' : ''" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path d="M5.5 7.5 10 12l4.5-4.5" />
+                </svg>
+              </span>
+            </button>
+
+            @if (isLegacyOpen()) {
+              <div class="border-t border-iris-divider px-6 py-6 md:px-7">
+                <div class="grid gap-5 md:grid-cols-2">
+                  <div>
+                    <label class="mb-2 block text-sm font-semibold text-iris-navy" for="legacyClientId">Legacy Client ID</label>
+                    <input
+                      id="legacyClientId"
+                      type="number"
+                      formControlName="legacyClientId"
+                      [attr.aria-invalid]="hasError('legacyClientId', 'integer') || hasError('legacyClientId', 'serverError')"
+                      class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                      [ngClass]="hasError('legacyClientId', 'integer') || hasError('legacyClientId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                      placeholder="Optional numeric value"
+                    />
+                    @if (hasError('legacyClientId', 'integer')) {
+                      <p class="mt-2 text-sm text-rose-700">Legacy Client ID must be a valid integer.</p>
+                    }
+                    @if (hasError('legacyClientId', 'serverError')) {
+                      <p class="mt-2 text-sm text-rose-700">{{ f.legacyClientId.errors?.['serverError'] }}</p>
+                    }
+                  </div>
+
+                  <div>
+                    <label class="mb-2 block text-sm font-semibold text-iris-navy" for="legacyCompanyCode">Legacy Company Code</label>
+                    <input
+                      id="legacyCompanyCode"
+                      type="text"
+                      formControlName="legacyCompanyCode"
+                      [attr.aria-invalid]="hasError('legacyCompanyCode', 'serverError')"
+                      class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                      [ngClass]="hasError('legacyCompanyCode', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                    />
+                    @if (hasError('legacyCompanyCode', 'serverError')) {
+                      <p class="mt-2 text-sm text-rose-700">{{ f.legacyCompanyCode.errors?.['serverError'] }}</p>
+                    }
+                  </div>
+                </div>
+              </div>
+            }
+          </article>
+
+          <article class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+            <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 06</p>
+              <h2 class="font-cambria text-2xl font-bold text-iris-navy">Observations</h2>
+            </div>
+
+            <div class="mt-6">
+              <label class="mb-2 block text-sm font-semibold text-iris-navy" for="observations">Observations</label>
+              <textarea
+                id="observations"
+                rows="6"
+                formControlName="observations"
+                [attr.aria-invalid]="hasError('observations', 'serverError')"
+                class="w-full rounded-3xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                [ngClass]="hasError('observations', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                placeholder="Add internal notes or relevant information about this counterparty"
+              ></textarea>
+              <div class="mt-2 flex items-center justify-between gap-3 text-sm">
+                <p class="text-iris-slate">Use this space for internal notes relevant to underwriting, compliance, or migration.</p>
+                <span class="font-semibold text-iris-navy">{{ observationsLength }} characters</span>
+              </div>
+              @if (hasError('observations', 'serverError')) {
+                <p class="mt-2 text-sm text-rose-700">{{ f.observations.errors?.['serverError'] }}</p>
+              }
+            </div>
+          </article>
+
+          <div class="sticky bottom-0 z-20 rounded-[28px] border border-iris-border/90 bg-white/95 p-4 shadow-[0_-12px_30px_rgba(13,47,79,0.08)] backdrop-blur md:p-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p class="text-sm text-iris-slate">Backend-managed fields such as `id`, `createdAtUtc`, and `updatedAtUtc` are excluded from the form.</p>
+
+              <div class="flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  (click)="onCancel()"
+                  [disabled]="isBusy"
+                  class="inline-flex items-center justify-center rounded-xl border border-iris-border bg-white px-5 py-3 text-sm font-semibold text-iris-navy transition hover:border-iris-navy-light hover:text-iris-navy disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  (click)="resetForm()"
+                  [disabled]="isBusy"
+                  class="inline-flex items-center justify-center rounded-xl border border-iris-border bg-iris-bg px-5 py-3 text-sm font-semibold text-iris-navy transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Reset
+                </button>
+                <button
+                  type="submit"
+                  [disabled]="isBusy || (isEditMode && !counterpartyForm.dirty)"
+                  class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  @if (isSubmitting()) {
+                    <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+                  }
+                  <span>{{ submitButtonLabel }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+        }
+      </section>
+
+      <aside class="hidden xl:block">
+        <div class="sticky top-6 space-y-5">
+          <section class="rounded-[28px] border border-iris-border/80 bg-white p-5 shadow-[0_24px_60px_rgba(13,47,79,0.08)]">
+            <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Summary</p>
+            <h2 class="mt-2 font-cambria text-2xl font-bold text-iris-navy">Current Entry</h2>
+
+            <dl class="mt-5 space-y-4 text-sm">
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Type</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ selectedType || 'Not selected' }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Name</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ f.name.value || 'Not provided' }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Country</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ f.country.value || 'Not provided' }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Commercial Register</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ getAttachmentDisplayName('commercialRegisterAttachment') }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Tax ID Attachment</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ getAttachmentDisplayName('taxIdentificationNumberAttachment') }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Status</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ f.status.value }}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="rounded-[28px] border border-iris-border/80 bg-iris-navy p-5 text-white shadow-[0_24px_60px_rgba(13,47,79,0.15)]">
+            <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal-light">Progress</p>
+            <h2 class="mt-2 font-cambria text-2xl font-bold">Form completion</h2>
+            <div class="mt-5 h-3 overflow-hidden rounded-full bg-white/15">
+              <div class="h-full rounded-full bg-iris-teal-light transition-all" [style.width.%]="completionPercentage"></div>
+            </div>
+            <p class="mt-3 text-sm text-iris-divider/90">{{ completionPercentage }}% of the tracked fields are complete.</p>
+          </section>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
