@@ -1,0 +1,153 @@
+<div class="mx-auto max-w-[1500px] px-4 py-7 md:px-7 lg:px-10 lg:py-9">
+  <header class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-iris-teal">Contract Portfolio</p>
+      <h1 class="mt-2 font-cambria text-4xl font-bold text-iris-navy">Contracts</h1>
+      <p class="mt-3 max-w-3xl text-sm leading-6 text-iris-slate md:text-base">
+        Search and manage every contract available to the authenticated Front Officer.
+      </p>
+    </div>
+    <a
+      [routerLink]="createContractRoute"
+      class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light"
+    >
+      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      Create Contract
+    </a>
+  </header>
+
+  <section class="mt-7 rounded-[26px] border border-iris-border/80 bg-white p-5 shadow-[0_18px_45px_rgba(13,47,79,0.07)] md:p-6">
+    <div class="flex flex-col gap-3 border-b border-iris-divider pb-5 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p class="text-[10px] font-bold uppercase tracking-[0.24em] text-iris-teal">Portfolio Filters</p>
+        <h2 class="mt-2 font-cambria text-2xl font-bold text-iris-navy">Find a contract</h2>
+      </div>
+      <button
+        type="button"
+        (click)="clearFilters()"
+        class="inline-flex items-center justify-center rounded-xl border border-iris-border bg-iris-bg px-4 py-2.5 text-sm font-bold text-iris-navy transition hover:border-iris-navy-light hover:bg-white"
+      >
+        Clear filters
+      </button>
+    </div>
+
+    @if (isLoadingReferences()) {
+      <div class="mt-5 grid animate-pulse gap-4 md:grid-cols-2 xl:grid-cols-4">
+        @for (item of [1, 2, 3, 4]; track item) {
+          <div class="h-12 rounded-xl bg-iris-divider/70"></div>
+        }
+      </div>
+    } @else {
+      @if (referenceError()) {
+        <div class="mt-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+          <span>{{ referenceError() }}</span>
+          <button type="button" (click)="loadReferenceData()" class="font-bold text-iris-navy underline underline-offset-4">Retry references</button>
+        </div>
+      }
+
+      <form [formGroup]="filters" class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <label class="xl:col-span-2">
+          <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Search</span>
+          <input
+            type="search"
+            formControlName="search"
+            placeholder="Contract name, UMR, or Cedent"
+            class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+          />
+        </label>
+
+        <label>
+          <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Contract type</span>
+          <select formControlName="contractType" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100">
+            <option value="">All types</option>
+            @for (type of contractTypes(); track type.code) {
+              <option [value]="type.code">{{ type.name }}</option>
+            }
+          </select>
+        </label>
+
+        <label>
+          <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Contract status</span>
+          <input
+            type="text"
+            formControlName="status"
+            placeholder="Backend status value"
+            class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+          />
+        </label>
+
+        <label>
+          <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Cedent</span>
+          <select formControlName="counterpartyId" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100">
+            <option value="">All Cedents</option>
+            @for (cedent of cedents(); track cedent.id) {
+              <option [value]="cedent.id">{{ cedent.name }}</option>
+            }
+          </select>
+        </label>
+
+        <label>
+          <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Currency</span>
+          <select formControlName="currencyId" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100">
+            <option value="">All currencies</option>
+            @for (currency of currencies(); track currency.id) {
+              <option [value]="currency.id">{{ currency.code }} - {{ currency.name }}</option>
+            }
+          </select>
+        </label>
+
+        <fieldset class="grid gap-3 sm:grid-cols-2 xl:col-span-2">
+          <legend class="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Inception date range</legend>
+          <input aria-label="Inception date from" type="date" formControlName="inceptionFrom" class="w-full rounded-xl border border-iris-border bg-white px-3 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          <input aria-label="Inception date to" type="date" formControlName="inceptionTo" class="w-full rounded-xl border border-iris-border bg-white px-3 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+        </fieldset>
+
+        <fieldset class="grid gap-3 sm:grid-cols-2 xl:col-span-2">
+          <legend class="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Expiry date range</legend>
+          <input aria-label="Expiry date from" type="date" formControlName="expiryFrom" class="w-full rounded-xl border border-iris-border bg-white px-3 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          <input aria-label="Expiry date to" type="date" formControlName="expiryTo" class="w-full rounded-xl border border-iris-border bg-white px-3 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+        </fieldset>
+      </form>
+    }
+  </section>
+
+  <section class="mt-6 overflow-hidden rounded-[26px] border border-iris-border/80 bg-white shadow-[0_18px_45px_rgba(13,47,79,0.07)]">
+    <div class="border-b border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-900 md:px-6">
+      Contract listing, server-side filtering, sorting, pagination, and detail navigation are waiting for a backend portfolio endpoint. No placeholder contracts are shown.
+    </div>
+
+    <div class="hidden overflow-x-auto lg:block">
+      <table class="w-full min-w-[1250px] text-left text-sm">
+        <thead class="bg-iris-bg/80 text-xs font-bold uppercase tracking-[0.1em] text-iris-slate">
+          <tr>
+            <th class="px-4 py-4">UMR</th>
+            <th class="px-4 py-4">Contract name</th>
+            <th class="px-4 py-4">Cedent</th>
+            <th class="px-4 py-4">Contract type</th>
+            <th class="px-4 py-4">Currency</th>
+            <th class="px-4 py-4">Status</th>
+            <th class="px-4 py-4">Inception</th>
+            <th class="px-4 py-4">Expiry</th>
+            <th class="px-4 py-4">Gross premium</th>
+            <th class="px-4 py-4">Last update</th>
+            <th class="px-4 py-4">Actions</th>
+          </tr>
+        </thead>
+      </table>
+    </div>
+
+    <div class="flex min-h-72 flex-col items-center justify-center px-6 py-12 text-center">
+      <span class="flex h-16 w-16 items-center justify-center rounded-2xl bg-iris-bg text-iris-teal">
+        <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 3.5h7l4 4V20H7V3.5Zm7 0v4h4M10 12h5M10 15.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <h2 class="mt-5 font-cambria text-2xl font-bold text-iris-navy">Portfolio data source required</h2>
+      <p class="mt-3 max-w-xl text-sm leading-6 text-iris-slate">
+        The active API supports Facultative draft create, read by ID, and update operations, but it does not expose an authorized contract collection.
+      </p>
+    </div>
+  </section>
+</div>

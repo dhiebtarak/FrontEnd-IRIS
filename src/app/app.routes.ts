@@ -13,6 +13,9 @@ import { UserComponent } from './user/user.component';
 import { BackOfficerWorkspaceComponent } from './workspaces/reassurance/back-officer/back-officer-workspace.component';
 import { FinanceOfficerWorkspaceComponent } from './workspaces/reassurance/finance-officer/finance-officer-workspace.component';
 import { FrontOfficerWorkspaceComponent } from './workspaces/reassurance/front-officer/front-officer-workspace.component';
+import { FrontOfficerLayoutComponent } from './workspaces/reassurance/front-officer/front-officer-layout.component';
+import { ContractsListComponent } from './contracts/contracts-list/contracts-list.component';
+import { ClaimsComingSoonComponent } from './claims/claims-coming-soon.component';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
@@ -21,39 +24,23 @@ export const routes: Routes = [
   { path: 'user', component: UserComponent, canActivate: [authGuard] },
   {
     path: 'workspace/reassurance/front-officer',
-    component: FrontOfficerWorkspaceComponent,
-    canActivate: [workspaceGuard]
-  },
-  {
-    path: 'workspace/reassurance/front-officer/counterparties',
-    component: CounterpartyListComponent,
-    canActivate: [workspaceGuard]
-  },
-  {
-    path: 'workspace/reassurance/front-officer/counterparties/new',
-    component: AddCounterpartyComponent,
-    canActivate: [workspaceGuard]
-  },
-  {
-    path: 'workspace/reassurance/front-officer/counterparties/:id',
-    component: AddCounterpartyComponent,
-    canActivate: [workspaceGuard]
-  },
-  {
-    path: 'workspace/reassurance/front-officer/contracts/new/type',
-    component: ContractTypeSelectionComponent,
-    canActivate: [workspaceGuard]
-  },
-  {
-    path: 'workspace/reassurance/front-officer/contracts/new/facultative',
-    component: FacultativeInformationComponent,
+    component: FrontOfficerLayoutComponent,
     canActivate: [workspaceGuard],
-    canDeactivate: [pendingChangesGuard]
-  },
-  {
-    path: 'workspace/reassurance/front-officer/contracts/new/conditions',
-    component: ContractConditionsPlaceholderComponent,
-    canActivate: [workspaceGuard]
+    children: [
+      { path: '', component: FrontOfficerWorkspaceComponent },
+      { path: 'counterparties', component: CounterpartyListComponent },
+      { path: 'counterparties/new', component: AddCounterpartyComponent },
+      { path: 'counterparties/:id', component: AddCounterpartyComponent },
+      { path: 'contracts', component: ContractsListComponent },
+      { path: 'contracts/new/type', component: ContractTypeSelectionComponent },
+      {
+        path: 'contracts/new/facultative',
+        component: FacultativeInformationComponent,
+        canDeactivate: [pendingChangesGuard]
+      },
+      { path: 'contracts/new/conditions', component: ContractConditionsPlaceholderComponent },
+      { path: 'claims', component: ClaimsComingSoonComponent }
+    ]
   },
   {
     path: 'workspace/reassurance/back-officer',

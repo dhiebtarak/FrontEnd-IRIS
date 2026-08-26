@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
@@ -18,7 +18,7 @@ import { FirstKeyPipe } from '../../shared/pipes/first-key.pipe';
 export class LoginComponent implements OnInit {
   loginForm!: FormGroup;
   submitted = false;
-  isSubmitting = false;
+  readonly isSubmitting = signal(false);
 
   constructor(
     private fb: FormBuilder,
@@ -39,6 +39,10 @@ export class LoginComponent implements OnInit {
   }
 
   onSubmit(): void {
+    if (this.isSubmitting()) {
+      return;
+    }
+
     this.submitted = true;
 
     if (this.loginForm.invalid) {
@@ -46,7 +50,7 @@ export class LoginComponent implements OnInit {
       return;
     }
 
-    this.isSubmitting = true;
+    this.isSubmitting.set(true);
 
     const loginRequest = {
       emailOrUsername: this.loginForm.value.emailOrUsername,
@@ -142,8 +146,6 @@ export class LoginComponent implements OnInit {
   }
 
   private finishSubmitting(): void {
-    setTimeout(() => {
-      this.isSubmitting = false;
-    });
+    this.isSubmitting.set(false);
   }
 }

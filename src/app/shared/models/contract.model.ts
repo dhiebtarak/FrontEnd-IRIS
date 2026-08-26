@@ -1,5 +1,4 @@
 export interface ContractTypeReference {
-  id: number;
   code: string;
   name: string;
   description: string;
@@ -29,6 +28,35 @@ export interface CedentSearchResponse {
   pageSize: number;
   totalCount: number;
   totalPages: number;
+}
+
+export interface WorkflowDistributionItem {
+  status: string;
+  count: number;
+  percentage: number;
+}
+
+export interface RecentContractItem {
+  idContract: number;
+  umr: string | null;
+  name: string;
+  cedentId: number;
+  cedentName: string;
+  contractType: string;
+  status: string;
+  currencyCode: string;
+  inceptionDate: string;
+  expiryDate: string;
+  updatedAt: string | null;
+}
+
+export interface DashboardSummary {
+  totalContracts: number;
+  pendingReviewContracts: number;
+  boundActiveContracts: number;
+  actionRequiredContracts: number;
+  workflowDistribution: WorkflowDistributionItem[];
+  recentContracts: RecentContractItem[];
 }
 
 export interface UpsertFacultativeContractRequest {

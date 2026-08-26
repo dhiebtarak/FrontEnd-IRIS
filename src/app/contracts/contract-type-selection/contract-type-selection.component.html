@@ -59,17 +59,17 @@
         </div>
       } @else {
         <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          @for (type of contractTypes(); track type.id) {
+          @for (type of contractTypes(); track type.code) {
             <button
               type="button"
               (click)="selectType(type)"
               class="group flex h-full flex-col rounded-[24px] border p-5 text-left transition"
               [ngClass]="{
-                'border-iris-teal bg-sky-50 shadow-lg shadow-sky-100': selectedTypeId() === type.id && type.isImplemented,
-                'border-iris-border bg-white hover:border-iris-navy-light hover:shadow-lg hover:shadow-sky-100/60': selectedTypeId() !== type.id,
+                'border-iris-teal bg-sky-50 shadow-lg shadow-sky-100': selectedTypeCode() === type.code && type.isImplemented,
+                'border-iris-border bg-white hover:border-iris-navy-light hover:shadow-lg hover:shadow-sky-100/60': selectedTypeCode() !== type.code,
                 'opacity-90': !type.isImplemented || !canContinue
               }"
-              [attr.aria-pressed]="selectedTypeId() === type.id"
+              [attr.aria-pressed]="selectedTypeCode() === type.code"
             >
               <div class="flex items-start justify-between gap-3">
                 <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-iris-bg text-iris-teal">
@@ -100,7 +100,7 @@
 
               <div class="mt-6 flex items-center justify-between text-sm">
                 <span class="font-semibold text-iris-navy">
-                  {{ selectedTypeId() === type.id ? 'Selected' : 'Select type' }}
+                  {{ selectedTypeCode() === type.code ? 'Selected' : 'Select type' }}
                 </span>
                 <span class="text-iris-slate">
                   {{ type.isImplemented ? 'Implementation available' : 'Under development' }}

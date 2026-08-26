@@ -17,10 +17,10 @@ describe('ContractTypeSelectionComponent', () => {
   };
 
   const contractTypes: ContractTypeReference[] = [
-    { id: 1, code: 'FACULTATIVE', name: 'Facultative', description: 'Facultative contract.', categoryTags: ['Proportional'], isImplemented: true },
-    { id: 2, code: 'QUOTA_SHARE', name: 'Quota Share', description: 'Quota share contract.', categoryTags: ['Proportional'], isImplemented: false },
-    { id: 3, code: 'SURPLUS', name: 'Surplus', description: 'Surplus contract.', categoryTags: ['Proportional'], isImplemented: false },
-    { id: 4, code: 'NON_PROP', name: 'Non-Proportional', description: 'Non-proportional contract.', categoryTags: ['Non-Proportional'], isImplemented: false }
+    { code: 'FACULTATIVE', name: 'Facultative', description: 'Facultative contract.', categoryTags: ['Proportional'], isImplemented: true },
+    { code: 'QUOTA_SHARE', name: 'Quota Share', description: 'Quota share contract.', categoryTags: ['Proportional'], isImplemented: false },
+    { code: 'SURPLUS', name: 'Surplus', description: 'Surplus contract.', categoryTags: ['Proportional'], isImplemented: false },
+    { code: 'NON_PROP', name: 'Non-Proportional', description: 'Non-proportional contract.', categoryTags: ['Non-Proportional'], isImplemented: false }
   ];
 
   beforeEach(async () => {
@@ -69,7 +69,7 @@ describe('ContractTypeSelectionComponent', () => {
       'Dismiss',
       expect.objectContaining({ duration: 3500 })
     );
-    expect(component.selectedTypeId()).toBeNull();
+    expect(component.selectedTypeCode()).toBeNull();
   });
 
   it('navigates to the Facultative form after selecting Facultative', () => {

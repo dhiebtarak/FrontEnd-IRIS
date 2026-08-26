@@ -6,6 +6,7 @@ import {
   CedentSearchResponse,
   ContractTypeReference,
   CurrencyReference,
+  DashboardSummary,
   FacultativeContractResponse,
   UpsertFacultativeContractRequest
 } from '../models/contract.model';
@@ -18,15 +19,25 @@ export class ContractsService {
 
   constructor(private readonly httpClient: HttpClient) {}
 
+  getDashboardSummary(): Observable<DashboardSummary> {
+    return this.httpClient.get<DashboardSummary>(`${this.baseUrl}/contracts/dashboard-summary`);
+  }
+
   getContractTypes(): Observable<ContractTypeReference[]> {
     return this.httpClient.get<unknown>(`${this.baseUrl}/reference-data/contract-types`).pipe(
-      map(payload => this.toArray(payload).map(item => this.mapContractType(item)))
+      map(payload => this.uniqueBy(
+        this.toArray(payload).map(item => this.mapContractType(item)),
+        type => type.code
+      ))
     );
   }
 
   getCurrencies(): Observable<CurrencyReference[]> {
     return this.httpClient.get<unknown>(`${this.baseUrl}/reference-data/currencies`).pipe(
-      map(payload => this.toArray(payload).map(item => this.mapCurrency(item)))
+      map(payload => this.uniqueBy(
+        this.toArray(payload).map(item => this.mapCurrency(item)),
+        currency => currency.id
+      ))
     );
   }
 
@@ -91,9 +102,8 @@ export class ContractsService {
           : [];
 
     return {
-      id: this.toNumber(record['id']) ?? this.toNumber(record['contractTypeId']) ?? 0,
-      code: this.toText(record['code'] ?? record['key'] ?? record['slug']),
-      name: this.toText(record['name'] ?? record['displayName']),
+      code: this.toText(record['code']).trim(),
+      name: this.toText(record['displayName'] ?? record['name']),
       description: this.toText(record['description']),
       categoryTags: rawTags,
       isImplemented: this.toBoolean(record['isImplemented'])
@@ -115,7 +125,10 @@ export class ContractsService {
 
   private mapCedentResponse(payload: unknown, page: number, pageSize: number): CedentSearchResponse {
     const record = this.toRecord(payload);
-    const items = this.toArray(payload).map(item => this.mapCedent(item));
+    const items = this.uniqueBy(
+      this.toArray(payload).map(item => this.mapCedent(item)),
+      cedent => cedent.id
+    );
 
     return {
       items,
@@ -173,6 +186,22 @@ export class ContractsService {
 
   private toRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  }
+
+  private uniqueBy<T>(items: T[], selectKey: (item: T) => string | number): T[] {
+    const seenKeys = new Set<string | number>();
+
+    return items.filter(item => {
+      const key = selectKey(item);
+      const isInvalidKey = typeof key === 'number' ? key <= 0 : key.trim().length === 0;
+
+      if (isInvalidKey || seenKeys.has(key)) {
+        return false;
+      }
+
+      seenKeys.add(key);
+      return true;
+    });
   }
 
   private toText(value: unknown): string {

@@ -1,0 +1,31 @@
+<div class="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl items-center px-4 py-10 md:px-8">
+  <section class="relative w-full overflow-hidden rounded-[32px] border border-iris-border/80 bg-white px-6 py-14 text-center shadow-[0_28px_70px_rgba(13,47,79,0.12)] md:px-12 md:py-20">
+    <div class="absolute -left-20 -top-24 h-64 w-64 rounded-full bg-iris-teal/8"></div>
+    <div class="absolute -bottom-28 -right-16 h-72 w-72 rounded-full border-[48px] border-iris-secondary-bg"></div>
+
+    <div class="relative">
+      <span class="mx-auto flex h-24 w-24 items-center justify-center rounded-[28px] bg-iris-navy text-iris-teal-extralight shadow-xl shadow-slate-300">
+        <svg class="h-12 w-12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 3 5 6v5c0 4.7 2.9 8.1 7 10 4.1-1.9 7-5.3 7-10V6l-7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M9 12h6M12 9v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+
+      <p class="mt-8 text-[11px] font-bold uppercase tracking-[0.3em] text-iris-teal">In Development</p>
+      <h1 class="mx-auto mt-3 max-w-3xl font-cambria text-4xl font-bold leading-tight text-iris-navy md:text-5xl">Claims Management Coming Soon</h1>
+      <p class="mx-auto mt-5 max-w-2xl text-sm leading-7 text-iris-slate md:text-base">
+        Claim declaration, documentation, and follow-up features are under development. This page intentionally makes no Claims API request during this iteration.
+      </p>
+
+      <a
+        [routerLink]="dashboardRoute"
+        class="mt-8 inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-6 py-3 text-sm font-bold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light focus:outline-none focus:ring-4 focus:ring-sky-100"
+      >
+        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="m11.5 5-5 5 5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Return to Dashboard
+      </a>
+    </div>
+  </section>
+</div>

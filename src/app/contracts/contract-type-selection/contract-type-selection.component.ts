@@ -18,7 +18,7 @@ export class ContractTypeSelectionComponent implements OnInit {
   readonly dashboardRoute = '/workspace/reassurance/front-officer';
   readonly facultativeRoute = '/workspace/reassurance/front-officer/contracts/new/facultative';
   readonly contractTypes = signal<ContractTypeReference[]>([]);
-  readonly selectedTypeId = signal<number | null>(null);
+  readonly selectedTypeCode = signal<string | null>(null);
   readonly isLoading = signal(true);
   readonly errorMessage = signal('');
 
@@ -33,7 +33,7 @@ export class ContractTypeSelectionComponent implements OnInit {
   }
 
   get selectedType(): ContractTypeReference | undefined {
-    return this.contractTypes().find(type => type.id === this.selectedTypeId());
+    return this.contractTypes().find(type => type.code === this.selectedTypeCode());
   }
 
   get canContinue(): boolean {
@@ -48,7 +48,7 @@ export class ContractTypeSelectionComponent implements OnInit {
     this.contractsService.getContractTypes().subscribe({
       next: types => {
         this.contractTypes.set(types);
-        this.selectedTypeId.set(null);
+        this.selectedTypeCode.set(null);
         this.isLoading.set(false);
       },
       error: (error: HttpErrorResponse) => {
@@ -68,7 +68,7 @@ export class ContractTypeSelectionComponent implements OnInit {
       return;
     }
 
-    this.selectedTypeId.set(type.id);
+    this.selectedTypeCode.set(type.code);
   }
 
   continue(): void {
