@@ -30,6 +30,64 @@ export interface CedentSearchResponse {
   totalPages: number;
 }
 
+export type ContractSortField =
+  | 'name'
+  | 'umr'
+  | 'cedentName'
+  | 'contractType'
+  | 'status'
+  | 'inceptionDate'
+  | 'expiryDate'
+  | 'grossPremium'
+  | 'createdAt'
+  | 'updatedAt';
+
+export type ContractSortDirection = 'asc' | 'desc';
+
+export interface ContractListFilters {
+  pageNumber: number;
+  pageSize: number;
+  search?: string;
+  contractType?: string;
+  status?: string;
+  counterpartyId?: number;
+  currencyId?: number;
+  inceptionFrom?: string;
+  inceptionTo?: string;
+  expiryFrom?: string;
+  expiryTo?: string;
+  sortBy: ContractSortField;
+  sortDirection: ContractSortDirection;
+}
+
+export interface ContractListItem {
+  idContract: number;
+  umr: string | null;
+  name: string;
+  cedentId: number;
+  cedentName: string;
+  contractType: string | null;
+  typeOfBusiness: string | null;
+  currencyId: number;
+  currencyCode: string;
+  status: string;
+  inceptionDate: string;
+  expiryDate: string;
+  grossPremium: number | null;
+  actionRequired: boolean;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface PagedContractResponse {
+  items: ContractListItem[];
+  pageNumber: number;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
 export interface WorkflowDistributionItem {
   status: string;
   count: number;

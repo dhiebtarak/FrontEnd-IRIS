@@ -4,10 +4,12 @@ import { map, Observable } from 'rxjs';
 import {
   CedentReference,
   CedentSearchResponse,
+  ContractListFilters,
   ContractTypeReference,
   CurrencyReference,
   DashboardSummary,
   FacultativeContractResponse,
+  PagedContractResponse,
   UpsertFacultativeContractRequest
 } from '../models/contract.model';
 
@@ -21,6 +23,26 @@ export class ContractsService {
 
   getDashboardSummary(): Observable<DashboardSummary> {
     return this.httpClient.get<DashboardSummary>(`${this.baseUrl}/contracts/dashboard-summary`);
+  }
+
+  getContracts(filters: ContractListFilters): Observable<PagedContractResponse> {
+    let params = new HttpParams()
+      .set('PageNumber', String(filters.pageNumber))
+      .set('PageSize', String(filters.pageSize))
+      .set('SortBy', filters.sortBy)
+      .set('SortDirection', filters.sortDirection);
+
+    params = this.setTextParam(params, 'Search', filters.search);
+    params = this.setTextParam(params, 'ContractType', filters.contractType);
+    params = this.setTextParam(params, 'Status', filters.status);
+    params = this.setPositiveNumberParam(params, 'CounterpartyId', filters.counterpartyId);
+    params = this.setPositiveNumberParam(params, 'CurrencyId', filters.currencyId);
+    params = this.setTextParam(params, 'InceptionFrom', filters.inceptionFrom);
+    params = this.setTextParam(params, 'InceptionTo', filters.inceptionTo);
+    params = this.setTextParam(params, 'ExpiryFrom', filters.expiryFrom);
+    params = this.setTextParam(params, 'ExpiryTo', filters.expiryTo);
+
+    return this.httpClient.get<PagedContractResponse>(`${this.baseUrl}/contracts`, { params });
   }
 
   getContractTypes(): Observable<ContractTypeReference[]> {
@@ -71,6 +93,15 @@ export class ContractsService {
     return this.httpClient.put<unknown>(`${this.baseUrl}/contracts/facultative/${contractId}`, request).pipe(
       map(payload => this.mapFacultativeContract(payload))
     );
+  }
+
+  private setTextParam(params: HttpParams, name: string, value: string | undefined): HttpParams {
+    const normalizedValue = value?.trim();
+    return normalizedValue ? params.set(name, normalizedValue) : params;
+  }
+
+  private setPositiveNumberParam(params: HttpParams, name: string, value: number | undefined): HttpParams {
+    return value != null && value > 0 ? params.set(name, String(value)) : params;
   }
 
   private toArray(payload: unknown): unknown[] {

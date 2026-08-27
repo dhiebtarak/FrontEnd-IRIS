@@ -1,26 +1,67 @@
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { CurrencyPipe, DatePipe, NgClass } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { debounceTime, forkJoin } from 'rxjs';
-import { CedentReference, ContractTypeReference, CurrencyReference } from '../../shared/models/contract.model';
+import { ActivatedRoute, ParamMap, Router, RouterLink } from '@angular/router';
+import { Subscription, debounceTime, distinctUntilChanged, forkJoin, merge } from 'rxjs';
+import {
+  CedentReference,
+  ContractListFilters,
+  ContractListItem,
+  ContractSortDirection,
+  ContractSortField,
+  ContractTypeReference,
+  CurrencyReference
+} from '../../shared/models/contract.model';
 import { ContractsService } from '../../shared/services/contracts.service';
+
+type ContractListState = 'loading' | 'loaded' | 'error';
 
 @Component({
   selector: 'app-contracts-list',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [CurrencyPipe, DatePipe, NgClass, ReactiveFormsModule, RouterLink],
   templateUrl: './contracts-list.component.html',
   styles: ``
 })
 export class ContractsListComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
+  private listRequest?: Subscription;
+
+  readonly contracts = signal<ContractListItem[]>([]);
   readonly contractTypes = signal<ContractTypeReference[]>([]);
   readonly currencies = signal<CurrencyReference[]>([]);
   readonly cedents = signal<CedentReference[]>([]);
+  readonly listState = signal<ContractListState>('loading');
+  readonly errorMessage = signal('');
   readonly isLoadingReferences = signal(true);
   readonly referenceError = signal('');
+  readonly pageNumber = signal(1);
+  readonly pageSize = signal(20);
+  readonly totalCount = signal(0);
+  readonly totalPages = signal(0);
+  readonly sortBy = signal<ContractSortField>('updatedAt');
+  readonly sortDirection = signal<ContractSortDirection>('desc');
+  readonly startItem = computed(() => this.totalCount() === 0 ? 0 : (this.pageNumber() - 1) * this.pageSize() + 1);
+  readonly endItem = computed(() => Math.min(this.pageNumber() * this.pageSize(), this.totalCount()));
+  readonly isLoading = computed(() => this.listState() === 'loading');
   readonly createContractRoute = '/workspace/reassurance/front-officer/contracts/new/type';
+  readonly facultativeContractRoute = '/workspace/reassurance/front-officer/contracts/new/facultative';
+  readonly pageSizeOptions = [10, 20, 50, 100];
+  readonly contractStatuses = ['Draft'];
+  readonly sortOptions: ReadonlyArray<{ value: ContractSortField; label: string }> = [
+    { value: 'updatedAt', label: 'Last update' },
+    { value: 'createdAt', label: 'Created date' },
+    { value: 'name', label: 'Contract name' },
+    { value: 'umr', label: 'UMR' },
+    { value: 'cedentName', label: 'Cedent' },
+    { value: 'contractType', label: 'Contract type' },
+    { value: 'status', label: 'Status' },
+    { value: 'inceptionDate', label: 'Inception date' },
+    { value: 'expiryDate', label: 'Expiry date' },
+    { value: 'grossPremium', label: 'Gross premium' }
+  ];
 
   readonly filters = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
@@ -41,12 +82,40 @@ export class ContractsListComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.hydrateFiltersFromUrl();
-    this.loadReferenceData();
+    this.bindFilterChanges();
 
-    this.filters.valueChanges
-      .pipe(debounceTime(350), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.syncFiltersToUrl());
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(params => {
+        this.hydrateStateFromUrl(params);
+        this.loadContracts();
+      });
+
+    this.loadReferenceData();
+  }
+
+  loadContracts(): void {
+    this.listRequest?.unsubscribe();
+    this.listState.set('loading');
+    this.errorMessage.set('');
+    this.contracts.set([]);
+
+    this.listRequest = this.contractsService.getContracts(this.currentFilters())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: response => {
+          this.contracts.set(response.items);
+          this.pageNumber.set(response.pageNumber);
+          this.pageSize.set(response.pageSize);
+          this.totalCount.set(response.totalCount);
+          this.totalPages.set(response.totalPages);
+          this.listState.set('loaded');
+        },
+        error: (error: HttpErrorResponse) => {
+          this.errorMessage.set(this.getListErrorMessage(error));
+          this.listState.set('error');
+        }
+      });
   }
 
   loadReferenceData(): void {
@@ -84,38 +153,213 @@ export class ContractsListComponent implements OnInit {
       inceptionTo: '',
       expiryFrom: '',
       expiryTo: ''
-    });
-  }
-
-  private hydrateFiltersFromUrl(): void {
-    const queryParams = this.route.snapshot.queryParamMap;
-
-    this.filters.setValue(
-      {
-        search: queryParams.get('search') ?? '',
-        contractType: queryParams.get('contractType') ?? '',
-        status: queryParams.get('status') ?? '',
-        counterpartyId: queryParams.get('counterpartyId') ?? '',
-        currencyId: queryParams.get('currencyId') ?? '',
-        inceptionFrom: queryParams.get('inceptionFrom') ?? '',
-        inceptionTo: queryParams.get('inceptionTo') ?? '',
-        expiryFrom: queryParams.get('expiryFrom') ?? '',
-        expiryTo: queryParams.get('expiryTo') ?? ''
-      },
-      { emitEvent: false }
-    );
-  }
-
-  private syncFiltersToUrl(): void {
-    const value = this.filters.getRawValue();
-    const queryParams = Object.fromEntries(
-      Object.entries(value).map(([key, rawValue]) => [key, rawValue.trim() || null])
-    );
+    }, { emitEvent: false });
 
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams,
+      queryParams: {
+        search: null,
+        contractType: null,
+        status: null,
+        counterpartyId: null,
+        currencyId: null,
+        inceptionFrom: null,
+        inceptionTo: null,
+        expiryFrom: null,
+        expiryTo: null,
+        pageNumber: 1,
+        pageSize: 20,
+        sortBy: 'updatedAt',
+        sortDirection: 'desc'
+      },
+      queryParamsHandling: 'merge',
       replaceUrl: true
     });
+  }
+
+  goToPage(page: number): void {
+    if (page < 1 || page > this.totalPages() || page === this.pageNumber()) {
+      return;
+    }
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { pageNumber: page },
+      queryParamsHandling: 'merge'
+    });
+  }
+
+  changePageSize(event: Event): void {
+    const pageSize = Number((event.target as HTMLSelectElement).value);
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { pageNumber: 1, pageSize },
+      queryParamsHandling: 'merge'
+    });
+  }
+
+  changeSort(event: Event): void {
+    const sortBy = (event.target as HTMLSelectElement).value as ContractSortField;
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { pageNumber: 1, sortBy },
+      queryParamsHandling: 'merge'
+    });
+  }
+
+  toggleSortDirection(): void {
+    const sortDirection: ContractSortDirection = this.sortDirection() === 'asc' ? 'desc' : 'asc';
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { pageNumber: 1, sortDirection },
+      queryParamsHandling: 'merge'
+    });
+  }
+
+  isFacultative(contract: ContractListItem): boolean {
+    return contract.contractType?.toLowerCase() === 'facultative';
+  }
+
+  getStatusClasses(status: string): string {
+    const normalizedStatus = status.trim().toLowerCase();
+
+    if (normalizedStatus === 'draft') {
+      return 'border-amber-200 bg-amber-50 text-amber-800';
+    }
+
+    if (normalizedStatus.includes('bound') || normalizedStatus.includes('active')) {
+      return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+    }
+
+    if (normalizedStatus.includes('review')) {
+      return 'border-sky-200 bg-sky-50 text-sky-800';
+    }
+
+    return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+
+  private bindFilterChanges(): void {
+    this.filters.controls.search.valueChanges
+      .pipe(
+        debounceTime(350),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.applyFilters());
+
+    merge(
+      this.filters.controls.contractType.valueChanges,
+      this.filters.controls.status.valueChanges,
+      this.filters.controls.counterpartyId.valueChanges,
+      this.filters.controls.currencyId.valueChanges,
+      this.filters.controls.inceptionFrom.valueChanges,
+      this.filters.controls.inceptionTo.valueChanges,
+      this.filters.controls.expiryFrom.valueChanges,
+      this.filters.controls.expiryTo.valueChanges
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.applyFilters());
+  }
+
+  private applyFilters(): void {
+    const value = this.filters.getRawValue();
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        search: this.toQueryValue(value.search),
+        contractType: this.toQueryValue(value.contractType),
+        status: this.toQueryValue(value.status),
+        counterpartyId: this.toQueryValue(value.counterpartyId),
+        currencyId: this.toQueryValue(value.currencyId),
+        inceptionFrom: this.toQueryValue(value.inceptionFrom),
+        inceptionTo: this.toQueryValue(value.inceptionTo),
+        expiryFrom: this.toQueryValue(value.expiryFrom),
+        expiryTo: this.toQueryValue(value.expiryTo),
+        pageNumber: 1
+      },
+      queryParamsHandling: 'merge',
+      replaceUrl: true
+    });
+  }
+
+  private hydrateStateFromUrl(params: ParamMap): void {
+    this.filters.setValue({
+      search: params.get('search') ?? '',
+      contractType: params.get('contractType') ?? '',
+      status: params.get('status') ?? '',
+      counterpartyId: params.get('counterpartyId') ?? '',
+      currencyId: params.get('currencyId') ?? '',
+      inceptionFrom: params.get('inceptionFrom') ?? '',
+      inceptionTo: params.get('inceptionTo') ?? '',
+      expiryFrom: params.get('expiryFrom') ?? '',
+      expiryTo: params.get('expiryTo') ?? ''
+    }, { emitEvent: false });
+
+    this.pageNumber.set(this.parsePositiveInteger(params.get('pageNumber'), 1));
+    this.pageSize.set(Math.min(this.parsePositiveInteger(params.get('pageSize'), 20), 100));
+    this.sortBy.set(this.parseSortField(params.get('sortBy')));
+    this.sortDirection.set(params.get('sortDirection')?.toLowerCase() === 'asc' ? 'asc' : 'desc');
+  }
+
+  private currentFilters(): ContractListFilters {
+    const value = this.filters.getRawValue();
+
+    return {
+      pageNumber: this.pageNumber(),
+      pageSize: this.pageSize(),
+      search: value.search,
+      contractType: value.contractType,
+      status: value.status,
+      counterpartyId: this.parseOptionalPositiveInteger(value.counterpartyId),
+      currencyId: this.parseOptionalPositiveInteger(value.currencyId),
+      inceptionFrom: value.inceptionFrom,
+      inceptionTo: value.inceptionTo,
+      expiryFrom: value.expiryFrom,
+      expiryTo: value.expiryTo,
+      sortBy: this.sortBy(),
+      sortDirection: this.sortDirection()
+    };
+  }
+
+  private parseSortField(value: string | null): ContractSortField {
+    return this.sortOptions.some(option => option.value === value) ? value as ContractSortField : 'updatedAt';
+  }
+
+  private parsePositiveInteger(value: string | null, fallback: number): number {
+    const parsedValue = Number(value);
+    return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : fallback;
+  }
+
+  private parseOptionalPositiveInteger(value: string): number | undefined {
+    const parsedValue = Number(value);
+    return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : undefined;
+  }
+
+  private toQueryValue(value: string): string | null {
+    return value.trim() || null;
+  }
+
+  private getListErrorMessage(error: HttpErrorResponse): string {
+    if (error.status === 400) {
+      return 'The contract filters were rejected by the backend.';
+    }
+
+    if (error.status === 401 || error.status === 403) {
+      return 'Your session is not authorized to load the contract portfolio.';
+    }
+
+    if (error.status === 404) {
+      return 'The contract portfolio endpoint is not available.';
+    }
+
+    if (error.status === 0) {
+      return 'Unable to reach the contract service.';
+    }
+
+    return 'Contracts could not be loaded right now.';
   }
 }

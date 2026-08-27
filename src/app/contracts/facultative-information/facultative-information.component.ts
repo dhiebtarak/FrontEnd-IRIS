@@ -12,9 +12,9 @@ import {
   ValidatorFn,
   Validators
 } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { catchError, debounceTime, distinctUntilChanged, finalize, map, merge, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, finalize, forkJoin, map, merge, of, startWith, Subject, switchMap, tap } from 'rxjs';
 import { ContractCreationStepperComponent } from '../contract-creation-stepper/contract-creation-stepper.component';
 import {
   CedentReference,
@@ -105,6 +105,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private readonly fb = inject(FormBuilder);
   private readonly contractsService = inject(ContractsService);
   private readonly snackBar = inject(MatSnackBar);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   readonly typeRoute = '/workspace/reassurance/front-officer/contracts/new/type';
   readonly conditionsRoute = '/workspace/reassurance/front-officer/contracts/new/conditions';
@@ -440,27 +441,76 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private loadCurrencies(): void {
     this.isInitialLoading.set(true);
     this.isCurrenciesLoading.set(true);
+    const routeContractId = Number(this.route.snapshot.queryParamMap.get('contractId'));
+    const contractId = Number.isInteger(routeContractId) && routeContractId > 0 ? routeContractId : null;
 
-    this.contractsService.getCurrencies().pipe(
+    forkJoin({
+      currencies: this.contractsService.getCurrencies(),
+      contract: contractId == null ? of(null) : this.contractsService.getFacultativeContract(contractId)
+    }).pipe(
       finalize(() => {
         this.isInitialLoading.set(false);
         this.isCurrenciesLoading.set(false);
       })
     ).subscribe({
-      next: currencies => {
+      next: ({ currencies, contract }) => {
         this.currencies.set(currencies);
         const defaultCurrency = currencies.find(currency => currency.isDefault) ?? currencies[0];
 
-        if (defaultCurrency && this.form.controls.currencyId.value == null) {
+        if (contract) {
+          this.applyLoadedContract(contract);
+        } else if (defaultCurrency && this.form.controls.currencyId.value == null) {
           this.form.controls.currencyId.setValue(defaultCurrency.id);
         }
 
         this.lastSavedSnapshot = this.createSnapshot();
+        this.form.markAsPristine();
       },
       error: () => {
-        this.generalError.set('Currencies could not be loaded. Refresh the page and try again.');
+        this.generalError.set(contractId == null
+          ? 'Currencies could not be loaded. Refresh the page and try again.'
+          : 'Contract details could not be loaded. Return to the portfolio and try again.');
       }
     });
+  }
+
+  private applyLoadedContract(contract: FacultativeContractResponse): void {
+    this.contractId.set(contract.contractId);
+    this.backendNetPremium.set(contract.netPremiumCedent);
+    this.form.patchValue({
+      umr: contract.umr ?? '',
+      name: contract.name,
+      counterpartyId: contract.counterpartyId,
+      currencyId: contract.currencyId,
+      receptionDate: contract.receptionDate ?? '',
+      inceptionDate: contract.inceptionDate,
+      expiryDate: contract.expiryDate,
+      writtenSharePct: contract.writtenSharePct,
+      signedSharePct: contract.signedSharePct,
+      fees: contract.fees,
+      isHighPriority: contract.isHighPriority,
+      sumInsured: contract.sumInsured,
+      deductible: contract.deductible,
+      premiumRate: contract.premiumRate,
+      grossPremium: contract.grossPremium,
+      cedentCommissionPct: contract.cedentCommissionPct,
+      cedentPremiumReference: contract.cedentPremiumReference ?? '',
+      isFronting: contract.isFronting,
+      frontingReference: contract.frontingReference ?? '',
+      memoText: contract.memoText ?? ''
+    });
+
+    this.selectedCedentName = contract.counterpartyName?.trim() ?? '';
+    this.cedentSearchControl.setValue(this.selectedCedentName, { emitEvent: false });
+
+    if (contract.counterpartyId > 0 && this.selectedCedentName) {
+      this.cedentResults.set([{
+        id: contract.counterpartyId,
+        name: this.selectedCedentName,
+        country: null,
+        city: null
+      }]);
+    }
   }
 
   private async persist(mode: 'draft' | 'continue'): Promise<void> {

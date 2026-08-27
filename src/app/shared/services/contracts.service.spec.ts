@@ -1,7 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { DashboardSummary } from '../models/contract.model';
+import { ContractListFilters, DashboardSummary, PagedContractResponse } from '../models/contract.model';
 import { authInterceptor } from '../interceptors/auth.interceptor';
 import { ContractsService } from './contracts.service';
 
@@ -61,6 +61,108 @@ describe('ContractsService', () => {
 
     expect(result).toEqual(expected);
     expect(result?.recentContracts[0].umr).toBe('B1235FAC2026-X');
+  });
+
+  it('requests the first contract page with backend defaults and JWT authorization', () => {
+    const filters: ContractListFilters = {
+      pageNumber: 1,
+      pageSize: 20,
+      sortBy: 'updatedAt',
+      sortDirection: 'desc'
+    };
+    const expected: PagedContractResponse = {
+      items: [],
+      pageNumber: 1,
+      page: 1,
+      pageSize: 20,
+      totalCount: 0,
+      totalPages: 0
+    };
+    let result: PagedContractResponse | undefined;
+
+    service.getContracts(filters).subscribe(response => {
+      result = response;
+    });
+
+    const request = httpTesting.expectOne(
+      'http://localhost:5151/api/contracts?PageNumber=1&PageSize=20&SortBy=updatedAt&SortDirection=desc'
+    );
+    expect(request.request.method).toBe('GET');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
+    request.flush(expected);
+
+    expect(result).toEqual(expected);
+  });
+
+  it('sends every populated contract filter using the exact Swagger parameter name', () => {
+    service.getContracts({
+      pageNumber: 2,
+      pageSize: 50,
+      search: '  STAR  ',
+      contractType: 'FACULTATIVE',
+      status: 'Draft',
+      counterpartyId: 2,
+      currencyId: 3,
+      inceptionFrom: '2026-01-01',
+      inceptionTo: '2026-12-31',
+      expiryFrom: '2027-01-01',
+      expiryTo: '2027-12-31',
+      sortBy: 'name',
+      sortDirection: 'asc'
+    }).subscribe();
+
+    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/contracts');
+    expect(request.request.params.keys().sort()).toEqual([
+      'ContractType',
+      'CounterpartyId',
+      'CurrencyId',
+      'ExpiryFrom',
+      'ExpiryTo',
+      'InceptionFrom',
+      'InceptionTo',
+      'PageNumber',
+      'PageSize',
+      'Search',
+      'SortBy',
+      'SortDirection',
+      'Status'
+    ]);
+    expect(request.request.params.get('Search')).toBe('STAR');
+    expect(request.request.params.get('ContractType')).toBe('FACULTATIVE');
+    expect(request.request.params.get('Status')).toBe('Draft');
+    expect(request.request.params.get('CounterpartyId')).toBe('2');
+    expect(request.request.params.get('CurrencyId')).toBe('3');
+    expect(request.request.params.get('InceptionFrom')).toBe('2026-01-01');
+    expect(request.request.params.get('InceptionTo')).toBe('2026-12-31');
+    expect(request.request.params.get('ExpiryFrom')).toBe('2027-01-01');
+    expect(request.request.params.get('ExpiryTo')).toBe('2027-12-31');
+    expect(request.request.params.get('PageNumber')).toBe('2');
+    expect(request.request.params.get('PageSize')).toBe('50');
+    expect(request.request.params.get('SortBy')).toBe('name');
+    expect(request.request.params.get('SortDirection')).toBe('asc');
+    request.flush({ items: [], pageNumber: 2, page: 2, pageSize: 50, totalCount: 0, totalPages: 0 });
+  });
+
+  it('omits blank and invalid optional contract filters', () => {
+    service.getContracts({
+      pageNumber: 1,
+      pageSize: 20,
+      search: '   ',
+      contractType: '',
+      status: '',
+      counterpartyId: 0,
+      currencyId: -1,
+      inceptionFrom: '',
+      inceptionTo: '',
+      expiryFrom: '',
+      expiryTo: '',
+      sortBy: 'updatedAt',
+      sortDirection: 'desc'
+    }).subscribe();
+
+    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/contracts');
+    expect(request.request.params.keys()).toEqual(['PageNumber', 'PageSize', 'SortBy', 'SortDirection']);
+    request.flush({ items: [], pageNumber: 1, page: 1, pageSize: 20, totalCount: 0, totalPages: 0 });
   });
 
   it('uses the backend contract-type code as identity without inventing a numeric ID', () => {

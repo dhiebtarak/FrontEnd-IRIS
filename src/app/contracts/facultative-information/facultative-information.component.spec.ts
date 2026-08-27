@@ -1,6 +1,6 @@
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router, convertToParamMap } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideHttpClient } from '@angular/common/http';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -289,6 +289,94 @@ describe('FacultativeInformationComponent', () => {
     expect(component.currentStatus).toBe('Draft');
     expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/front-officer/contracts/new/conditions'], {
       queryParams: { contractId: 123 }
+    });
+  });
+});
+
+describe('FacultativeInformationComponent existing contract', () => {
+  let fixture: ComponentFixture<FacultativeInformationComponent>;
+  let httpMock: HttpTestingController;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [FacultativeInformationComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { queryParamMap: convertToParamMap({ contractId: '2' }) } }
+        },
+        { provide: MatSnackBar, useValue: { open: vi.fn() } }
+      ]
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(FacultativeInformationComponent);
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  it('loads the selected draft into the existing form and keeps subsequent saves on PUT', () => {
+    httpMock.expectOne('http://localhost:5151/api/reference-data/currencies').flush([
+      { id: 1, code: 'TND', name: 'Tunisian Dinar', symbol: 'DT', decimalPlaces: 3, isDefault: true }
+    ]);
+    httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2').flush({
+      contractId: 2,
+      status: 'Draft',
+      netPremiumCedent: 112500,
+      umr: 'B1235FAC2026-X',
+      name: 'Property Facultative Contract STAR',
+      counterpartyId: 2,
+      counterpartyName: 'STAR Assurances',
+      currencyId: 1,
+      currencyCode: 'TND',
+      receptionDate: '2026-08-20',
+      inceptionDate: '2026-09-20',
+      expiryDate: '2027-08-10',
+      writtenSharePct: 100,
+      signedSharePct: 100,
+      fees: null,
+      isHighPriority: false,
+      sumInsured: 1000000,
+      deductible: null,
+      premiumRate: null,
+      grossPremium: 125000,
+      cedentCommissionPct: 10,
+      cedentPremiumReference: null,
+      isFronting: false,
+      frontingReference: null,
+      memoText: null
+    });
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+    expect(component.contractId()).toBe(2);
+    expect(component.form.controls.umr.value).toBe('B1235FAC2026-X');
+    expect(component.form.controls.name.value).toBe('Property Facultative Contract STAR');
+    expect(component.form.controls.counterpartyId.value).toBe(2);
+    expect(component.cedentSearchControl.value).toBe('STAR Assurances');
+    expect(component.form.controls.currencyId.value).toBe(1);
+
+    component.saveDraft();
+    const update = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2');
+    expect(update.request.method).toBe('PUT');
+    update.flush({
+      contractId: 2,
+      status: 'Draft',
+      netPremiumCedent: 112500,
+      name: 'Property Facultative Contract STAR',
+      counterpartyId: 2,
+      currencyId: 1,
+      inceptionDate: '2026-09-20',
+      expiryDate: '2027-08-10',
+      isHighPriority: false,
+      isFronting: false
     });
   });
 });
