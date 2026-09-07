@@ -14,6 +14,7 @@ import {
   ContractTypeReference,
   CurrencyReference
 } from '../../shared/models/contract.model';
+import { getContractStatusClasses, getContractStatusDisplay, normalizeContractStatus } from '../../shared/models/contract-status.util';
 import { ContractsService } from '../../shared/services/contracts.service';
 
 type ContractListState = 'loading' | 'loaded' | 'error';
@@ -49,7 +50,7 @@ export class ContractsListComponent implements OnInit {
   readonly createContractRoute = '/workspace/reassurance/front-officer/contracts/new/type';
   readonly overviewRoute = '/workspace/reassurance/front-officer/contracts/new/overview';
   readonly pageSizeOptions = [10, 20, 50, 100];
-  readonly contractStatuses = ['Draft'];
+  readonly contractStatuses = ['Draft', 'ReadyForPlacement', 'PlacementInProgress', 'Bound', 'Expired', 'Cancelled'];
   readonly sortOptions: ReadonlyArray<{ value: ContractSortField; label: string }> = [
     { value: 'updatedAt', label: 'Last update' },
     { value: 'createdAt', label: 'Created date' },
@@ -227,11 +228,11 @@ export class ContractsListComponent implements OnInit {
   }
 
   isReadyForPlacement(contract: ContractListItem): boolean {
-    return this.normalizeStatus(contract.status) === 'ready for placement';
+    return normalizeContractStatus(contract.status) === 'readyforplacement';
   }
 
   getDisplayStatus(contract: ContractListItem): string {
-    return contract.status || 'Not provided';
+    return getContractStatusDisplay(contract.status);
   }
 
   getDetailsRoute(contract: ContractListItem): string {
@@ -243,29 +244,7 @@ export class ContractsListComponent implements OnInit {
   }
 
   getStatusClasses(status: string): string {
-    const normalizedStatus = this.normalizeStatus(status);
-
-    if (normalizedStatus === 'draft') {
-      return 'border-amber-200 bg-amber-50 text-amber-800';
-    }
-
-    if (normalizedStatus === 'ready for placement') {
-      return 'border-blue-200 bg-blue-50 text-blue-800';
-    }
-
-    if (normalizedStatus.includes('bound') || normalizedStatus.includes('active')) {
-      return 'border-emerald-200 bg-emerald-50 text-emerald-800';
-    }
-
-    if (normalizedStatus.includes('review')) {
-      return 'border-sky-200 bg-sky-50 text-sky-800';
-    }
-
-    return 'border-slate-200 bg-slate-50 text-slate-700';
-  }
-
-  private normalizeStatus(status: string): string {
-    return status.trim().toLowerCase();
+    return getContractStatusClasses(status);
   }
 
   private bindFilterChanges(): void {

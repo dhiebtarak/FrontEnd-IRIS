@@ -12,6 +12,7 @@ import {
   FacultativeContractResponse,
   UpdateContractPanelRequest
 } from '../../shared/models/contract.model';
+import { getContractStatusClasses, getContractStatusDisplay, normalizeContractStatus } from '../../shared/models/contract-status.util';
 import { CounterpartyListItem } from '../../shared/models/counterparty.model';
 import { CounterpartiesService } from '../../shared/services/counterparties.service';
 import { ContractsService } from '../../shared/services/contracts.service';
@@ -66,10 +67,15 @@ export class ContractOverviewComponent implements OnInit {
       umr: contract?.umr || 'UMR not provided',
       contractType: contract?.contractType || 'Facultative',
       status: contract?.status || 'Not provided',
+      statusDisplay: getContractStatusDisplay(contract?.status),
+      statusClasses: getContractStatusClasses(contract?.status),
       period: contract ? `${this.formatDate(contract.inceptionDate)} to ${this.formatDate(contract.expiryDate)}` : 'Not provided',
       cedent: contract?.counterpartyName || (contract ? `Counterparty #${contract.counterpartyId}` : 'Not provided')
     };
   });
+  readonly hasConfirmedPanel = computed(() => this.panels().some(panel => this.isPanelConfirmed(panel)));
+  readonly startBindingBlockedMessage = 'Confirm at least one reinsurer before starting the binding phase.';
+  readonly isStartBindingDisabled = computed(() => this.isStartingBinding() || !this.hasConfirmedPanel());
 
   readonly contractInformationRows = computed(() => {
     const contract = this.contract();
@@ -89,7 +95,7 @@ export class ContractOverviewComponent implements OnInit {
       { label: 'Inception date', value: this.formatDate(contract.inceptionDate) },
       { label: 'Expiry date', value: this.formatDate(contract.expiryDate) },
       { label: 'Contract period', value: `${this.formatDate(contract.inceptionDate)} to ${this.formatDate(contract.expiryDate)}` },
-      { label: 'Status', value: contract.status || 'Not provided' }
+      { label: 'Status', value: getContractStatusDisplay(contract.status) }
     ];
   });
 
@@ -227,6 +233,15 @@ export class ContractOverviewComponent implements OnInit {
   startBindingPhase(): void {
     const contractId = this.contractId();
 
+    if (!this.canStartBinding()) {
+      return;
+    }
+
+    if (!this.hasConfirmedPanel()) {
+      this.slipMessage.set(this.startBindingBlockedMessage);
+      return;
+    }
+
     if (contractId == null) {
       this.slipMessage.set('Contract draft ID is missing. Return to the Information step and save the draft first.');
       return;
@@ -243,13 +258,13 @@ export class ContractOverviewComponent implements OnInit {
         this.isStartingBinding.set(false);
       })
     ).subscribe({
-      next: () => {
+      next: contractOverview => {
         this.snackBar.open('Binding phase started.', 'Dismiss', {
           duration: 3000,
           horizontalPosition: 'end',
           verticalPosition: 'top'
         });
-        this.loadContract();
+        this.applyContractOverview(contractOverview);
       },
       error: (error: HttpErrorResponse) => {
         this.slipMessage.set(this.getStartBindingErrorMessage(error));
@@ -258,6 +273,10 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   openReinsurerForm(): void {
+    if (!this.canAddReinsurer()) {
+      return;
+    }
+
     this.panelFormMode.set('create');
     this.editingPanelId.set(null);
     this.selectedReinsurerId.set(null);
@@ -285,6 +304,10 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   openEditPlacement(panel: ContractPanelItem): void {
+    if (!this.canEditPlacements()) {
+      return;
+    }
+
     this.panelFormMode.set('edit');
     this.editingPanelId.set(panel.idPanel);
     this.selectedReinsurerId.set(panel.idCounterparty > 0 ? panel.idCounterparty : null);
@@ -392,15 +415,16 @@ export class ContractOverviewComponent implements OnInit {
     request.pipe(
       finalize(() => this.isSubmittingPanel.set(false))
     ).subscribe({
-      next: panel => {
+      next: contractOverview => {
         this.isReinsurerFormOpen.set(false);
-        if (panel.idPanel > 0) {
+        const panel = this.findPanelAfterRefresh(contractOverview.panels ?? [], isEditing ? this.activePanel() ?? undefined : undefined);
+        if (panel && panel.idPanel > 0) {
           this.activePanelId.set(panel.idPanel);
         }
         this.showMessage(this.panelFormMode() === 'edit'
           ? 'Reinsurer placement updated.'
           : 'Reinsurer added to the placement panel.');
-        this.loadPanels(panel);
+        this.applyContractOverview(contractOverview);
       },
       error: (error: HttpErrorResponse) => {
         this.reinsurerLookupError.set(this.getPanelSaveErrorMessage(error));
@@ -419,7 +443,7 @@ export class ContractOverviewComponent implements OnInit {
   confirmReinsurer(panel: ContractPanelItem): void {
     const contractId = this.contractId();
 
-    if (contractId == null || panel.idPanel <= 0 || this.isPanelConfirmed(panel)) {
+    if (contractId == null || panel.idPanel <= 0 || this.isPanelConfirmed(panel) || !this.canEditPlacements()) {
       return;
     }
 
@@ -443,6 +467,42 @@ export class ContractOverviewComponent implements OnInit {
 
   isEditMode(): boolean {
     return this.panelFormMode() === 'edit';
+  }
+
+  canModifyContract(): boolean {
+    return this.canUseAction(['ModifyContract', 'UpdateContract', 'EditContract', 'Modify']);
+  }
+
+  canAddReinsurer(): boolean {
+    return this.canUseAction(['AddReinsurer', 'AddPlacement', 'CreatePanel', 'AddContractPanel']);
+  }
+
+  canStartBinding(): boolean {
+    return this.canUseAction(['StartBinding', 'StartBindingPhase']);
+  }
+
+  canCancelContract(): boolean {
+    return this.canUseAction(['CancelContract', 'Cancel']);
+  }
+
+  canEditPlacements(): boolean {
+    return this.canUseAction(['EditPlacement', 'UpdatePlacement', 'EditPanel', 'UpdatePanel']);
+  }
+
+  cancelContract(): void {
+    if (!this.canCancelContract()) {
+      return;
+    }
+
+    this.slipMessage.set('Contract cancellation is not available from the current API contract.');
+  }
+
+  getDisplayStatus(status: string | null | undefined): string {
+    return getContractStatusDisplay(status);
+  }
+
+  getStatusClasses(status: string | null | undefined): string {
+    return getContractStatusClasses(status);
   }
 
   getPanelStatusClasses(panel: ContractPanelItem): string {
@@ -586,6 +646,13 @@ export class ContractOverviewComponent implements OnInit {
     });
   }
 
+  private applyContractOverview(contractOverview: FacultativeContractResponse): void {
+    this.contract.set(contractOverview);
+    this.loadedContractId.set(this.getPositiveId(contractOverview.contractId) ?? this.loadedContractId());
+    this.contractPanels.set(contractOverview.panels ?? []);
+    this.ensureActivePanelExists();
+  }
+
   private buildCreatePanelRequest(): CreateContractPanelRequest {
     const raw = this.panelForm.getRawValue();
 
@@ -685,7 +752,7 @@ export class ContractOverviewComponent implements OnInit {
 
   private findPanelAfterRefresh(panels: ContractPanelItem[], preferredPanel: ContractPanelItem | undefined): ContractPanelItem | null {
     if (!preferredPanel) {
-      return this.activePanel();
+      return this.activePanel() ?? panels.at(-1) ?? null;
     }
 
     if (preferredPanel.idPanel > 0) {
@@ -697,6 +764,50 @@ export class ContractOverviewComponent implements OnInit {
     }
 
     return panels.find(panel => panel.idCounterparty === preferredPanel.idCounterparty) ?? panels.at(-1) ?? null;
+  }
+
+  private canUseAction(aliases: string[]): boolean {
+    const contract = this.contract();
+
+    if (!contract) {
+      return false;
+    }
+
+    const status = normalizeContractStatus(contract.status);
+
+    if (status === 'bound' || status === 'expired' || status === 'cancelled') {
+      return false;
+    }
+
+    if (contract.allowedActions.length > 0) {
+      const normalizedAliases = new Set(aliases.map(action => this.normalizeAction(action)));
+      return contract.allowedActions.some(action => normalizedAliases.has(this.normalizeAction(action)));
+    }
+
+    return this.canUseFallbackAction(status, aliases);
+  }
+
+  private canUseFallbackAction(status: string, aliases: string[]): boolean {
+    const normalizedAliases = aliases.map(action => this.normalizeAction(action));
+    const wants = (action: string) => normalizedAliases.includes(action);
+
+    if (status === 'draft') {
+      return wants('modifycontract') || wants('updatecontract') || wants('editcontract') || wants('modify') || wants('cancelcontract') || wants('cancel');
+    }
+
+    if (status === 'readyforplacement') {
+      return !normalizedAliases.some(action => action === 'startbinding' || action === 'startbindingphase' || action === 'editplacement' || action === 'updateplacement' || action === 'editpanel' || action === 'updatepanel');
+    }
+
+    if (status === 'placementinprogress') {
+      return true;
+    }
+
+    return false;
+  }
+
+  private normalizeAction(action: string): string {
+    return action.trim().replace(/[\s_-]+/g, '').toLowerCase();
   }
 
   private getLoadErrorMessage(error: HttpErrorResponse): string {

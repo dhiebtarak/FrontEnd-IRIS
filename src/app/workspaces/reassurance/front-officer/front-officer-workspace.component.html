@@ -100,7 +100,7 @@
               <div>
                 <div class="flex items-end justify-between gap-4">
                   <div>
-                    <p class="font-cambria text-lg font-bold text-iris-navy">{{ item.status }}</p>
+                    <p class="font-cambria text-lg font-bold text-iris-navy">{{ getDisplayStatus(item.status) }}</p>
                     <p class="mt-1 text-xs text-iris-slate">{{ item.count }} {{ item.count === 1 ? 'contract' : 'contracts' }}</p>
                   </div>
                   <p class="text-sm font-bold text-iris-teal">{{ item.percentage | number:'1.0-2' }}%</p>
@@ -152,7 +152,7 @@
                     <td class="px-5 py-4 font-cambria font-bold text-iris-navy">{{ contract.name }}</td>
                     <td class="px-5 py-4 text-iris-slate">{{ contract.cedentName }}</td>
                     <td class="px-5 py-4 text-iris-slate">{{ contract.contractType }}</td>
-                    <td class="px-5 py-4"><span class="rounded-full bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy ring-1 ring-sky-200">{{ contract.status }}</span></td>
+                    <td class="px-5 py-4"><span class="rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(contract.status)">{{ getDisplayStatus(contract.status) }}</span></td>
                     <td class="px-5 py-4 text-iris-slate">{{ contract.inceptionDate | date:'mediumDate' }}</td>
                     <td class="px-5 py-4 text-iris-slate">{{ contract.updatedAt ? (contract.updatedAt | date:'medium') : 'Not available' }}</td>
                   </tr>
@@ -169,7 +169,7 @@
                     <p class="text-xs font-bold uppercase tracking-[0.12em] text-iris-teal">{{ contract.umr ?? 'Not assigned' }}</p>
                     <h3 class="mt-2 font-cambria text-xl font-bold text-iris-navy">{{ contract.name }}</h3>
                   </div>
-                  <span class="shrink-0 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy ring-1 ring-sky-200">{{ contract.status }}</span>
+                  <span class="shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(contract.status)">{{ getDisplayStatus(contract.status) }}</span>
                 </div>
                 <dl class="mt-4 grid grid-cols-2 gap-4 text-sm">
                   <div><dt class="font-bold text-iris-navy">Cedent</dt><dd class="mt-1 text-iris-slate">{{ contract.cedentName }}</dd></div>

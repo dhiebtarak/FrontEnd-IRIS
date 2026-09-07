@@ -6,6 +6,14 @@ export interface ContractTypeReference {
   isImplemented: boolean;
 }
 
+export type ContractStatus =
+  | 'Draft'
+  | 'ReadyForPlacement'
+  | 'PlacementInProgress'
+  | 'Bound'
+  | 'Expired'
+  | 'Cancelled';
+
 export interface CurrencyReference {
   id: number;
   code: string;
@@ -216,7 +224,8 @@ export interface UpsertFacultativeContractRequest {
 
 export interface FacultativeContractResponse {
   contractId: number;
-  status: string;
+  status: ContractStatus | string;
+  allowedActions: string[];
   netPremiumCedent: number | null;
   umr: string | null;
   name: string;

@@ -138,15 +138,15 @@ export class ContractsService {
     );
   }
 
-  createContractPanel(contractId: number, request: CreateContractPanelRequest): Observable<ContractPanelItem> {
+  createContractPanel(contractId: number, request: CreateContractPanelRequest): Observable<FacultativeContractResponse> {
     return this.httpClient.post<unknown>(`${this.baseUrl}/contracts/${contractId}/panels`, request).pipe(
-      map(payload => this.mapContractPanel(payload))
+      map(payload => this.mapFacultativeContract(payload))
     );
   }
 
-  updateContractPanel(contractId: number, panelId: number, request: UpdateContractPanelRequest): Observable<ContractPanelItem> {
+  updateContractPanel(contractId: number, panelId: number, request: UpdateContractPanelRequest): Observable<FacultativeContractResponse> {
     return this.httpClient.put<unknown>(`${this.baseUrl}/contracts/${contractId}/panels/${panelId}`, request).pipe(
-      map(payload => this.mapContractPanel(payload))
+      map(payload => this.mapFacultativeContract(payload))
     );
   }
 
@@ -159,8 +159,10 @@ export class ContractsService {
     );
   }
 
-  startBindingPhase(contractId: number): Observable<unknown> {
-    return this.httpClient.post(`${this.baseUrl}/contracts/${contractId}/start-binding`, {});
+  startBindingPhase(contractId: number): Observable<FacultativeContractResponse> {
+    return this.httpClient.post<unknown>(`${this.baseUrl}/contracts/${contractId}/start-binding`, {}).pipe(
+      map(payload => this.mapFacultativeContract(payload))
+    );
   }
 
   confirmContractPanel(contractId: number, panelId: number): Observable<ContractPanelItem> {
@@ -263,6 +265,7 @@ export class ContractsService {
     return {
       contractId: this.toNumber(record['contractId'] ?? record['idContract'] ?? record['id']) ?? 0,
       status: this.toText(record['status']) || 'DRAFT',
+      allowedActions: this.toStringArray(record['allowedActions']),
       netPremiumCedent: this.toNullableNumber(record['netPremiumCedent']),
       umr: this.toNullableText(record['umr']),
       name: this.toText(record['name']),
@@ -380,6 +383,14 @@ export class ContractsService {
     return value
       .map(item => this.toNumber(item))
       .filter((item): item is number => item != null && item > 0);
+  }
+
+  private toStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
   }
 
   private toCoverageLevel(value: unknown): CoverageLevel | null {

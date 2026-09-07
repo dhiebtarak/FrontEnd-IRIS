@@ -69,7 +69,7 @@
         <select formControlName="status" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100">
           <option value="">All statuses</option>
           @for (status of contractStatuses; track status) {
-            <option [value]="status">{{ status }}</option>
+            <option [value]="status">{{ getDisplayStatus({ status }$any) }}</option>
           }
         </select>
       </label>

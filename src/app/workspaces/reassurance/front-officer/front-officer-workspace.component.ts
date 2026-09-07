@@ -1,9 +1,10 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe, DecimalPipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { DashboardSummary } from '../../../shared/models/contract.model';
+import { getContractStatusClasses, getContractStatusDisplay } from '../../../shared/models/contract-status.util';
 import { Auth } from '../../../shared/services/auth';
 import { ContractsService } from '../../../shared/services/contracts.service';
 
@@ -12,7 +13,7 @@ type DashboardLoadState = 'loading' | 'loaded' | 'error';
 @Component({
   selector: 'app-front-officer-workspace',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, RouterLink],
+  imports: [DatePipe, DecimalPipe, NgClass, RouterLink],
   templateUrl: './front-officer-workspace.component.html',
   styles: ``,
 })
@@ -68,6 +69,14 @@ export class FrontOfficerWorkspaceComponent implements OnInit {
 
   normalizedPercentage(percentage: number): number {
     return Math.min(Math.max(percentage, 0), 100);
+  }
+
+  getDisplayStatus(status: string): string {
+    return getContractStatusDisplay(status);
+  }
+
+  getStatusClasses(status: string): string {
+    return getContractStatusClasses(status);
   }
 
   private getDashboardErrorMessage(error: HttpErrorResponse): string {
