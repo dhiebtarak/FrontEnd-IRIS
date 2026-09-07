@@ -4,6 +4,7 @@ import { ActivatedRoute, provideRouter, Router, convertToParamMap } from '@angul
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideHttpClient } from '@angular/common/http';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { CoverageOption } from '../../shared/models/contract.model';
 import { FacultativeInformationComponent } from './facultative-information.component';
 
 describe('FacultativeInformationComponent', () => {
@@ -16,6 +17,17 @@ describe('FacultativeInformationComponent', () => {
   const currenciesResponse = [
     { id: 1, code: 'MAD', name: 'Moroccan Dirham', symbol: 'DH', decimalPlaces: 2, isDefault: true },
     { id: 2, code: 'EUR', name: 'Euro', symbol: 'EUR', decimalPlaces: 2, isDefault: false }
+  ];
+  const mainCoversResponse: CoverageOption[] = [
+    { id: 1, code: 'PD', name: 'Property Damage', level: 'MAIN_COVER', parentId: null, relationType: null, isMandatory: false, hasSlip: true, slipTemplateId: 10 },
+    { id: 4, code: 'CAR', name: 'Construction All Risks', level: 'MAIN_COVER', parentId: null, relationType: null, isMandatory: false, hasSlip: false, slipTemplateId: null }
+  ];
+  const sectionsResponse: CoverageOption[] = [
+    { id: 2, code: 'PD-MB', name: 'Machinery Breakdown', level: 'SECTION', parentId: 1, relationType: 'HAS_SECTION', isMandatory: true, hasSlip: false, slipTemplateId: null },
+    { id: 3, code: 'PD-BI', name: 'Business Interruption', level: 'SECTION', parentId: 1, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: true, slipTemplateId: null }
+  ];
+  const directExtensionsResponse: CoverageOption[] = [
+    { id: 7, code: 'PD-EXT', name: 'Debris Removal', level: 'EXTENSION', parentId: 1, relationType: 'HAS_EXTENSION', isMandatory: true, hasSlip: false, slipTemplateId: null }
   ];
 
   beforeEach(async () => {
@@ -44,6 +56,7 @@ describe('FacultativeInformationComponent', () => {
     fixture.detectChanges();
 
     httpMock.expectOne('http://localhost:5151/api/reference-data/currencies').flush(currenciesResponse);
+    httpMock.expectOne('http://localhost:5151/api/coverage-catalog/main-covers').flush(mainCoversResponse);
     fixture.detectChanges();
   });
 
@@ -89,6 +102,26 @@ describe('FacultativeInformationComponent', () => {
     fixture.detectChanges();
   }
 
+  function expectCoverageChildren(parentId: number, level: 'SECTION' | 'EXTENSION') {
+    return httpMock.expectOne(req =>
+      req.url === `http://localhost:5151/api/coverage-catalog/${parentId}/children`
+      && req.params.get('level') === level
+    );
+  }
+
+  function selectMainCover(
+    sections = sectionsResponse,
+    directExtensions = directExtensionsResponse
+  ): void {
+    component.selectMainCover(mainCoversResponse[0]);
+    expectCoverageChildren(1, 'SECTION').flush(sections);
+    expectCoverageChildren(1, 'EXTENSION').flush(directExtensions);
+    for (const section of sections.filter(item => item.isMandatory)) {
+      expectCoverageChildren(section.id, 'EXTENSION').flush([]);
+    }
+    fixture.detectChanges();
+  }
+
   it('selects the default currency returned by the API', () => {
     expect(component.form.controls.currencyId.value).toBe(1);
   });
@@ -98,6 +131,84 @@ describe('FacultativeInformationComponent', () => {
 
     expect(component.form.controls.counterpartyId.value).toBe(99);
     expect(component.cedentSearchControl.value).toBe('Acme Cedent');
+  });
+
+  it('requires Main Cover before saving', async () => {
+    fillRequiredFields();
+    await selectCedent();
+
+    component.saveDraft();
+    fixture.detectChanges();
+
+    expect(component.form.controls.coverageSelection.controls.mainCoverId.hasError('required')).toBe(true);
+    expect(component.form.controls.coverageSelection.controls.mainCoverId.touched).toBe(true);
+  });
+
+  it('loads the Main Cover catalog and filters the searchable dropdown locally', () => {
+    component.mainCoverSearchControl.setValue('property');
+    fixture.detectChanges();
+
+    expect(component.mainCovers()).toEqual(mainCoversResponse);
+    expect(component.filteredMainCovers()).toEqual([mainCoversResponse[0]]);
+  });
+
+  it('loads sections and direct extensions after selecting a Main Cover', () => {
+    selectMainCover();
+
+    expect(component.form.controls.coverageSelection.controls.mainCoverId.value).toBe(1);
+    expect(component.sections()).toEqual(sectionsResponse);
+    expect(component.extensions()).toEqual(directExtensionsResponse);
+    expect(component.form.controls.coverageSelection.controls.sectionIds.value).toEqual([2]);
+    expect(component.form.controls.coverageSelection.controls.extensionIds.value).toEqual([7]);
+  });
+
+  it('loads section extensions, deduplicates them, and removes invalid selections', () => {
+    selectMainCover(sectionsResponse, [
+      { id: 7, code: 'PD-EXT', name: 'Debris Removal', level: 'EXTENSION', parentId: 1, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false },
+      { id: 8, code: 'PD-OLD', name: 'Obsolete Extension', level: 'EXTENSION', parentId: 1, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false }
+    ]);
+
+    component.form.controls.coverageSelection.controls.extensionIds.setValue([7, 8]);
+    component.form.controls.coverageSelection.controls.sectionIds.setValue([2, 3]);
+    expectCoverageChildren(1, 'EXTENSION').flush([
+      { id: 7, code: 'PD-EXT', name: 'Debris Removal', level: 'EXTENSION', parentId: 1, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false }
+    ]);
+    expectCoverageChildren(2, 'EXTENSION').flush([
+      { id: 7, code: 'PD-EXT', name: 'Debris Removal', level: 'EXTENSION', parentId: 2, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false }
+    ]);
+    expectCoverageChildren(3, 'EXTENSION').flush([
+      { id: 9, code: 'PD-BI-EXT', name: 'Loss of Rent', level: 'EXTENSION', parentId: 3, relationType: 'HAS_EXTENSION', isMandatory: true, hasSlip: true }
+    ]);
+    fixture.detectChanges();
+
+    expect(component.extensions().map(extension => extension.id)).toEqual([7, 9]);
+    expect(component.form.controls.coverageSelection.controls.extensionIds.value).toEqual([7, 9]);
+  });
+
+  it('clears child selections after changing the Main Cover and reports empty catalog results', () => {
+    selectMainCover();
+
+    component.selectMainCover(mainCoversResponse[1]);
+    expect(component.form.controls.coverageSelection.controls.sectionIds.value).toEqual([]);
+    expect(component.form.controls.coverageSelection.controls.extensionIds.value).toEqual([]);
+    expectCoverageChildren(4, 'SECTION').flush([]);
+    expectCoverageChildren(4, 'EXTENSION').flush([]);
+    fixture.detectChanges();
+
+    expect(component.sections()).toEqual([]);
+    expect(component.extensions()).toEqual([]);
+    expect(fixture.nativeElement.textContent).toContain('No sections available for this Main Cover.');
+    expect(fixture.nativeElement.textContent).toContain('No extensions available.');
+  });
+
+  it('surfaces coverage API errors instead of silently discarding them', () => {
+    component.selectMainCover(mainCoversResponse[0]);
+    expectCoverageChildren(1, 'SECTION').flush('no sections', { status: 500, statusText: 'Server Error' });
+    expectCoverageChildren(1, 'EXTENSION').flush('no extensions', { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    expect(component.sectionsError()).toBe('Sections could not be loaded for this Main Cover.');
+    expect(component.extensionsError()).toBe('Extensions could not be loaded for this Main Cover.');
   });
 
   it('loads the default cedent list when the input is focused without text', () => {
@@ -179,6 +290,7 @@ describe('FacultativeInformationComponent', () => {
   it('uses POST on the first save and never sends multipart data', async () => {
     fillRequiredFields();
     await selectCedent();
+    selectMainCover();
 
     component.saveDraft();
     fixture.detectChanges();
@@ -190,6 +302,11 @@ describe('FacultativeInformationComponent', () => {
     expect(request.request.body).not.toBeInstanceOf(FormData);
     expect(request.request.body.status).toBeUndefined();
     expect(request.request.body.counterpartyId).toBe(99);
+    expect(request.request.body.coverageSelection).toEqual({
+      mainCoverId: 1,
+      sectionIds: [2],
+      extensionIds: [7]
+    });
     expect(component.isSaving()).toBe(true);
 
     request.flush({
@@ -213,6 +330,7 @@ describe('FacultativeInformationComponent', () => {
   it('uses PUT after a contract ID exists', async () => {
     fillRequiredFields();
     await selectCedent();
+    selectMainCover();
 
     component.saveDraft();
     httpMock.expectOne('http://localhost:5151/api/contracts/facultative').flush({
@@ -251,6 +369,7 @@ describe('FacultativeInformationComponent', () => {
   it('displays backend validation errors on the mapped fields', async () => {
     fillRequiredFields();
     await selectCedent();
+    selectMainCover();
 
     component.saveDraft();
     const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
@@ -258,20 +377,23 @@ describe('FacultativeInformationComponent', () => {
       title: 'Validation failed',
       errors: {
         name: ['Name is invalid'],
-        umr: ['Duplicate UMR']
+        umr: ['Duplicate UMR'],
+        'coverageSelection.mainCoverId': ['Main Cover is invalid']
       }
     }, { status: 400, statusText: 'Bad Request' });
     fixture.detectChanges();
 
     expect(component.form.controls.name.errors?.['serverError']).toBe('Name is invalid');
     expect(component.form.controls.umr.errors?.['serverError']).toBe('Duplicate UMR');
+    expect(component.form.controls.coverageSelection.controls.mainCoverId.errors?.['serverError']).toBe('Main Cover is invalid');
   });
 
-  it('keeps the contract in Draft when continuing to the placeholder step', async () => {
+  it('keeps the saved draft response but marks the contract ready for overview routing', async () => {
     fillRequiredFields();
     await selectCedent();
+    selectMainCover();
 
-    component.continueToConditions();
+    component.continueToOverview();
     const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
     request.flush({
       contractId: 123,
@@ -287,7 +409,7 @@ describe('FacultativeInformationComponent', () => {
     });
 
     expect(component.currentStatus).toBe('Draft');
-    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/front-officer/contracts/new/conditions'], {
+    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/front-officer/contracts/new/overview'], {
       queryParams: { contractId: 123 }
     });
   });
@@ -296,8 +418,24 @@ describe('FacultativeInformationComponent', () => {
 describe('FacultativeInformationComponent existing contract', () => {
   let fixture: ComponentFixture<FacultativeInformationComponent>;
   let httpMock: HttpTestingController;
+  let router: Router;
+  let snackBar: { open: ReturnType<typeof vi.fn> };
+  const mainCoversResponse: CoverageOption[] = [
+    { id: 1, code: 'PD', name: 'Property Damage', level: 'MAIN_COVER', parentId: null, relationType: null, isMandatory: false, hasSlip: true, slipTemplateId: 10 }
+  ];
+  const sectionsResponse: CoverageOption[] = [
+    { id: 2, code: 'PD-MB', name: 'Machinery Breakdown', level: 'SECTION', parentId: 1, relationType: 'HAS_SECTION', isMandatory: true, hasSlip: false },
+    { id: 3, code: 'PD-BI', name: 'Business Interruption', level: 'SECTION', parentId: 1, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: true }
+  ];
+  const directExtensionsResponse: CoverageOption[] = [
+    { id: 7, code: 'PD-EXT', name: 'Debris Removal', level: 'EXTENSION', parentId: 1, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false }
+  ];
 
   beforeEach(async () => {
+    snackBar = {
+      open: vi.fn()
+    };
+
     await TestBed.configureTestingModule({
       imports: [FacultativeInformationComponent],
       providers: [
@@ -309,9 +447,13 @@ describe('FacultativeInformationComponent existing contract', () => {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: convertToParamMap({ contractId: '2' }) } }
         },
-        { provide: MatSnackBar, useValue: { open: vi.fn() } }
+        { provide: MatSnackBar, useValue: snackBar }
       ]
     }).compileComponents();
+
+    router = TestBed.inject(Router);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
 
     fixture = TestBed.createComponent(FacultativeInformationComponent);
     httpMock = TestBed.inject(HttpTestingController);
@@ -322,10 +464,11 @@ describe('FacultativeInformationComponent existing contract', () => {
     httpMock.verify();
   });
 
-  it('loads the selected draft into the existing form and keeps subsequent saves on PUT', () => {
+  function flushExistingContract(overrides: Record<string, unknown> = {}): void {
     httpMock.expectOne('http://localhost:5151/api/reference-data/currencies').flush([
       { id: 1, code: 'TND', name: 'Tunisian Dinar', symbol: 'DT', decimalPlaces: 3, isDefault: true }
     ]);
+    httpMock.expectOne('http://localhost:5151/api/coverage-catalog/main-covers').flush(mainCoversResponse);
     httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2').flush({
       contractId: 2,
       status: 'Draft',
@@ -351,9 +494,38 @@ describe('FacultativeInformationComponent existing contract', () => {
       cedentPremiumReference: null,
       isFronting: false,
       frontingReference: null,
-      memoText: null
+      memoText: null,
+      coverageSelection: {
+        mainCoverId: 1,
+        sectionIds: [2, 3],
+        extensionIds: [7],
+        mainCover: mainCoversResponse[0],
+        sections: [],
+        extensions: []
+      },
+      ...overrides
     });
+    httpMock.expectOne(req =>
+      req.url === 'http://localhost:5151/api/coverage-catalog/1/children'
+      && req.params.get('level') === 'SECTION'
+    ).flush(sectionsResponse);
+    httpMock.expectOne(req =>
+      req.url === 'http://localhost:5151/api/coverage-catalog/1/children'
+      && req.params.get('level') === 'EXTENSION'
+    ).flush(directExtensionsResponse);
+    httpMock.expectOne(req =>
+      req.url === 'http://localhost:5151/api/coverage-catalog/2/children'
+      && req.params.get('level') === 'EXTENSION'
+    ).flush([]);
+    httpMock.expectOne(req =>
+      req.url === 'http://localhost:5151/api/coverage-catalog/3/children'
+      && req.params.get('level') === 'EXTENSION'
+    ).flush([]);
     fixture.detectChanges();
+  }
+
+  it('loads the selected draft into the existing form and keeps subsequent saves on PUT', () => {
+    flushExistingContract();
 
     const component = fixture.componentInstance;
     expect(component.contractId()).toBe(2);
@@ -362,10 +534,18 @@ describe('FacultativeInformationComponent existing contract', () => {
     expect(component.form.controls.counterpartyId.value).toBe(2);
     expect(component.cedentSearchControl.value).toBe('STAR Assurances');
     expect(component.form.controls.currencyId.value).toBe(1);
+    expect(component.mainCoverSearchControl.value).toBe('PD - Property Damage');
+    expect(component.form.controls.coverageSelection.controls.sectionIds.value).toEqual([2, 3]);
+    expect(component.form.controls.coverageSelection.controls.extensionIds.value).toEqual([7]);
 
     component.saveDraft();
     const update = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2');
     expect(update.request.method).toBe('PUT');
+    expect(update.request.body.coverageSelection).toEqual({
+      mainCoverId: 1,
+      sectionIds: [2, 3],
+      extensionIds: [7]
+    });
     update.flush({
       contractId: 2,
       status: 'Draft',
@@ -378,5 +558,62 @@ describe('FacultativeInformationComponent existing contract', () => {
       isHighPriority: false,
       isFronting: false
     });
+  });
+
+  it('skips the update and returns to overview when Continue is clicked without changes', () => {
+    flushExistingContract();
+
+    const component = fixture.componentInstance;
+    component.continueToOverview();
+    fixture.detectChanges();
+
+    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/front-officer/contracts/new/overview'], {
+      queryParams: { contractId: 2 }
+    });
+  });
+
+  it('uses the route contract id for updates when the detail response omits a usable id', () => {
+    flushExistingContract({ contractId: 0 });
+
+    const component = fixture.componentInstance;
+    expect(component.contractId()).toBe(2);
+
+    component.form.controls.memoText.setValue('Updated note');
+    component.saveDraft();
+    fixture.detectChanges();
+
+    const update = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2');
+    expect(update.request.method).toBe('PUT');
+    expect(update.request.body.panels).toBeUndefined();
+    expect(update.request.body.placementPanels).toBeUndefined();
+    expect(update.request.body.reinsurerPanels).toBeUndefined();
+    update.flush({
+      contractId: 2,
+      status: 'Draft',
+      netPremiumCedent: 112500,
+      name: 'Property Facultative Contract STAR',
+      counterpartyId: 2,
+      currencyId: 1,
+      inceptionDate: '2026-09-20',
+      expiryDate: '2027-08-10',
+      isHighPriority: false,
+      isFronting: false
+    });
+  });
+
+  it('shows the backend conflict message returned by the API', () => {
+    flushExistingContract();
+
+    const component = fixture.componentInstance;
+    component.form.controls.umr.setValue('B1235FAC2026-Y');
+    component.saveDraft();
+    fixture.detectChanges();
+
+    const update = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2');
+    update.flush({ message: 'Coverage selection already exists for this contract.' }, { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+
+    expect(component.generalError()).toBe('Coverage selection already exists for this contract.');
+    expect(fixture.nativeElement.textContent).toContain('Coverage selection already exists for this contract.');
   });
 });

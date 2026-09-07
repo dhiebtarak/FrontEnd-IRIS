@@ -217,4 +217,399 @@ describe('ContractsService', () => {
       }
     ]);
   });
+
+  it('loads Main Covers from the coverage catalog and maps backend field aliases', () => {
+    service.getMainCovers().subscribe(result => {
+      expect(result).toEqual([
+        {
+          id: 1,
+          code: 'PD',
+          name: 'Property Damage',
+          level: 'MAIN_COVER',
+          parentId: null,
+          relationType: null,
+          isMandatory: false,
+          hasSlip: true,
+          slipTemplateId: 10
+        }
+      ]);
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/coverage-catalog/main-covers');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
+    request.flush([
+      {
+        idCoverageItem: 1,
+        coverageCode: 'PD',
+        coverageName: 'Property Damage',
+        coverageLevel: 'MAIN_COVER',
+        hasSlip: true,
+        idSlipTemplate: 10
+      }
+    ]);
+  });
+
+  it('loads coverage children with the requested level query parameter', () => {
+    service.getCoverageChildren(1, 'SECTION').subscribe(result => {
+      expect(result).toEqual([
+        {
+          id: 2,
+          code: 'PD-MB',
+          name: 'Machinery Breakdown',
+          level: 'SECTION',
+          parentId: 1,
+          relationType: 'HAS_SECTION',
+          isMandatory: true,
+          hasSlip: false,
+          slipTemplateId: null
+        }
+      ]);
+    });
+
+    const request = httpTesting.expectOne(req =>
+      req.url === 'http://localhost:5151/api/coverage-catalog/1/children'
+      && req.params.get('level') === 'SECTION'
+    );
+    expect(request.request.method).toBe('GET');
+    request.flush([
+      {
+        id: 2,
+        code: 'PD-MB',
+        name: 'Machinery Breakdown',
+        level: 'SECTION',
+        parentId: 1,
+        relationType: 'HAS_SECTION',
+        isMandatory: true,
+        hasSlip: false
+      }
+    ]);
+  });
+
+  it('preserves coverageSelection on Facultative contract responses', () => {
+    service.getFacultativeContract(7).subscribe(result => {
+      expect(result.coverageSelection).toEqual({
+        mainCoverId: 1,
+        sectionIds: [2, 3],
+        extensionIds: [7],
+        mainCover: {
+          id: 1,
+          code: 'PD',
+          name: 'Property Damage',
+          level: 'MAIN_COVER',
+          parentId: null,
+          relationType: null,
+          isMandatory: false,
+          hasSlip: true,
+          slipTemplateId: 10
+        },
+        sections: [],
+        extensions: []
+      });
+      expect(result.panels).toEqual([
+        {
+          idPanel: 3,
+          idContract: 7,
+          idCounterparty: 9,
+          reinsurerName: 'Global Re',
+          role: 'Lead',
+          writtenSharePct: 40,
+          signedSharePct: 35,
+          tsi: 400000,
+          deductible: 2000,
+          premiumRatePct: 1.2,
+          grossPremium: 48000,
+          brokeragePct: 2,
+          otherDeductions: 300,
+          netPremium: 46740,
+          premiumReference: 'RE-PREM-1',
+          status: 'Draft'
+        }
+      ]);
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/facultative/7');
+    request.flush({
+      id: 7,
+      status: 'Draft',
+      name: 'Coverage Draft',
+      counterpartyId: 2,
+      currencyId: 1,
+      inceptionDate: '2026-09-20',
+      expiryDate: '2027-08-10',
+      isHighPriority: false,
+      isFronting: false,
+      coverageSelection: {
+        mainCoverId: 1,
+        sectionIds: [2, 3],
+        extensionIds: [7],
+        mainCover: {
+          id: 1,
+          code: 'PD',
+          name: 'Property Damage',
+          hasSlip: true,
+          slipTemplateId: 10
+        },
+        sections: [],
+        extensions: []
+      },
+      panels: [
+        {
+          idPanel: 3,
+          idContract: 7,
+          idCounterparty: 9,
+          reinsurerName: 'Global Re',
+          role: 'Lead',
+          writtenSharePct: 40,
+          signedSharePct: 35,
+          tsi: 400000,
+          deductible: 2000,
+          premiumRatePct: 1.2,
+          grossPremium: 48000,
+          brokeragePct: 2,
+          otherDeductions: 300,
+          netPremium: 46740,
+          premiumReference: 'RE-PREM-1',
+          status: 'Draft'
+        }
+      ]
+    });
+  });
+
+  it('loads a contract overview from the backend overview endpoint', () => {
+    service.getContractOverview(7).subscribe(result => {
+      expect(result.contractId).toBe(7);
+      expect(result.name).toBe('Coverage Draft');
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/7/overview');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
+    request.flush({
+      idContract: 7,
+      status: 'Ready for Placement',
+      name: 'Coverage Draft',
+      counterpartyId: 2,
+      currencyId: 1,
+      inceptionDate: '2026-09-20',
+      expiryDate: '2027-08-10',
+      isHighPriority: false,
+      isFronting: false
+    });
+  });
+
+  it('loads contract panels from the dedicated panels endpoint', () => {
+    service.getContractPanels(123).subscribe(result => {
+      expect(result).toEqual([
+        {
+          idPanel: 3,
+          idContract: 123,
+          idCounterparty: 9,
+          reinsurerName: 'Global Re',
+          role: 'Lead',
+          writtenSharePct: 40,
+          signedSharePct: 35,
+          tsi: 400000,
+          deductible: 2000,
+          premiumRatePct: 1.2,
+          grossPremium: 48000,
+          brokeragePct: 2,
+          otherDeductions: 300,
+          netPremium: 46740,
+          premiumReference: 'RE-PREM-1',
+          status: 'Draft'
+        }
+      ]);
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
+    request.flush([
+      {
+        idPanel: 3,
+        idContract: 123,
+        idCounterparty: 9,
+        reinsurerName: 'Global Re',
+        role: 'Lead',
+        writtenSharePct: 40,
+        signedSharePct: 35,
+        tsi: 400000,
+        deductible: 2000,
+        premiumRatePct: 1.2,
+        grossPremium: 48000,
+        brokeragePct: 2,
+        otherDeductions: 300,
+        netPremium: 46740,
+        premiumReference: 'RE-PREM-1',
+        status: 'Draft'
+      }
+    ]);
+  });
+
+  it('creates a contract panel on the existing contracts API route', () => {
+    service.createContractPanel(123, {
+      idCounterparty: 9,
+      writtenSharePct: 40,
+      signedSharePct: 35,
+      tsi: 400000,
+      deductible: 2000,
+      premiumRatePct: 1.2,
+      grossPremium: 48000,
+      brokeragePct: 2,
+      otherDeductions: 300,
+      premiumReference: 'RE-PREM-1'
+    }).subscribe(result => {
+      expect(result.reinsurerName).toBe('Global Re');
+      expect(result.tsi).toBe(400000);
+      expect(result.premiumRatePct).toBe(1.2);
+      expect(result.brokeragePct).toBe(2);
+      expect(result.premiumReference).toBe('RE-PREM-1');
+      expect(result.netPremium).toBe(46740);
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
+    expect(request.request.body).toEqual({
+      idCounterparty: 9,
+      writtenSharePct: 40,
+      signedSharePct: 35,
+      tsi: 400000,
+      deductible: 2000,
+      premiumRatePct: 1.2,
+      grossPremium: 48000,
+      brokeragePct: 2,
+      otherDeductions: 300,
+      premiumReference: 'RE-PREM-1'
+    });
+    request.flush({
+      idPanel: 3,
+      idContract: 123,
+      idCounterparty: 9,
+      reinsurerName: 'Global Re',
+      role: 'Lead',
+      writtenSharePct: 40,
+      signedSharePct: 35,
+      tsi: 400000,
+      deductible: 2000,
+      premiumRatePct: 1.2,
+      grossPremium: 48000,
+      brokeragePct: 2,
+      otherDeductions: 300,
+      netPremium: 46740,
+      premiumReference: 'RE-PREM-1',
+      status: 'Draft'
+    });
+  });
+
+  it('updates a contract panel on the panel-specific route', () => {
+    service.updateContractPanel(123, 3, {
+      idCounterparty: 9,
+      writtenSharePct: 40,
+      signedSharePct: 36,
+      tsi: 400000,
+      deductible: 2000,
+      premiumRatePct: 1.2,
+      grossPremium: 48000,
+      brokeragePct: 2,
+      otherDeductions: 300,
+      premiumReference: 'RE-PREM-1',
+      netPremium: 47000,
+      status: 'Confirmed'
+    }).subscribe(result => {
+      expect(result.signedSharePct).toBe(36);
+      expect(result.netPremium).toBe(47000);
+      expect(result.status).toBe('Confirmed');
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels/3');
+    expect(request.request.method).toBe('PUT');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
+    expect(request.request.body).toEqual({
+      idCounterparty: 9,
+      writtenSharePct: 40,
+      signedSharePct: 36,
+      tsi: 400000,
+      deductible: 2000,
+      premiumRatePct: 1.2,
+      grossPremium: 48000,
+      brokeragePct: 2,
+      otherDeductions: 300,
+      premiumReference: 'RE-PREM-1',
+      netPremium: 47000,
+      status: 'Confirmed'
+    });
+    request.flush({
+      idPanel: 3,
+      idContract: 123,
+      idCounterparty: 9,
+      reinsurerName: 'Global Re',
+      role: 'Lead',
+      writtenSharePct: 40,
+      signedSharePct: 36,
+      tsi: 400000,
+      deductible: 2000,
+      premiumRatePct: 1.2,
+      grossPremium: 48000,
+      brokeragePct: 2,
+      otherDeductions: 300,
+      netPremium: 47000,
+      premiumReference: 'RE-PREM-1',
+      status: 'Confirmed'
+    });
+  });
+
+  it('confirms a contract panel on the confirm endpoint', () => {
+    service.confirmContractPanel(123, 3).subscribe(result => {
+      expect(result.status).toBe('Confirmed');
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels/3/confirm');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
+    request.flush({
+      idPanel: 3,
+      idContract: 123,
+      idCounterparty: 9,
+      reinsurerName: 'Global Re',
+      role: 'Lead',
+      status: 'Confirmed'
+    });
+  });
+
+  it('starts the binding phase on the contract start-binding endpoint', () => {
+    service.startBindingPhase(123).subscribe();
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/start-binding');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
+    request.flush({});
+  });
+
+  it('downloads contract slips as a blob and reads the response filename', () => {
+    service.downloadContractSlips(123).subscribe(result => {
+      expect(result.hasSlip).toBe(true);
+      expect(result.filename).toBe('contract-slip.docx');
+      expect(result.blob?.size).toBeGreaterThan(0);
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/slips');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(new Blob(['docx'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), {
+      headers: { 'Content-Disposition': 'attachment; filename="contract-slip.docx"' }
+    });
+  });
+
+  it('treats an empty slip response as unavailable', () => {
+    service.downloadContractSlips(123).subscribe(result => {
+      expect(result.hasSlip).toBe(false);
+      expect(result.blob).toBeNull();
+      expect(result.filename).toBeNull();
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/slips');
+    request.flush(new Blob([]));
+  });
 });

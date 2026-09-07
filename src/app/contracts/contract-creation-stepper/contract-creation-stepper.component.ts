@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, input } from '@angular/core';
 
-type ContractCreationStep = 1 | 2 | 3 | 4;
+type ContractCreationStep = 1 | 2 | 3;
 
 @Component({
   selector: 'app-contract-creation-stepper',
@@ -16,7 +16,6 @@ export class ContractCreationStepperComponent {
   readonly steps = [
     { index: 1, label: 'Type' },
     { index: 2, label: 'Information' },
-    { index: 3, label: 'Conditions' },
-    { index: 4, label: 'Review' }
+    { index: 3, label: 'Contract Overview' }
   ] as const;
 }

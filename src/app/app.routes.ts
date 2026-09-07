@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { ContractConditionsPlaceholderComponent } from './contracts/contract-conditions-placeholder/contract-conditions-placeholder.component';
+import { ContractOverviewComponent } from './contracts/contract-overview/contract-overview.component';
 import { ContractTypeSelectionComponent } from './contracts/contract-type-selection/contract-type-selection.component';
 import { FacultativeInformationComponent } from './contracts/facultative-information/facultative-information.component';
 import { AddCounterpartyComponent } from './counterparties/add-counterparty/add-counterparty.component';
@@ -38,7 +38,7 @@ export const routes: Routes = [
         component: FacultativeInformationComponent,
         canDeactivate: [pendingChangesGuard]
       },
-      { path: 'contracts/new/conditions', component: ContractConditionsPlaceholderComponent },
+      { path: 'contracts/new/overview', component: ContractOverviewComponent },
       { path: 'claims', component: ClaimsComingSoonComponent }
     ]
   },

@@ -3,7 +3,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { Observable, of, throwError } from 'rxjs';
 import type { Mock } from 'vitest';
-import { ContractListFilters, ContractListItem, PagedContractResponse } from '../../shared/models/contract.model';
+import {
+  ContractListFilters,
+  ContractListItem,
+  PagedContractResponse
+} from '../../shared/models/contract.model';
 import { ContractsService } from '../../shared/services/contracts.service';
 import { ContractsListComponent } from './contracts-list.component';
 
@@ -53,6 +57,14 @@ describe('ContractsListComponent', () => {
     }
   ];
 
+  async function createComponent(): Promise<void> {
+    fixture = TestBed.createComponent(ContractsListComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
   beforeEach(async () => {
     getContracts = vi.fn<(filters: ContractListFilters) => Observable<PagedContractResponse>>()
       .mockImplementation(filters => of({
@@ -90,11 +102,7 @@ describe('ContractsListComponent', () => {
     }).compileComponents();
 
     router = TestBed.inject(Router);
-    fixture = TestBed.createComponent(ContractsListComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await createComponent();
   });
 
   it('loads one initial portfolio request and the existing reference APIs', () => {
@@ -131,6 +139,15 @@ describe('ContractsListComponent', () => {
     expect(text).toContain('STAR Assurances');
     expect(text).not.toContain('Portfolio data source required');
     expect(text).not.toContain('waiting for a backend portfolio endpoint');
+  });
+
+  it('routes contract View details actions to the overview page', () => {
+    const row = fixture.nativeElement.querySelector('tbody tr[data-contract-id="2"]') as HTMLTableRowElement;
+    const link = row.querySelector('a') as HTMLAnchorElement;
+
+    expect(row.textContent).toContain('Draft');
+    expect(link.getAttribute('href')).toContain('/workspace/reassurance/front-officer/contracts/new/overview');
+    expect(link.getAttribute('href')).toContain('contractId=2');
   });
 
   it('sends one request after debouncing text search and resets to page one', async () => {

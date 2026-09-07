@@ -18,6 +18,7 @@ import { catchError, debounceTime, distinctUntilChanged, finalize, forkJoin, map
 import { ContractCreationStepperComponent } from '../contract-creation-stepper/contract-creation-stepper.component';
 import {
   CedentReference,
+  CoverageOption,
   CurrencyReference,
   FacultativeContractResponse,
   UpsertFacultativeContractRequest
@@ -30,6 +31,11 @@ type FacultativeFormGroup = FormGroup<{
   name: FormControl<string>;
   counterpartyId: FormControl<number | null>;
   currencyId: FormControl<number | null>;
+  coverageSelection: FormGroup<{
+    mainCoverId: FormControl<number | null>;
+    sectionIds: FormControl<number[]>;
+    extensionIds: FormControl<number[]>;
+  }>;
   receptionDate: FormControl<string>;
   inceptionDate: FormControl<string>;
   expiryDate: FormControl<string>;
@@ -108,13 +114,18 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   readonly typeRoute = '/workspace/reassurance/front-officer/contracts/new/type';
-  readonly conditionsRoute = '/workspace/reassurance/front-officer/contracts/new/conditions';
+  readonly overviewRoute = '/workspace/reassurance/front-officer/contracts/new/overview';
   readonly dashboardRoute = '/workspace/reassurance/front-officer';
   readonly cedentSearchControl = new FormControl('', { nonNullable: true });
+  readonly mainCoverSearchControl = new FormControl('', { nonNullable: true });
   readonly isInitialLoading = signal(true);
   readonly isCurrenciesLoading = signal(false);
   readonly isCedentLoading = signal(false);
+  readonly isMainCoverLoading = signal(false);
+  readonly isSectionsLoading = signal(false);
+  readonly isExtensionsLoading = signal(false);
   readonly isCedentDropdownOpen = signal(false);
+  readonly isMainCoverDropdownOpen = signal(false);
   readonly isSaving = signal(false);
   readonly saveMode = signal<'draft' | 'continue' | null>(null);
   readonly contractId = signal<number | null>(null);
@@ -122,10 +133,29 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   readonly generalError = signal('');
   readonly duplicateUmrMessage = signal('');
   readonly cedentLookupError = signal(false);
+  readonly mainCoverLookupError = signal(false);
+  readonly sectionsError = signal('');
+  readonly extensionsError = signal('');
   readonly currencies = signal<CurrencyReference[]>([]);
   readonly cedentResults = signal<CedentReference[]>([]);
+  readonly mainCovers = signal<CoverageOption[]>([]);
+  readonly sections = signal<CoverageOption[]>([]);
+  readonly extensions = signal<CoverageOption[]>([]);
   readonly activeCedentIndex = signal(-1);
+  readonly activeMainCoverIndex = signal(-1);
   readonly formSnapshot = signal(this.createEmptySnapshot());
+  readonly filteredMainCovers = computed(() => {
+    const search = this.mainCoverSearchControl.value.trim().toLowerCase();
+
+    if (!search || this.hasSelectedMainCover()) {
+      return this.mainCovers();
+    }
+
+    return this.mainCovers().filter(option => this.formatCoverageLabel(option).toLowerCase().includes(search));
+  });
+  readonly selectedMainCover = computed(() => this.findCoverageOption(this.mainCovers(), this.formSnapshot().coverageSelection.mainCoverId));
+  readonly selectedSections = computed(() => this.findCoverageOptions(this.sections(), this.formSnapshot().coverageSelection.sectionIds));
+  readonly selectedExtensions = computed(() => this.findCoverageOptions(this.extensions(), this.formSnapshot().coverageSelection.extensionIds));
   readonly selectedCurrency = computed(() => {
     const currencyId = this.formSnapshot().currencyId;
     return this.currencies().find(currency => currency.id === currencyId) ?? null;
@@ -148,6 +178,9 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       sumInsured: snapshot.sumInsured,
       grossPremium: snapshot.grossPremium,
       estimatedNetPremium: this.getNetPremiumPreview(snapshot.grossPremium, snapshot.cedentCommissionPct),
+      mainCover: this.selectedMainCover() ? this.formatCoverageLabel(this.selectedMainCover()!) : 'Not selected',
+      sections: this.selectedSections().length > 0 ? this.selectedSections().map(option => this.formatCoverageLabel(option)).join(', ') : 'None',
+      extensions: this.selectedExtensions().length > 0 ? this.selectedExtensions().map(option => this.formatCoverageLabel(option)).join(', ') : 'None',
       status: 'Draft'
     };
   });
@@ -157,6 +190,11 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     name: this.fb.nonNullable.control('', [Validators.required, Validators.maxLength(255)]),
     counterpartyId: this.fb.control<number | null>(null, [Validators.required]),
     currencyId: this.fb.control<number | null>(null, [Validators.required]),
+    coverageSelection: this.fb.group({
+      mainCoverId: this.fb.control<number | null>(null, [Validators.required]),
+      sectionIds: this.fb.nonNullable.control<number[]>([]),
+      extensionIds: this.fb.nonNullable.control<number[]>([])
+    }),
     receptionDate: this.fb.nonNullable.control(''),
     inceptionDate: this.fb.nonNullable.control('', [Validators.required]),
     expiryDate: this.fb.nonNullable.control('', [Validators.required]),
@@ -178,12 +216,19 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   });
 
   private selectedCedentName = '';
+  private selectedMainCoverLabel = '';
+  private isHydratingCoverage = false;
   private lastSavedSnapshot = this.createEmptySnapshot();
   private readonly cedentOpenRequests = new Subject<void>();
+  private readonly mainCoverOpenRequests = new Subject<void>();
 
   ngOnInit(): void {
+    this.setSectionsEnabled(false);
+    this.setExtensionsEnabled(false);
     this.bindFormState();
     this.bindCedentSearch();
+    this.bindMainCoverSearch();
+    this.bindCoverageSelection();
     this.bindFrontingValidation();
     this.loadCurrencies();
   }
@@ -200,6 +245,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   handleDocumentClick(event: MouseEvent): void {
     if (!this.elementRef.nativeElement.contains(event.target as Node)) {
       this.closeCedentDropdown();
+      this.closeMainCoverDropdown();
     }
   }
 
@@ -212,7 +258,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   get isBusy(): boolean {
-    return this.isSaving() || this.isInitialLoading() || this.isCurrenciesLoading();
+    return this.isSaving() || this.isInitialLoading() || this.isCurrenciesLoading() || this.isMainCoverLoading() || this.isSectionsLoading() || this.isExtensionsLoading();
   }
 
   get saveDraftLabel(): string {
@@ -220,7 +266,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   get continueLabel(): string {
-    return this.isSaving() && this.saveMode() === 'continue' ? 'Saving...' : 'Continue to Conditions';
+    return this.isSaving() && this.saveMode() === 'continue' ? 'Saving...' : 'Continue to Overview';
   }
 
   openCedentDropdown(): void {
@@ -235,6 +281,99 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   closeCedentDropdown(): void {
     this.isCedentDropdownOpen.set(false);
     this.activeCedentIndex.set(-1);
+  }
+
+  openMainCoverDropdown(): void {
+    const shouldRefresh = !this.isMainCoverDropdownOpen() || this.mainCoverLookupError() || this.mainCovers().length === 0;
+    this.isMainCoverDropdownOpen.set(true);
+
+    if (shouldRefresh) {
+      this.mainCoverOpenRequests.next();
+    }
+  }
+
+  closeMainCoverDropdown(): void {
+    this.isMainCoverDropdownOpen.set(false);
+    this.activeMainCoverIndex.set(-1);
+  }
+
+  selectMainCover(mainCover: CoverageOption): void {
+    this.selectedMainCoverLabel = this.formatCoverageLabel(mainCover);
+    this.mainCoverSearchControl.setValue(this.selectedMainCoverLabel, { emitEvent: false });
+    this.form.controls.coverageSelection.controls.mainCoverId.setValue(mainCover.id);
+    this.form.controls.coverageSelection.controls.mainCoverId.markAsDirty();
+    this.form.controls.coverageSelection.controls.mainCoverId.markAsTouched();
+    this.closeMainCoverDropdown();
+  }
+
+  clearMainCoverSelection(): void {
+    this.selectedMainCoverLabel = '';
+    this.mainCoverSearchControl.setValue('', { emitEvent: false });
+    this.form.controls.coverageSelection.controls.mainCoverId.setValue(null);
+    this.mainCoverLookupError.set(false);
+    this.closeMainCoverDropdown();
+  }
+
+  handleMainCoverKeydown(event: KeyboardEvent): void {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        if (!this.isMainCoverDropdownOpen()) {
+          this.openMainCoverDropdown();
+          return;
+        }
+        this.moveActiveMainCover(1);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        if (!this.isMainCoverDropdownOpen()) {
+          this.openMainCoverDropdown();
+          return;
+        }
+        this.moveActiveMainCover(-1);
+        return;
+      case 'Enter': {
+        if (!this.isMainCoverDropdownOpen()) {
+          return;
+        }
+
+        const activeMainCover = this.filteredMainCovers()[this.activeMainCoverIndex()];
+
+        if (!activeMainCover) {
+          return;
+        }
+
+        event.preventDefault();
+        this.selectMainCover(activeMainCover);
+        return;
+      }
+      case 'Escape':
+        if (!this.isMainCoverDropdownOpen()) {
+          return;
+        }
+
+        event.preventDefault();
+        this.closeMainCoverDropdown();
+        return;
+      default:
+        return;
+    }
+  }
+
+  setActiveMainCoverIndex(index: number): void {
+    this.activeMainCoverIndex.set(index);
+  }
+
+  formatCoverageLabel(option: CoverageOption): string {
+    return `${option.code} - ${option.name}`;
+  }
+
+  isMandatorySection(section: CoverageOption): boolean {
+    return section.isMandatory;
+  }
+
+  isMandatoryExtension(extension: CoverageOption): boolean {
+    return extension.isMandatory;
   }
 
   selectCedent(cedent: CedentReference): void {
@@ -331,7 +470,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     void this.persist('draft');
   }
 
-  continueToConditions(): void {
+  continueToOverview(): void {
     this.generalError.set('');
     this.clearServerErrors();
     this.form.markAllAsTouched();
@@ -420,6 +559,88 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     });
   }
 
+  private bindMainCoverSearch(): void {
+    const typedSearches$ = this.mainCoverSearchControl.valueChanges.pipe(
+      tap(value => {
+        if (value !== this.selectedMainCoverLabel && this.form.controls.coverageSelection.controls.mainCoverId.value !== null) {
+          this.form.controls.coverageSelection.controls.mainCoverId.setValue(null);
+        }
+      }),
+      tap(() => this.isMainCoverDropdownOpen.set(true)),
+      debounceTime(200),
+      distinctUntilChanged()
+    );
+
+    merge(this.mainCoverOpenRequests, typedSearches$).pipe(
+      tap(() => {
+        this.mainCoverLookupError.set(false);
+        this.activeMainCoverIndex.set(this.filteredMainCovers().length > 0 ? 0 : -1);
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe();
+  }
+
+  private bindCoverageSelection(): void {
+    const coverageControls = this.form.controls.coverageSelection.controls;
+
+    coverageControls.mainCoverId.valueChanges.pipe(
+      distinctUntilChanged(),
+      tap(mainCoverId => {
+        if (this.isHydratingCoverage) {
+          return;
+        }
+
+        this.clearCoverageChildren();
+
+        if (mainCoverId == null) {
+          this.selectedMainCoverLabel = '';
+          this.mainCoverSearchControl.setValue('', { emitEvent: false });
+        }
+      }),
+      switchMap(mainCoverId => {
+        if (this.isHydratingCoverage || mainCoverId == null) {
+          return of(null);
+        }
+
+        return this.loadCoverageChildren(mainCoverId, [], []);
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe();
+
+    coverageControls.sectionIds.valueChanges.pipe(
+      distinctUntilChanged((previous, current) => this.areNumberArraysEqual(previous, current)),
+      switchMap(sectionIds => {
+        if (this.isHydratingCoverage) {
+          return of(null);
+        }
+
+        const normalizedSectionIds = this.mergeMandatoryIds(sectionIds, this.sections());
+
+        if (!this.areNumberArraysEqual(sectionIds, normalizedSectionIds)) {
+          coverageControls.sectionIds.setValue(normalizedSectionIds, { emitEvent: false });
+        }
+
+        return this.loadExtensionsForSelection(normalizedSectionIds, coverageControls.extensionIds.value);
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe();
+
+    coverageControls.extensionIds.valueChanges.pipe(
+      distinctUntilChanged((previous, current) => this.areNumberArraysEqual(previous, current)),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(extensionIds => {
+      if (this.isHydratingCoverage) {
+        return;
+      }
+
+      const normalizedExtensionIds = this.mergeMandatoryIds(extensionIds, this.extensions());
+
+      if (!this.areNumberArraysEqual(extensionIds, normalizedExtensionIds)) {
+        coverageControls.extensionIds.setValue(normalizedExtensionIds, { emitEvent: false });
+      }
+    });
+  }
+
   private bindFrontingValidation(): void {
     this.form.controls.isFronting.valueChanges.pipe(
       startWith(this.form.controls.isFronting.value),
@@ -441,28 +662,37 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private loadCurrencies(): void {
     this.isInitialLoading.set(true);
     this.isCurrenciesLoading.set(true);
-    const routeContractId = Number(this.route.snapshot.queryParamMap.get('contractId'));
-    const contractId = Number.isInteger(routeContractId) && routeContractId > 0 ? routeContractId : null;
+    this.isMainCoverLoading.set(true);
+    const contractId = this.getRouteContractId();
 
     forkJoin({
       currencies: this.contractsService.getCurrencies(),
+      mainCovers: this.contractsService.getMainCovers(),
       contract: contractId == null ? of(null) : this.contractsService.getFacultativeContract(contractId)
     }).pipe(
-      finalize(() => {
-        this.isInitialLoading.set(false);
-        this.isCurrenciesLoading.set(false);
-      })
-    ).subscribe({
-      next: ({ currencies, contract }) => {
+      switchMap(({ currencies, mainCovers, contract }) => {
         this.currencies.set(currencies);
+        this.mainCovers.set(mainCovers);
         const defaultCurrency = currencies.find(currency => currency.isDefault) ?? currencies[0];
 
         if (contract) {
-          this.applyLoadedContract(contract);
-        } else if (defaultCurrency && this.form.controls.currencyId.value == null) {
+          this.applyLoadedContract(contract, contractId);
+          return this.hydrateLoadedCoverage(contract);
+        }
+
+        if (defaultCurrency && this.form.controls.currencyId.value == null) {
           this.form.controls.currencyId.setValue(defaultCurrency.id);
         }
 
+        return of(null);
+      }),
+      finalize(() => {
+        this.isInitialLoading.set(false);
+        this.isCurrenciesLoading.set(false);
+        this.isMainCoverLoading.set(false);
+      })
+    ).subscribe({
+      next: () => {
         this.lastSavedSnapshot = this.createSnapshot();
         this.form.markAsPristine();
       },
@@ -474,8 +704,122 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     });
   }
 
-  private applyLoadedContract(contract: FacultativeContractResponse): void {
-    this.contractId.set(contract.contractId);
+  private loadCoverageChildren(mainCoverId: number, savedSectionIds: number[], savedExtensionIds: number[]) {
+    this.isSectionsLoading.set(true);
+    this.isExtensionsLoading.set(true);
+    this.sectionsError.set('');
+    this.extensionsError.set('');
+
+    return forkJoin({
+      sections: this.contractsService.getCoverageChildren(mainCoverId, 'SECTION').pipe(
+        catchError(() => {
+          this.sectionsError.set('Sections could not be loaded for this Main Cover.');
+          return of([] as CoverageOption[]);
+        })
+      ),
+      directExtensions: this.contractsService.getCoverageChildren(mainCoverId, 'EXTENSION').pipe(
+        catchError(() => {
+          this.extensionsError.set('Extensions could not be loaded for this Main Cover.');
+          return of([] as CoverageOption[]);
+        })
+      )
+    }).pipe(
+      switchMap(({ sections, directExtensions }) => {
+        this.sections.set(sections);
+        this.setSectionsEnabled(sections.length > 0);
+
+        const sectionIds = this.mergeMandatoryIds(savedSectionIds, sections);
+        this.form.controls.coverageSelection.controls.sectionIds.setValue(sectionIds, { emitEvent: false });
+
+        return this.loadExtensionsForSelection(sectionIds, savedExtensionIds, directExtensions);
+      }),
+      finalize(() => {
+        this.isSectionsLoading.set(false);
+        this.isExtensionsLoading.set(false);
+      })
+    );
+  }
+
+  private loadExtensionsForSelection(sectionIds: number[], savedExtensionIds: number[], directExtensions?: CoverageOption[]) {
+    const mainCoverId = this.form.controls.coverageSelection.controls.mainCoverId.value;
+
+    if (mainCoverId == null) {
+      this.extensions.set([]);
+      this.setExtensionsEnabled(false);
+      this.form.controls.coverageSelection.controls.extensionIds.setValue([], { emitEvent: false });
+      return of(null);
+    }
+
+    this.isExtensionsLoading.set(true);
+    if (!directExtensions) {
+      this.extensionsError.set('');
+    }
+
+    const directExtensions$ = directExtensions
+      ? of(directExtensions)
+      : this.contractsService.getCoverageChildren(mainCoverId, 'EXTENSION').pipe(
+        catchError(() => {
+          this.extensionsError.set('Extensions could not be loaded for this Main Cover.');
+          return of([] as CoverageOption[]);
+        })
+      );
+
+    const sectionExtensionRequests = sectionIds.map(sectionId =>
+      this.contractsService.getCoverageChildren(sectionId, 'EXTENSION').pipe(
+        catchError(() => {
+          this.extensionsError.set('Some section extensions could not be loaded.');
+          return of([] as CoverageOption[]);
+        })
+      )
+    );
+
+    return forkJoin([
+      directExtensions$,
+      sectionExtensionRequests.length > 0 ? forkJoin(sectionExtensionRequests) : of([] as CoverageOption[][])
+    ]).pipe(
+      tap(([mainCoverExtensions, sectionExtensions]) => {
+        const extensions = this.uniqueCoverageOptions([...mainCoverExtensions, ...sectionExtensions.flat()]);
+        this.extensions.set(extensions);
+        this.setExtensionsEnabled(extensions.length > 0);
+
+        const validSavedExtensionIds = savedExtensionIds.filter(id => extensions.some(option => option.id === id));
+        const extensionIds = this.mergeMandatoryIds(validSavedExtensionIds, extensions);
+        this.form.controls.coverageSelection.controls.extensionIds.setValue(extensionIds, { emitEvent: false });
+      }),
+      finalize(() => this.isExtensionsLoading.set(false)),
+      map(() => null)
+    );
+  }
+
+  private hydrateLoadedCoverage(contract: FacultativeContractResponse) {
+    const coverage = contract.coverageSelection;
+
+    if (!coverage?.mainCoverId) {
+      return of(null);
+    }
+
+    this.isHydratingCoverage = true;
+
+    const embeddedMainCover = coverage.mainCover;
+    const mainCover = this.mainCovers().find(option => option.id === coverage.mainCoverId) ?? embeddedMainCover ?? null;
+
+    if (mainCover) {
+      this.mainCovers.set(this.uniqueCoverageOptions([...this.mainCovers(), mainCover]));
+      this.selectedMainCoverLabel = this.formatCoverageLabel(mainCover);
+      this.mainCoverSearchControl.setValue(this.selectedMainCoverLabel, { emitEvent: false });
+    }
+
+    this.form.controls.coverageSelection.controls.mainCoverId.setValue(coverage.mainCoverId, { emitEvent: false });
+
+    return this.loadCoverageChildren(coverage.mainCoverId, coverage.sectionIds, coverage.extensionIds).pipe(
+      finalize(() => {
+        this.isHydratingCoverage = false;
+      })
+    );
+  }
+
+  private applyLoadedContract(contract: FacultativeContractResponse, fallbackContractId: number | null): void {
+    this.contractId.set(this.getPositiveId(contract.contractId) ?? fallbackContractId);
     this.backendNetPremium.set(contract.netPremiumCedent);
     this.form.patchValue({
       umr: contract.umr ?? '',
@@ -514,12 +858,19 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private async persist(mode: 'draft' | 'continue'): Promise<void> {
+    const contractId = this.getCurrentContractId();
+
+    if (mode === 'continue' && contractId != null && !this.hasUnsavedChanges()) {
+      this.navigateToOverview(contractId);
+      return;
+    }
+
     this.isSaving.set(true);
     this.saveMode.set(mode);
 
-    const request = this.contractId() == null
+    const request = contractId == null
       ? this.contractsService.createFacultativeContract(this.buildRequest())
-      : this.contractsService.updateFacultativeContract(this.contractId()!, this.buildRequest());
+      : this.contractsService.updateFacultativeContract(contractId, this.buildRequest());
 
     request.pipe(
       finalize(() => {
@@ -536,9 +887,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
         });
 
         if (mode === 'continue') {
-          void this.router.navigate([this.conditionsRoute], {
-            queryParams: { contractId: this.contractId() ?? undefined }
-          });
+          this.navigateToOverview(this.getCurrentContractId());
         }
       },
       error: (error: HttpErrorResponse) => {
@@ -548,8 +897,10 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private applySaveResponse(response: FacultativeContractResponse): void {
-    if (response.contractId) {
-      this.contractId.set(response.contractId);
+    const responseContractId = this.getPositiveId(response.contractId);
+
+    if (responseContractId != null) {
+      this.contractId.set(responseContractId);
     }
 
     this.backendNetPremium.set(response.netPremiumCedent);
@@ -565,6 +916,11 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       name: raw.name.trim(),
       counterpartyId: raw.counterpartyId!,
       currencyId: raw.currencyId!,
+      coverageSelection: {
+        mainCoverId: raw.coverageSelection.mainCoverId!,
+        sectionIds: this.uniquePositiveNumberArray(raw.coverageSelection.sectionIds),
+        extensionIds: this.uniquePositiveNumberArray(raw.coverageSelection.extensionIds)
+      },
       receptionDate: this.toNullableText(raw.receptionDate),
       inceptionDate: raw.inceptionDate,
       expiryDate: raw.expiryDate,
@@ -607,6 +963,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       this.form.controls.name,
       this.form.controls.counterpartyId,
       this.form.controls.currencyId,
+      this.form.controls.coverageSelection.controls.mainCoverId,
       this.form.controls.inceptionDate,
       this.form.controls.expiryDate
     ];
@@ -621,6 +978,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     this.form.controls.name.markAsTouched();
     this.form.controls.counterpartyId.markAsTouched();
     this.form.controls.currencyId.markAsTouched();
+    this.form.controls.coverageSelection.controls.mainCoverId.markAsTouched();
     this.form.controls.inceptionDate.markAsTouched();
     this.form.controls.expiryDate.markAsTouched();
   }
@@ -674,6 +1032,100 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     this.activeCedentIndex.set(nextIndex);
   }
 
+  private moveActiveMainCover(direction: number): void {
+    const results = this.filteredMainCovers();
+
+    if (results.length === 0) {
+      this.activeMainCoverIndex.set(-1);
+      return;
+    }
+
+    const currentIndex = this.activeMainCoverIndex();
+    const nextIndex = currentIndex < 0
+      ? 0
+      : (currentIndex + direction + results.length) % results.length;
+
+    this.activeMainCoverIndex.set(nextIndex);
+  }
+
+  private hasSelectedMainCover(): boolean {
+    return this.form.controls.coverageSelection.controls.mainCoverId.value != null
+      && this.mainCoverSearchControl.value.trim() === this.selectedMainCoverLabel;
+  }
+
+  private clearCoverageChildren(): void {
+    this.sections.set([]);
+    this.extensions.set([]);
+    this.sectionsError.set('');
+    this.extensionsError.set('');
+    this.form.controls.coverageSelection.controls.sectionIds.setValue([], { emitEvent: false });
+    this.form.controls.coverageSelection.controls.extensionIds.setValue([], { emitEvent: false });
+    this.setSectionsEnabled(false);
+    this.setExtensionsEnabled(false);
+  }
+
+  private setSectionsEnabled(isEnabled: boolean): void {
+    const control = this.form.controls.coverageSelection.controls.sectionIds;
+
+    if (isEnabled) {
+      control.enable({ emitEvent: false });
+    } else {
+      control.disable({ emitEvent: false });
+    }
+  }
+
+  private setExtensionsEnabled(isEnabled: boolean): void {
+    const control = this.form.controls.coverageSelection.controls.extensionIds;
+
+    if (isEnabled) {
+      control.enable({ emitEvent: false });
+    } else {
+      control.disable({ emitEvent: false });
+    }
+  }
+
+  private mergeMandatoryIds(selectedIds: number[], options: CoverageOption[]): number[] {
+    const availableIds = new Set(options.map(option => option.id));
+    const selectedAvailableIds = selectedIds.filter(id => availableIds.has(id));
+    const mandatoryIds = options.filter(option => option.isMandatory).map(option => option.id);
+
+    return [...new Set([...selectedAvailableIds, ...mandatoryIds])];
+  }
+
+  private uniqueCoverageOptions(options: CoverageOption[]): CoverageOption[] {
+    const seenIds = new Set<number>();
+
+    return options.filter(option => {
+      if (option.id <= 0 || seenIds.has(option.id)) {
+        return false;
+      }
+
+      seenIds.add(option.id);
+      return true;
+    });
+  }
+
+  private findCoverageOption(options: CoverageOption[], id: number | null): CoverageOption | null {
+    if (id == null) {
+      return null;
+    }
+
+    return options.find(option => option.id === id) ?? null;
+  }
+
+  private findCoverageOptions(options: CoverageOption[], ids: number[]): CoverageOption[] {
+    const selectedIds = new Set(ids);
+    return options.filter(option => selectedIds.has(option.id));
+  }
+
+  private areNumberArraysEqual(previous: number[], current: number[]): boolean {
+    if (previous.length !== current.length) {
+      return false;
+    }
+
+    return previous.every((value, index) => value === current[index]);
+  }
+
   private clearCedentSelectionError(): void {
     if (!this.form.controls.counterpartyId.hasError('invalidSelection')) {
       return;
@@ -711,11 +1163,12 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       control.markAsTouched();
     }
 
-    if (error.status === 409 && !this.duplicateUmrMessage()) {
+    if (error.status === 409 && !this.duplicateUmrMessage() && this.form.controls.umr.hasError('serverError')) {
       this.duplicateUmrMessage.set('This UMR already exists.');
     }
 
-    const genericMessage = generalErrors[0] ?? this.getUnexpectedErrorMessage(error);
+    const backendFieldMessage = Object.values(fieldErrors).flat().find(message => message.trim().length > 0);
+    const genericMessage = generalErrors[0] ?? backendFieldMessage ?? this.getUnexpectedErrorMessage(error);
     this.generalError.set(genericMessage);
     this.snackBar.open(genericMessage, 'Dismiss', {
       duration: 4500,
@@ -770,7 +1223,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       }
     }
 
-    const message = record['title'] ?? record['detail'] ?? record['message'];
+    const message = record['message'] ?? record['detail'] ?? record['title'];
 
     if (typeof message === 'string' && message.trim()) {
       result.generalErrors.push(message);
@@ -786,6 +1239,11 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       name: 'name',
       counterpartyid: 'counterpartyId',
       currencyid: 'currencyId',
+      coverageselection: 'coverageSelection',
+      'coverageselection.maincoverid': 'coverageSelection.mainCoverId',
+      maincoverid: 'coverageSelection.mainCoverId',
+      sectionids: 'coverageSelection.sectionIds',
+      extensionids: 'coverageSelection.extensionIds',
       receptiondate: 'receptionDate',
       inceptiondate: 'inceptionDate',
       expirydate: 'expiryDate',
@@ -845,7 +1303,29 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private canLeaveWithoutPrompt(): boolean {
-    return this.isBusy || JSON.stringify(this.createSnapshot()) === JSON.stringify(this.lastSavedSnapshot);
+    return this.isBusy || !this.hasUnsavedChanges();
+  }
+
+  private navigateToOverview(contractId: number | null): void {
+    void this.router.navigate([this.overviewRoute], {
+      queryParams: { contractId: contractId ?? undefined }
+    });
+  }
+
+  private hasUnsavedChanges(): boolean {
+    return JSON.stringify(this.createSnapshot()) !== JSON.stringify(this.lastSavedSnapshot);
+  }
+
+  private getCurrentContractId(): number | null {
+    return this.getPositiveId(this.contractId());
+  }
+
+  private getRouteContractId(): number | null {
+    return this.getPositiveId(Number(this.route.snapshot.queryParamMap.get('contractId')));
+  }
+
+  private getPositiveId(value: number | null): number | null {
+    return Number.isInteger(value) && value != null && value > 0 ? value : null;
   }
 
   private createSnapshot() {
@@ -856,6 +1336,11 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       name: raw.name,
       counterpartyId: raw.counterpartyId,
       currencyId: raw.currencyId,
+      coverageSelection: {
+        mainCoverId: raw.coverageSelection.mainCoverId,
+        sectionIds: raw.coverageSelection.sectionIds,
+        extensionIds: raw.coverageSelection.extensionIds
+      },
       receptionDate: raw.receptionDate,
       inceptionDate: raw.inceptionDate,
       expiryDate: raw.expiryDate,
@@ -881,6 +1366,11 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       name: '',
       counterpartyId: null as number | null,
       currencyId: null as number | null,
+      coverageSelection: {
+        mainCoverId: null as number | null,
+        sectionIds: [] as number[],
+        extensionIds: [] as number[]
+      },
       receptionDate: '',
       inceptionDate: '',
       expiryDate: '',
@@ -903,5 +1393,9 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private toNullableText(value: string): string | null {
     const trimmedValue = value.trim();
     return trimmedValue ? trimmedValue : null;
+  }
+
+  private uniquePositiveNumberArray(values: number[]): number[] {
+    return [...new Set(values.filter(value => Number.isInteger(value) && value > 0))];
   }
 }

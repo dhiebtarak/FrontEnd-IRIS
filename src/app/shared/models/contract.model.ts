@@ -117,11 +117,85 @@ export interface DashboardSummary {
   recentContracts: RecentContractItem[];
 }
 
+export type CoverageLevel =
+  | 'MAIN_COVER'
+  | 'SECTION'
+  | 'EXTENSION';
+
+export type CoverageRelationType =
+  | 'HAS_SECTION'
+  | 'HAS_EXTENSION';
+
+export interface CoverageOption {
+  id: number;
+  code: string;
+  name: string;
+  level: CoverageLevel;
+  parentId: number | null;
+  relationType: CoverageRelationType | null;
+  isMandatory: boolean;
+  hasSlip: boolean;
+  slipTemplateId?: number | null;
+}
+
+export interface CoverageSelectionPayload {
+  mainCoverId: number;
+  sectionIds: number[];
+  extensionIds: number[];
+}
+
+export interface CoverageSelectionResponse {
+  mainCoverId: number | null;
+  sectionIds: number[];
+  extensionIds: number[];
+  mainCover?: CoverageOption | null;
+  sections?: CoverageOption[];
+  extensions?: CoverageOption[];
+}
+
+export interface ContractPanelItem {
+  idPanel: number;
+  idContract: number;
+  idCounterparty: number;
+  reinsurerName: string;
+  role: string | null;
+  writtenSharePct: number | null;
+  signedSharePct: number | null;
+  tsi: number | null;
+  deductible: number | null;
+  premiumRatePct: number | null;
+  grossPremium: number | null;
+  brokeragePct: number | null;
+  otherDeductions: number | null;
+  netPremium: number | null;
+  premiumReference: string | null;
+  status: string;
+}
+
+export interface CreateContractPanelRequest {
+  idCounterparty: number;
+  writtenSharePct: number | null;
+  signedSharePct: number | null;
+  tsi: number | null;
+  deductible: number | null;
+  premiumRatePct: number | null;
+  grossPremium: number | null;
+  brokeragePct: number | null;
+  otherDeductions: number | null;
+  premiumReference: string | null;
+}
+
+export interface UpdateContractPanelRequest extends CreateContractPanelRequest {
+  netPremium: number | null;
+  status: string | null;
+}
+
 export interface UpsertFacultativeContractRequest {
   umr: string | null;
   name: string;
   counterpartyId: number;
   currencyId: number;
+  coverageSelection: CoverageSelectionPayload;
   receptionDate: string | null;
   inceptionDate: string;
   expiryDate: string;
@@ -146,12 +220,14 @@ export interface FacultativeContractResponse {
   netPremiumCedent: number | null;
   umr: string | null;
   name: string;
+  contractType?: string | null;
   counterpartyId: number;
   counterpartyName?: string | null;
   currencyId: number;
   currencyCode?: string | null;
   currencySymbol?: string | null;
   currencyDecimalPlaces?: number | null;
+  coverageSelection?: CoverageSelectionResponse | null;
   receptionDate: string | null;
   inceptionDate: string;
   expiryDate: string;
@@ -168,4 +244,14 @@ export interface FacultativeContractResponse {
   isFronting: boolean;
   frontingReference: string | null;
   memoText: string | null;
+  createdBy?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  panels?: ContractPanelItem[];
+}
+
+export interface ContractSlipDownload {
+  blob: Blob | null;
+  filename: string | null;
+  hasSlip: boolean;
 }

@@ -47,7 +47,7 @@ export class ContractsListComponent implements OnInit {
   readonly endItem = computed(() => Math.min(this.pageNumber() * this.pageSize(), this.totalCount()));
   readonly isLoading = computed(() => this.listState() === 'loading');
   readonly createContractRoute = '/workspace/reassurance/front-officer/contracts/new/type';
-  readonly facultativeContractRoute = '/workspace/reassurance/front-officer/contracts/new/facultative';
+  readonly overviewRoute = '/workspace/reassurance/front-officer/contracts/new/overview';
   readonly pageSizeOptions = [10, 20, 50, 100];
   readonly contractStatuses = ['Draft'];
   readonly sortOptions: ReadonlyArray<{ value: ContractSortField; label: string }> = [
@@ -65,10 +65,10 @@ export class ContractsListComponent implements OnInit {
 
   readonly filters = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
-    contractType: new FormControl('', { nonNullable: true }),
+    contractType: new FormControl({ value: '', disabled: true }, { nonNullable: true }),
     status: new FormControl('', { nonNullable: true }),
-    counterpartyId: new FormControl('', { nonNullable: true }),
-    currencyId: new FormControl('', { nonNullable: true }),
+    counterpartyId: new FormControl({ value: '', disabled: true }, { nonNullable: true }),
+    currencyId: new FormControl({ value: '', disabled: true }, { nonNullable: true }),
     inceptionFrom: new FormControl('', { nonNullable: true }),
     inceptionTo: new FormControl('', { nonNullable: true }),
     expiryFrom: new FormControl('', { nonNullable: true }),
@@ -119,6 +119,7 @@ export class ContractsListComponent implements OnInit {
   }
 
   loadReferenceData(): void {
+    this.setReferenceFilterControlsDisabled(true);
     this.isLoadingReferences.set(true);
     this.referenceError.set('');
 
@@ -134,10 +135,12 @@ export class ContractsListComponent implements OnInit {
           this.currencies.set(response.currencies);
           this.cedents.set(response.cedents.items);
           this.isLoadingReferences.set(false);
+          this.setReferenceFilterControlsDisabled(false);
         },
         error: () => {
           this.referenceError.set('Contract filter reference data could not be loaded.');
           this.isLoadingReferences.set(false);
+          this.setReferenceFilterControlsDisabled(false);
         }
       });
   }
@@ -223,11 +226,31 @@ export class ContractsListComponent implements OnInit {
     return contract.contractType?.toLowerCase() === 'facultative';
   }
 
+  isReadyForPlacement(contract: ContractListItem): boolean {
+    return this.normalizeStatus(contract.status) === 'ready for placement';
+  }
+
+  getDisplayStatus(contract: ContractListItem): string {
+    return contract.status || 'Not provided';
+  }
+
+  getDetailsRoute(contract: ContractListItem): string {
+    return this.overviewRoute;
+  }
+
+  getDetailsQueryParams(contract: ContractListItem): { contractId: number } {
+    return { contractId: contract.idContract };
+  }
+
   getStatusClasses(status: string): string {
-    const normalizedStatus = status.trim().toLowerCase();
+    const normalizedStatus = this.normalizeStatus(status);
 
     if (normalizedStatus === 'draft') {
       return 'border-amber-200 bg-amber-50 text-amber-800';
+    }
+
+    if (normalizedStatus === 'ready for placement') {
+      return 'border-blue-200 bg-blue-50 text-blue-800';
     }
 
     if (normalizedStatus.includes('bound') || normalizedStatus.includes('active')) {
@@ -239,6 +262,10 @@ export class ContractsListComponent implements OnInit {
     }
 
     return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+
+  private normalizeStatus(status: string): string {
+    return status.trim().toLowerCase();
   }
 
   private bindFilterChanges(): void {
@@ -341,6 +368,22 @@ export class ContractsListComponent implements OnInit {
 
   private toQueryValue(value: string): string | null {
     return value.trim() || null;
+  }
+
+  private setReferenceFilterControlsDisabled(isDisabled: boolean): void {
+    const controls = [
+      this.filters.controls.contractType,
+      this.filters.controls.counterpartyId,
+      this.filters.controls.currencyId
+    ];
+
+    for (const control of controls) {
+      if (isDisabled) {
+        control.disable({ emitEvent: false });
+      } else {
+        control.enable({ emitEvent: false });
+      }
+    }
   }
 
   private getListErrorMessage(error: HttpErrorResponse): string {

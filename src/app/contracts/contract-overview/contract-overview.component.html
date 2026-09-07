@@ -1,0 +1,333 @@
+<div class="min-h-screen bg-iris-bg font-calibri">
+  <main class="mx-auto max-w-[1500px] px-4 py-6 md:px-7 lg:px-10">
+    @if (isLoading()) {
+      <section class="rounded-[24px] border border-iris-border/80 bg-white p-8 shadow-[0_18px_45px_rgba(13,47,79,0.08)]">
+        <div class="flex flex-col items-center justify-center gap-4 py-14 text-center">
+          <div class="h-11 w-11 animate-spin rounded-full border-4 border-iris-divider border-t-iris-teal"></div>
+          <div>
+            <h2 class="font-cambria text-2xl font-bold text-iris-navy">Loading contract workspace</h2>
+            <p class="mt-2 text-sm text-iris-slate">Preparing the saved contract details.</p>
+          </div>
+        </div>
+      </section>
+    } @else if (errorMessage()) {
+      <section class="rounded-[24px] border border-rose-200 bg-rose-50 p-8 text-center text-rose-950 shadow-[0_18px_45px_rgba(13,47,79,0.08)]">
+        <h2 class="font-cambria text-2xl font-bold">Unable to load contract overview</h2>
+        <p class="mt-3 text-sm">{{ errorMessage() }}</p>
+        <button type="button" (click)="backToInformation()" class="mt-6 rounded-xl bg-iris-navy px-5 py-3 text-sm font-semibold text-white transition hover:bg-iris-navy-light">
+          Modify Contract
+        </button>
+      </section>
+    } @else if (contract()) {
+      <section class="overflow-hidden rounded-[24px] border border-iris-border/80 bg-white shadow-[0_18px_45px_rgba(13,47,79,0.08)]">
+        <div class="border-b border-iris-divider bg-gradient-to-r from-white via-sky-50 to-white px-5 py-5 md:px-7">
+          <div class="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+            <div class="min-w-0">
+              <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-iris-teal">Contract Workspace</p>
+              <h1 class="mt-2 font-cambria text-3xl font-bold leading-tight text-iris-navy md:text-4xl">{{ hero().name }}</h1>
+              <div class="mt-3 flex flex-wrap items-center gap-2 text-sm text-iris-slate">
+                <span class="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 font-bold text-iris-teal">{{ hero().umr }}</span>
+                <span class="rounded-full border border-iris-border bg-white px-3 py-1 font-bold text-iris-navy">{{ hero().contractType }}</span>
+                <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-bold text-emerald-800">{{ hero().status }}</span>
+                <span>{{ hero().cedent }}</span>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <button type="button" (click)="backToInformation()" [disabled]="isStartingBinding()" class="rounded-xl border border-iris-border bg-white px-4 py-2.5 text-sm font-semibold text-iris-navy transition hover:border-iris-navy-light disabled:cursor-not-allowed disabled:opacity-60">
+                Modify Contract
+              </button>
+              <button type="button" (click)="openReinsurerForm()" [disabled]="isStartingBinding()" class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-iris-teal transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60">
+                Add Reinsurer
+              </button>
+              <button type="button" (click)="startBindingPhase()" [disabled]="isStartingBinding()" class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-100 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+                @if (isStartingBinding()) {
+                  <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+                }
+                <span>{{ isStartingBinding() ? 'Checking slip...' : 'Start Binding Phase' }}</span>
+              </button>
+            </div>
+          </div>
+
+          @if (slipMessage()) {
+            <div class="mt-4 rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm font-semibold text-iris-navy">
+              {{ slipMessage() }}
+            </div>
+          }
+        </div>
+
+        <nav class="flex gap-1 overflow-x-auto border-b border-iris-divider bg-iris-bg/70 px-4 pt-3" aria-label="Contract workspace tabs">
+          <button
+            type="button"
+            (click)="selectOverviewTab()"
+            class="rounded-t-2xl border px-5 py-3 text-sm font-bold transition"
+            [ngClass]="activePanelId() === null ? 'border-iris-border border-b-white bg-white text-iris-navy' : 'border-transparent bg-transparent text-iris-slate hover:bg-white/70 hover:text-iris-navy'"
+          >
+            Contract Overview
+          </button>
+          @for (panel of panels(); track panel.idPanel) {
+            <button
+              type="button"
+              (click)="selectPanelTab(panel)"
+              class="rounded-t-2xl border px-5 py-3 text-sm font-bold transition"
+              [ngClass]="activePanelId() === panel.idPanel ? 'border-iris-border border-b-white bg-white text-iris-navy' : 'border-transparent bg-transparent text-iris-slate hover:bg-white/70 hover:text-iris-navy'"
+            >
+              {{ panel.reinsurerName || 'Reinsurer' }}
+            </button>
+          }
+        </nav>
+
+        <div class="p-5 md:p-7">
+          @if (activePanelId() === null) {
+            <div class="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+              <section class="rounded-[22px] border border-iris-border bg-white p-5">
+                <div class="mb-4 flex items-center justify-between border-b border-iris-divider pb-3">
+                  <h2 class="font-cambria text-2xl font-bold text-iris-navy">Contract Identity</h2>
+                  <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-teal">Overview</span>
+                </div>
+                <dl class="grid gap-x-6 gap-y-3 md:grid-cols-2">
+                  @for (row of contractInformationRows(); track row.label) {
+                    <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-3 border-b border-iris-divider/80 py-2 last:border-b-0">
+                      <dt class="text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">{{ row.label }}</dt>
+                      <dd class="font-semibold text-iris-navy">{{ row.value }}</dd>
+                    </div>
+                  }
+                </dl>
+              </section>
+
+              <section class="rounded-[22px] border border-iris-border bg-white p-5">
+                <div class="mb-4 border-b border-iris-divider pb-3">
+                  <h2 class="font-cambria text-2xl font-bold text-iris-navy">Coverage Hierarchy</h2>
+                </div>
+                <div class="space-y-4">
+                  <div class="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+                    <p class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Main Cover</p>
+                    <p class="mt-1 font-bold text-iris-navy">{{ formatCoverage(coverage()?.mainCover) }}</p>
+                  </div>
+
+                  <div class="pl-4">
+                    <p class="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Sections</p>
+                    @if (coverage()?.sections?.length) {
+                      <div class="space-y-2 border-l-2 border-sky-200 pl-4">
+                        @for (section of coverage()?.sections; track section.id) {
+                          <div class="rounded-xl bg-iris-bg px-3 py-2 font-semibold text-iris-navy">{{ formatCoverage(section) }}</div>
+                        }
+                      </div>
+                    } @else {
+                      <p class="rounded-xl bg-iris-bg px-3 py-2 text-sm font-semibold text-iris-slate">None</p>
+                    }
+                  </div>
+
+                  <div class="pl-8">
+                    <p class="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Extensions</p>
+                    @if (coverage()?.extensions?.length) {
+                      <div class="space-y-2 border-l-2 border-iris-teal/40 pl-4">
+                        @for (extension of coverage()?.extensions; track extension.id) {
+                          <div class="rounded-xl bg-iris-bg px-3 py-2 font-semibold text-iris-navy">{{ formatCoverage(extension) }}</div>
+                        }
+                      </div>
+                    } @else {
+                      <p class="rounded-xl bg-iris-bg px-3 py-2 text-sm font-semibold text-iris-slate">None</p>
+                    }
+                  </div>
+                </div>
+              </section>
+
+              <section class="rounded-[22px] border border-iris-border bg-white p-5 xl:col-span-2">
+                <div class="mb-3 flex items-center justify-between border-b border-iris-divider pb-3">
+                  <h2 class="font-cambria text-2xl font-bold text-iris-navy">Contract Financial Summary</h2>
+                  <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-teal">Dense View</span>
+                </div>
+                <div class="overflow-hidden rounded-2xl border border-iris-border">
+                  <table class="w-full min-w-[760px] text-left text-sm">
+                    <tbody class="divide-y divide-iris-divider">
+                      @for (row of contractFinancialRows(); track row.label) {
+                        <tr class="bg-white">
+                          <th class="w-1/3 bg-iris-bg/70 px-4 py-3 text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">{{ row.label }}</th>
+                          <td class="px-4 py-3 font-semibold text-iris-navy">{{ row.value }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              @if (panels().length === 0) {
+                <section class="rounded-[22px] border border-dashed border-iris-border bg-iris-bg/70 p-6 text-center xl:col-span-2">
+                  <p class="font-semibold text-iris-navy">No reinsurer placement has been added yet.</p>
+                  <button type="button" (click)="openReinsurerForm()" class="mt-4 rounded-xl border border-sky-200 bg-white px-4 py-2.5 text-sm font-semibold text-iris-teal transition hover:bg-sky-50">
+                    Add Reinsurer
+                  </button>
+                </section>
+              }
+            </div>
+          } @else if (activePanel()) {
+            <section class="rounded-[22px] border border-iris-border bg-white p-5">
+              <div class="mb-4 flex flex-col gap-3 border-b border-iris-divider pb-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Reinsurer Placement</p>
+                  <div class="mt-1 flex flex-wrap items-center gap-3">
+                    <h2 class="font-cambria text-2xl font-bold text-iris-navy">{{ activePanel()?.reinsurerName }}</h2>
+                    <span class="rounded-full border px-3 py-1 text-xs font-bold" [ngClass]="getPanelStatusClasses(activePanel()!)">
+                      Status: {{ activePanel()?.status || 'Not provided' }}
+                    </span>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" (click)="openEditPlacement(activePanel()!)" class="rounded-xl border border-iris-border bg-white px-4 py-2.5 text-sm font-semibold text-iris-navy transition hover:border-iris-navy-light">
+                    Edit Placement
+                  </button>
+                  @if (isPanelConfirmed(activePanel()!)) {
+                    <span class="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-800">
+                      Confirmed
+                    </span>
+                  } @else {
+                    <button type="button" (click)="confirmReinsurer(activePanel()!)" [disabled]="confirmingPanelId() === activePanel()?.idPanel" class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-100 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+                      @if (confirmingPanelId() === activePanel()?.idPanel) {
+                        <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+                      }
+                      <span>{{ confirmingPanelId() === activePanel()?.idPanel ? 'Confirming...' : 'Confirm Reinsurer' }}</span>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <div class="overflow-hidden rounded-2xl border border-iris-border">
+                <table class="w-full min-w-[820px] text-left text-sm">
+                  <tbody class="divide-y divide-iris-divider">
+                    @for (row of getPanelRows(activePanel()!); track row.label) {
+                      <tr>
+                        <th class="w-1/3 bg-iris-bg/70 px-4 py-3 text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">{{ row.label }}</th>
+                        <td class="px-4 py-3 font-semibold text-iris-navy">{{ row.value }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          }
+        </div>
+      </section>
+    }
+  </main>
+
+  @if (isReinsurerFormOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-iris-navy/35 px-4 py-6">
+      <section class="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[24px] border border-iris-border bg-white p-5 shadow-[0_28px_80px_rgba(13,47,79,0.22)] md:p-6">
+        <div class="flex items-start justify-between gap-4 border-b border-iris-divider pb-4">
+          <div>
+            <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Placement Panel</p>
+            <h2 class="mt-1 font-cambria text-2xl font-bold text-iris-navy">
+              {{ panelFormMode() === 'edit' ? 'Edit Placement' : 'Add Reinsurer' }}
+            </h2>
+          </div>
+          <button type="button" (click)="closeReinsurerForm()" class="rounded-xl border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy transition hover:bg-iris-bg">
+            Close
+          </button>
+        </div>
+
+        @if (reinsurerLookupError()) {
+          <div class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-950">
+            {{ reinsurerLookupError() }}
+          </div>
+        }
+
+        <form [formGroup]="panelForm" (ngSubmit)="submitReinsurerPanel()" class="mt-5 grid gap-4 md:grid-cols-2">
+          <label class="md:col-span-2">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Reinsurance company name</span>
+            <input
+              type="search"
+              [formControl]="reinsurerSearchControl"
+              [placeholder]="isEditMode() ? 'Reinsurer locked for this placement' : 'Search Reinsurer counterparties'"
+              class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition disabled:bg-iris-bg disabled:text-iris-slate disabled:opacity-100 focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+            />
+            @if (isEditMode()) {
+              <p class="mt-2 text-xs font-semibold text-iris-slate">The reinsurer cannot be changed after the placement panel is created.</p>
+            } @else {
+              <div class="mt-2 max-h-48 overflow-y-auto rounded-2xl border border-iris-border bg-white">
+                @if (isLoadingReinsurers()) {
+                  <p class="px-4 py-3 text-sm font-semibold text-iris-slate">Loading reinsurers...</p>
+                } @else if (reinsurerResults().length) {
+                  @for (reinsurer of reinsurerResults(); track reinsurer.id) {
+                    <button type="button" (click)="selectReinsurer(reinsurer)" class="block w-full px-4 py-3 text-left text-sm font-semibold text-iris-navy transition hover:bg-iris-bg">
+                      {{ reinsurer.name }}
+                    </button>
+                  }
+                } @else {
+                  <p class="px-4 py-3 text-sm font-semibold text-iris-slate">No Reinsurer counterparties found.</p>
+                }
+              </div>
+              @if (panelForm.controls.reinsurerId.invalid && panelForm.controls.reinsurerId.touched) {
+                <span class="mt-2 block text-xs font-semibold text-rose-700">Select a Reinsurer from the list.</span>
+              }
+            }
+          </label>
+
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Written share %</span>
+            <input type="number" formControlName="writtenSharePct" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Signed share %</span>
+            <input type="number" formControlName="signedSharePct" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Total Sum Insured / TSI</span>
+            <input type="number" formControlName="sumInsured" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Deductible</span>
+            <input type="number" formControlName="deductible" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Premium rate %</span>
+            <input type="number" formControlName="premiumRate" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Gross premium</span>
+            <input type="number" formControlName="grossPremium" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Brokerage IRIS %</span>
+            <input type="number" formControlName="brokerageIrisPct" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Other deductions</span>
+            <input type="number" formControlName="otherDeductions" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Net premium</span>
+            <input type="number" formControlName="netPremium" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Status</span>
+            <select formControlName="status" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100">
+              <option value="">Not provided</option>
+              <option value="Draft">Draft</option>
+              <option value="Confirmed">Confirmed</option>
+              <option value="Binding In Progress">Binding In Progress</option>
+            </select>
+          </label>
+          <label class="md:col-span-2">
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Reinsurance premium reference</span>
+            <input type="text" formControlName="reinsurancePremiumReference" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+          </label>
+
+          <div class="flex justify-end gap-3 border-t border-iris-divider pt-4 md:col-span-2">
+            <button type="button" (click)="closeReinsurerForm()" [disabled]="isSubmittingPanel()" class="rounded-xl border border-iris-border bg-white px-5 py-3 text-sm font-semibold text-iris-navy transition hover:bg-iris-bg disabled:cursor-not-allowed disabled:opacity-60">
+              Cancel
+            </button>
+            <button type="submit" [disabled]="isSubmittingPanel()" class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white shadow-lg shadow-sky-100 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-60">
+              @if (isSubmittingPanel()) {
+                <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+              }
+              <span>
+                {{ isSubmittingPanel() ? (panelFormMode() === 'edit' ? 'Saving placement...' : 'Adding reinsurer...') : (panelFormMode() === 'edit' ? 'Save Placement' : 'Add Reinsurer') }}
+              </span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  }
+</div>

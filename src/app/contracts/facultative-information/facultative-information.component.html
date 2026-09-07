@@ -12,7 +12,7 @@
         <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-iris-teal">Contract Intake</p>
         <h1 class="mt-2 font-cambria text-3xl font-bold text-iris-navy">Facultative Information</h1>
         <p class="mt-3 max-w-3xl text-sm text-iris-slate md:text-base">
-          Save a facultative contract draft once the required contract information is in place, then continue to the future conditions step.
+          Save a facultative contract draft once the required contract information is in place, then continue to the contract overview.
         </p>
       </div>
     </div>
@@ -267,9 +267,116 @@
           <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
             <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
               <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 03</p>
-              <h2 class="font-cambria text-2xl font-bold text-iris-navy">Risk and Coverage Information</h2>
+              <h2 class="font-cambria text-2xl font-bold text-iris-navy">Coverage Information</h2>
             </div>
             <div class="mt-6 grid gap-5 md:grid-cols-3">
+              <div class="contents" formGroupName="coverageSelection">
+              <div class="md:col-span-3">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="mainCoverSearch">Main Cover</label>
+                <div class="relative">
+                  <input
+                    id="mainCoverSearch"
+                    type="text"
+                    [formControl]="mainCoverSearchControl"
+                    autocomplete="off"
+                    (focus)="openMainCoverDropdown()"
+                    (click)="openMainCoverDropdown()"
+                    (keydown)="handleMainCoverKeydown($event)"
+                    class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                    [ngClass]="hasError('coverageSelection.mainCoverId', 'required') || hasError('coverageSelection.mainCoverId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                    placeholder="Search main covers by code or name"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    [attr.aria-expanded]="isMainCoverDropdownOpen()"
+                    aria-controls="main-cover-options"
+                  />
+                  @if (isMainCoverLoading()) {
+                    <span class="absolute inset-y-0 right-4 flex items-center text-iris-slate">
+                      <span class="h-4 w-4 animate-spin rounded-full border-2 border-iris-border border-t-iris-teal"></span>
+                    </span>
+                  }
+                  @if (isMainCoverDropdownOpen()) {
+                    <div id="main-cover-options" class="absolute z-20 mt-2 max-h-64 w-full overflow-auto rounded-2xl border border-iris-border bg-white p-2 shadow-xl">
+                      @if (isMainCoverLoading()) {
+                        <p class="px-3 py-3 text-sm text-iris-slate">Loading main covers...</p>
+                      } @else if (mainCoverLookupError()) {
+                        <p class="px-3 py-3 text-sm text-rose-700">Unable to load main covers</p>
+                      } @else if (filteredMainCovers().length > 0) {
+                        @for (mainCover of filteredMainCovers(); track mainCover.id; let index = $index) {
+                          <button
+                            type="button"
+                            (click)="selectMainCover(mainCover)"
+                            (mouseenter)="setActiveMainCoverIndex(index)"
+                            class="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left text-sm text-iris-navy transition hover:bg-iris-bg"
+                            [ngClass]="activeMainCoverIndex() === index ? 'bg-iris-bg' : ''"
+                          >
+                            <span class="min-w-0">
+                              <span class="block font-semibold">{{ formatCoverageLabel(mainCover) }}</span>
+                              <span class="mt-1 block text-xs text-iris-slate">{{ mainCover.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
+                            </span>
+                          </button>
+                        }
+                      } @else {
+                        <p class="px-3 py-3 text-sm text-iris-slate">No main cover found</p>
+                      }
+                    </div>
+                  }
+                </div>
+                @if (hasError('coverageSelection.mainCoverId', 'required')) {
+                  <p class="mt-2 text-sm text-rose-700">Main Cover is required.</p>
+                }
+                @if (hasError('coverageSelection.mainCoverId', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.coverageSelection.controls.mainCoverId.errors?.['serverError'] }}</p>
+                }
+              </div>
+
+              <div class="md:col-span-3">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sectionIds">Sections</label>
+                <select
+                  id="sectionIds"
+                  multiple
+                  formControlName="sectionIds"
+                  class="min-h-36 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-iris-bg disabled:text-iris-slate"
+                >
+                  @for (section of sections(); track section.id) {
+                    <option [ngValue]="section.id" [disabled]="isMandatorySection(section) && form.controls.coverageSelection.controls.sectionIds.value.includes(section.id)">
+                      {{ formatCoverageLabel(section) }}{{ section.isMandatory ? ' (mandatory)' : '' }} - {{ section.hasSlip ? 'Slip available' : 'Slip not available' }}
+                    </option>
+                  }
+                </select>
+                @if (isSectionsLoading()) {
+                  <p class="mt-2 text-sm text-iris-slate">Loading sections...</p>
+                } @else if (sectionsError()) {
+                  <p class="mt-2 text-sm text-rose-700">{{ sectionsError() }}</p>
+                } @else if (form.controls.coverageSelection.controls.mainCoverId.value != null && sections().length === 0) {
+                  <p class="mt-2 text-sm text-iris-slate">No sections available for this Main Cover.</p>
+                }
+              </div>
+
+              <div class="md:col-span-3">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="extensionIds">Extensions</label>
+                <select
+                  id="extensionIds"
+                  multiple
+                  formControlName="extensionIds"
+                  class="min-h-36 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-iris-bg disabled:text-iris-slate"
+                >
+                  @for (extension of extensions(); track extension.id) {
+                    <option [ngValue]="extension.id" [disabled]="isMandatoryExtension(extension) && form.controls.coverageSelection.controls.extensionIds.value.includes(extension.id)">
+                      {{ formatCoverageLabel(extension) }}{{ extension.isMandatory ? ' (mandatory)' : '' }} - {{ extension.hasSlip ? 'Slip available' : 'Slip not available' }}
+                    </option>
+                  }
+                </select>
+                @if (isExtensionsLoading()) {
+                  <p class="mt-2 text-sm text-iris-slate">Loading extensions...</p>
+                } @else if (extensionsError()) {
+                  <p class="mt-2 text-sm text-rose-700">{{ extensionsError() }}</p>
+                } @else if (form.controls.coverageSelection.controls.mainCoverId.value != null && extensions().length === 0) {
+                  <p class="mt-2 text-sm text-iris-slate">No extensions available.</p>
+                }
+              </div>
+              </div>
+
               <div>
                 <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sumInsured">Total sum insured</label>
                 <input id="sumInsured" type="number" formControlName="sumInsured" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('sumInsured', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
@@ -368,7 +475,7 @@
                   }
                   <span>{{ saveDraftLabel }}</span>
                 </button>
-                <button type="button" (click)="continueToConditions()" [disabled]="isBusy" class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-60">
+                <button type="button" (click)="continueToOverview()" [disabled]="isBusy" class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-60">
                   @if (isSaving() && saveMode() === 'continue') {
                     <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
                   }
@@ -403,6 +510,18 @@
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
                 <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Contract period</dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().period }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Main Cover</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ summary().mainCover }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Sections</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ summary().sections }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Extensions</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ summary().extensions }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
                 <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Written share</dt>

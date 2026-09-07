@@ -55,7 +55,6 @@
         <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Contract type</span>
         <select
           formControlName="contractType"
-          [disabled]="isLoadingReferences()"
           class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100 disabled:cursor-wait disabled:bg-iris-bg"
         >
           <option value="">{{ isLoadingReferences() ? 'Loading types...' : 'All types' }}</option>
@@ -79,7 +78,6 @@
         <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Cedent</span>
         <select
           formControlName="counterpartyId"
-          [disabled]="isLoadingReferences()"
           class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100 disabled:cursor-wait disabled:bg-iris-bg"
         >
           <option value="">{{ isLoadingReferences() ? 'Loading Cedents...' : 'All Cedents' }}</option>
@@ -93,7 +91,6 @@
         <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Currency</span>
         <select
           formControlName="currencyId"
-          [disabled]="isLoadingReferences()"
           class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100 disabled:cursor-wait disabled:bg-iris-bg"
         >
           <option value="">{{ isLoadingReferences() ? 'Loading currencies...' : 'All currencies' }}</option>
@@ -221,8 +218,8 @@
                 </td>
                 <td class="px-4 py-4 font-semibold text-iris-navy">{{ contract.currencyCode }}</td>
                 <td class="px-4 py-4">
-                  <span class="inline-flex rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(contract.status)">
-                    {{ contract.status }}
+                  <span class="inline-flex rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(getDisplayStatus(contract))">
+                    {{ getDisplayStatus(contract) }}
                   </span>
                 </td>
                 <td class="px-4 py-4 text-iris-slate">{{ contract.inceptionDate | date:'mediumDate' }}</td>
@@ -236,7 +233,7 @@
                 </td>
                 <td class="px-4 py-4 text-right">
                   @if (isFacultative(contract)) {
-                    <a [routerLink]="facultativeContractRoute" [queryParams]="{ contractId: contract.idContract }" class="text-sm font-bold text-iris-teal transition hover:text-iris-navy">View details</a>
+                    <a [routerLink]="getDetailsRoute(contract)" [queryParams]="getDetailsQueryParams(contract)" class="text-sm font-bold text-iris-teal transition hover:text-iris-navy">View details</a>
                   } @else {
                     <span class="text-iris-slate">&mdash;</span>
                   }
@@ -262,7 +259,7 @@
                 <h3 class="mt-2 font-cambria text-xl font-bold text-iris-navy">{{ contract.name }}</h3>
                 <p class="mt-1 text-sm text-iris-slate">{{ contract.cedentName }}</p>
               </div>
-              <span class="shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(contract.status)">{{ contract.status }}</span>
+              <span class="shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(getDisplayStatus(contract))">{{ getDisplayStatus(contract) }}</span>
             </div>
             <dl class="mt-5 grid grid-cols-2 gap-4 text-sm">
               <div>
@@ -290,7 +287,7 @@
               </div>
             </dl>
             @if (isFacultative(contract)) {
-              <a [routerLink]="facultativeContractRoute" [queryParams]="{ contractId: contract.idContract }" class="mt-5 inline-flex text-sm font-bold text-iris-teal">View details</a>
+              <a [routerLink]="getDetailsRoute(contract)" [queryParams]="getDetailsQueryParams(contract)" class="mt-5 inline-flex text-sm font-bold text-iris-teal">View details</a>
             }
           </article>
         }
