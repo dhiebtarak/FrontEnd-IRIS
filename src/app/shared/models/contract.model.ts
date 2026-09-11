@@ -44,6 +44,7 @@ export type ContractSortField =
   | 'cedentName'
   | 'contractType'
   | 'status'
+  | 'receptionDate'
   | 'inceptionDate'
   | 'expiryDate'
   | 'grossPremium'
@@ -79,6 +80,7 @@ export interface ContractListItem {
   currencyId: number;
   currencyCode: string;
   status: string;
+  receptionDate: string | null;
   inceptionDate: string;
   expiryDate: string;
   grossPremium: number | null;
@@ -138,6 +140,7 @@ export interface CoverageOption {
   id: number;
   code: string;
   name: string;
+  description?: string | null;
   level: CoverageLevel;
   parentId: number | null;
   relationType: CoverageRelationType | null;
@@ -147,12 +150,16 @@ export interface CoverageOption {
 }
 
 export interface CoverageSelectionPayload {
+  primaryMainCoverId: number;
+  coverageIds: number[];
   mainCoverId: number;
   sectionIds: number[];
   extensionIds: number[];
 }
 
 export interface CoverageSelectionResponse {
+  primaryMainCoverId: number | null;
+  coverageIds: number[];
   mainCoverId: number | null;
   sectionIds: number[];
   extensionIds: number[];
@@ -199,7 +206,6 @@ export interface UpdateContractPanelRequest extends CreateContractPanelRequest {
 }
 
 export interface UpsertFacultativeContractRequest {
-  umr: string | null;
   name: string;
   counterpartyId: number;
   currencyId: number;
@@ -212,6 +218,7 @@ export interface UpsertFacultativeContractRequest {
   fees: number | null;
   isHighPriority: boolean;
   sumInsured: number | null;
+  limitOfLiability: number | null;
   deductible: number | null;
   premiumRate: number | null;
   grossPremium: number | null;
@@ -227,7 +234,7 @@ export interface FacultativeContractResponse {
   status: ContractStatus | string;
   allowedActions: string[];
   netPremiumCedent: number | null;
-  umr: string | null;
+  umr: string;
   name: string;
   contractType?: string | null;
   counterpartyId: number;
@@ -245,6 +252,7 @@ export interface FacultativeContractResponse {
   fees: number | null;
   isHighPriority: boolean;
   sumInsured: number | null;
+  limitOfLiability?: number | null;
   deductible: number | null;
   premiumRate: number | null;
   grossPremium: number | null;

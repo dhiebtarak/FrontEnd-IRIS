@@ -23,7 +23,14 @@
 
     @if (generalError()) {
       <div class="mt-6 rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-900">
-        {{ generalError() }}
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <span>{{ generalError() }}</span>
+          @if (retrySaveMode()) {
+            <button type="button" (click)="retrySave()" [disabled]="isSaving()" class="rounded-xl bg-rose-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-60">
+              Retry
+            </button>
+          }
+        </div>
       </div>
     }
 
@@ -47,23 +54,11 @@
             </div>
 
             <div class="mt-6 grid gap-5 md:grid-cols-2">
-              <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="umr">UMR</label>
-                <input
-                  id="umr"
-                  type="text"
-                  formControlName="umr"
-                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                  [ngClass]="hasError('umr', 'maxlength') || hasError('umr', 'serverError') || duplicateUmrMessage() ? 'border-rose-400' : 'border-iris-border'"
-                />
-                @if (hasError('umr', 'maxlength')) {
-                  <p class="mt-2 text-sm text-rose-700">UMR cannot exceed 100 characters.</p>
-                }
-                @if (hasError('umr', 'serverError')) {
-                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.umr.errors?.['serverError'] }}</p>
-                }
-                @if (duplicateUmrMessage()) {
-                  <p class="mt-2 text-sm text-rose-700">{{ duplicateUmrMessage() }}</p>
+              <div class="md:col-span-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                <p class="font-semibold">The UMR will be generated automatically when the contract is created.</p>
+                <p class="mt-1">Expected format: IT26-F-PD-XXXX</p>
+                @if (generatedUmr()) {
+                  <p class="mt-2 font-bold">Generated UMR: {{ generatedUmr() }}</p>
                 }
               </div>
 
@@ -198,6 +193,7 @@
                 @if (hasError('inceptionDate', 'required')) {
                   <p class="mt-2 text-sm text-rose-700">Inception date is required.</p>
                 }
+                <p class="mt-2 text-sm text-iris-slate">The inception year is used by the backend when generating the UMR.</p>
               </div>
 
               <div>
@@ -229,6 +225,221 @@
           <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
             <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
               <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 02</p>
+              <h2 class="font-cambria text-2xl font-bold text-iris-navy">Coverage Information</h2>
+            </div>
+            <div class="mt-6 grid gap-5 md:grid-cols-3">
+              <div class="contents" formGroupName="coverageSelection">
+              <div #coveragePicker class="coverage-picker md:col-span-3" (focusout)="onCoverageFocusOut($event)">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="mainCoverSearch">Coverage</label>
+                @if (selectedMainCovers().length > 0) {
+                  <div class="mb-3 flex flex-wrap gap-2">
+                    @for (coverage of selectedMainCovers(); track coverage.id) {
+                      <span class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy">
+                        {{ formatCoverageLabel(coverage) }}
+                        @if (isPrimaryMainCover(coverage.id)) {
+                          <span class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white">Primary</span>
+                        } @else {
+                          <button type="button" (click)="makePrimaryMainCover(coverage.id)" class="text-iris-teal underline">Make primary</button>
+                        }
+                        <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(coverage)" (click)="removeMainCover(coverage.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
+                      </span>
+                    }
+                  </div>
+                }
+                <div class="relative">
+                  <input
+                    id="mainCoverSearch"
+                    type="text"
+                    [value]="coverageSearch()"
+                    autocomplete="off"
+                    (input)="onCoverageSearchInput($event)"
+                    (focus)="openCoverageDropdown()"
+                    (click)="openCoverageDropdown()"
+                    (keydown)="handleMainCoverKeydown($event)"
+                    class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                    [ngClass]="hasError('coverageSelection.coverageIds', 'required') || hasError('coverageSelection.primaryMainCoverId', 'required') || hasError('coverageSelection.mainCoverId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                    placeholder="Search coverages by code or description"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    [attr.aria-expanded]="isCoverageDropdownOpen()"
+                    aria-controls="main-cover-options"
+                    aria-describedby="coverage-selection-error"
+                  />
+                  @if (isMainCoverLoading()) {
+                    <span class="absolute inset-y-0 right-4 flex items-center text-iris-slate">
+                      <span class="h-4 w-4 animate-spin rounded-full border-2 border-iris-border border-t-iris-teal"></span>
+                    </span>
+                  }
+                  @if (isCoverageDropdownOpen()) {
+                    <div id="main-cover-options" role="listbox" aria-multiselectable="true" class="absolute z-20 mt-2 max-h-64 w-full overflow-auto rounded-2xl border border-iris-border bg-white p-2 shadow-xl">
+                      @if (isMainCoverLoading()) {
+                        <p class="px-3 py-3 text-sm text-iris-slate">Loading coverages...</p>
+                      } @else if (mainCoverLookupError()) {
+                        <p class="px-3 py-3 text-sm text-rose-700">Unable to load coverages</p>
+                      } @else if (filteredCoverages().length > 0) {
+                        @for (mainCover of filteredCoverages(); track mainCover.id; let index = $index) {
+                          <button
+                            type="button"
+                            role="option"
+                            [attr.aria-selected]="isMainCoverSelected(mainCover.id)"
+                            (click)="toggleMainCover(mainCover)"
+                            (mouseenter)="setActiveMainCoverIndex(index)"
+                            class="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left text-sm text-iris-navy transition hover:bg-iris-bg"
+                            [ngClass]="activeMainCoverIndex() === index ? 'bg-iris-bg' : ''"
+                          >
+                            <span class="flex min-w-0 items-start gap-3">
+                              <input type="checkbox" tabindex="-1" [checked]="isMainCoverSelected(mainCover.id)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)]" />
+                              <span class="min-w-0">
+                              <span class="block font-semibold">{{ formatCoverageLabel(mainCover) }}</span>
+                              <span class="mt-1 block text-xs text-iris-slate">{{ mainCover.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
+                              </span>
+                            </span>
+                          </button>
+                        }
+                      } @else {
+                        <p class="px-3 py-3 text-sm text-iris-slate">No coverages found.</p>
+                      }
+                    </div>
+                  }
+                </div>
+                @if (hasError('coverageSelection.coverageIds', 'required')) {
+                  <p id="coverage-selection-error" class="mt-2 text-sm text-rose-700">Select at least one coverage.</p>
+                }
+                @if (hasError('coverageSelection.primaryMainCoverId', 'required') || form.controls.coverageSelection.hasError('primaryCoverageRequired')) {
+                  <p class="mt-2 text-sm text-rose-700">Choose one selected coverage as Primary Main Cover.</p>
+                }
+                @if (form.controls.coverageSelection.hasError('primaryCoverageNotSelected')) {
+                  <p class="mt-2 text-sm text-rose-700">Primary Main Cover must be one of the selected coverages.</p>
+                }
+                @if (hasError('coverageSelection.mainCoverId', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.coverageSelection.controls.mainCoverId.errors?.['serverError'] }}</p>
+                }
+                <p class="mt-2 text-sm text-iris-slate">The Primary Main Cover code is used by the backend when generating the UMR.</p>
+              </div>
+
+              @if (isSectionsLoading()) {
+                <div class="md:col-span-3">
+                  <p class="text-sm text-iris-slate">Loading sections...</p>
+                </div>
+              } @else if (sectionsError()) {
+                <div class="md:col-span-3">
+                  <p class="text-sm text-rose-700">{{ sectionsError() }}</p>
+                </div>
+              } @else if (availableSections().length > 0) {
+                <div class="md:col-span-3">
+                  <p class="mb-2 block text-sm font-semibold text-iris-navy">Sections</p>
+                  @if (selectedSections().length > 0) {
+                    <div class="mb-3 flex flex-wrap gap-2">
+                      @for (section of selectedSections(); track section.id) {
+                        <span class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy">
+                          {{ formatCoverageLabel(section) }}
+                          @if (isMandatorySection(section)) {
+                            <span class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white">Mandatory</span>
+                          }
+                          <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(section)" (click)="removeSection(section.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
+                        </span>
+                      }
+                    </div>
+                  }
+                  <div class="rounded-2xl border border-iris-border bg-white p-3">
+                    @for (group of groupedSections(); track group.parentLabel) {
+                      <div class="py-2">
+                        <p class="px-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">{{ group.parentLabel }}</p>
+                        <div class="mt-2 grid gap-2 md:grid-cols-2">
+                          @for (section of group.items; track section.id) {
+                            <label class="flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition hover:bg-iris-bg">
+                              <input type="checkbox" [checked]="isSectionSelected(section.id)" (change)="toggleSection(section)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)]" />
+                              <span>
+                                <span class="block font-semibold">{{ formatCoverageLabel(section) }}{{ section.isMandatory ? ' (mandatory)' : '' }}</span>
+                                <span class="mt-1 block text-xs text-iris-slate">{{ section.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
+                              </span>
+                            </label>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              @if (isExtensionsLoading()) {
+                <div class="md:col-span-3">
+                  <p class="text-sm text-iris-slate">Loading extensions...</p>
+                </div>
+              } @else if (extensionsError()) {
+                <div class="md:col-span-3">
+                  <p class="text-sm text-rose-700">{{ extensionsError() }}</p>
+                </div>
+              } @else if (availableExtensions().length > 0) {
+                <div class="md:col-span-3">
+                  <p class="mb-2 block text-sm font-semibold text-iris-navy">Extensions</p>
+                  @if (selectedExtensions().length > 0) {
+                    <div class="mb-3 flex flex-wrap gap-2">
+                      @for (extension of selectedExtensions(); track extension.id) {
+                        <span class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy">
+                          {{ formatCoverageLabel(extension) }}
+                          @if (isMandatoryExtension(extension)) {
+                            <span class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white">Mandatory</span>
+                          }
+                          <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(extension)" (click)="removeExtension(extension.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
+                        </span>
+                      }
+                    </div>
+                  }
+                  <div class="rounded-2xl border border-iris-border bg-white p-3">
+                    @for (group of groupedExtensions(); track group.parentLabel) {
+                      <div class="py-2">
+                        <p class="px-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">{{ group.parentLabel }}</p>
+                        <div class="mt-2 grid gap-2 md:grid-cols-2">
+                          @for (extension of group.items; track extension.id) {
+                            <label class="flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition hover:bg-iris-bg">
+                              <input type="checkbox" [checked]="isExtensionSelected(extension.id)" (change)="toggleExtension(extension)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)]" />
+                              <span>
+                                <span class="block font-semibold">{{ formatCoverageLabel(extension) }}{{ extension.isMandatory ? ' (mandatory)' : '' }}</span>
+                                <span class="mt-1 block text-xs text-iris-slate">{{ extension.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
+                              </span>
+                            </label>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sumInsured">Sum Insured</label>
+                <input id="sumInsured" type="number" formControlName="sumInsured" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('sumInsured', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="limitOfLiability">Limit of Liability</label>
+                <input id="limitOfLiability" type="number" formControlName="limitOfLiability" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('limitOfLiability', 'nonNegative') || hasError('limitOfLiability', 'serverError') ? 'border-rose-400' : 'border-iris-border'" />
+                @if (hasError('limitOfLiability', 'nonNegative')) {
+                  <p class="mt-2 text-sm text-rose-700">Limit of Liability cannot be negative.</p>
+                }
+                @if (hasError('limitOfLiability', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.limitOfLiability.errors?.['serverError'] }}</p>
+                }
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="deductible">Deductible</label>
+                <input id="deductible" type="number" formControlName="deductible" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('deductible', 'nonNegative') || form.hasError('deductibleExceedsSumInsured') ? 'border-rose-400' : 'border-iris-border'" />
+                @if (form.hasError('deductibleExceedsSumInsured') && (form.controls.deductible.touched || form.controls.sumInsured.touched)) {
+                  <p class="mt-2 text-sm text-rose-700">Deductible cannot exceed Sum Insured.</p>
+                }
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="premiumRate">Premium rate</label>
+                <input id="premiumRate" type="number" formControlName="premiumRate" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('premiumRate', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
+                <p class="mt-2 text-sm text-iris-slate">Gross premium is not auto-calculated from premium rate in this MVP.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+            <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 03</p>
               <h2 class="font-cambria text-2xl font-bold text-iris-navy">Participation and Placement</h2>
             </div>
 
@@ -261,138 +472,6 @@
                 <span class="text-sm font-semibold text-iris-navy">High-priority flag</span>
                 <input type="checkbox" formControlName="isHighPriority" class="h-5 w-5 accent-[var(--color-iris-teal)]" />
               </label>
-            </div>
-          </section>
-
-          <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
-            <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 03</p>
-              <h2 class="font-cambria text-2xl font-bold text-iris-navy">Coverage Information</h2>
-            </div>
-            <div class="mt-6 grid gap-5 md:grid-cols-3">
-              <div class="contents" formGroupName="coverageSelection">
-              <div class="md:col-span-3">
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="mainCoverSearch">Main Cover</label>
-                <div class="relative">
-                  <input
-                    id="mainCoverSearch"
-                    type="text"
-                    [formControl]="mainCoverSearchControl"
-                    autocomplete="off"
-                    (focus)="openMainCoverDropdown()"
-                    (click)="openMainCoverDropdown()"
-                    (keydown)="handleMainCoverKeydown($event)"
-                    class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    [ngClass]="hasError('coverageSelection.mainCoverId', 'required') || hasError('coverageSelection.mainCoverId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
-                    placeholder="Search main covers by code or name"
-                    role="combobox"
-                    aria-autocomplete="list"
-                    [attr.aria-expanded]="isMainCoverDropdownOpen()"
-                    aria-controls="main-cover-options"
-                  />
-                  @if (isMainCoverLoading()) {
-                    <span class="absolute inset-y-0 right-4 flex items-center text-iris-slate">
-                      <span class="h-4 w-4 animate-spin rounded-full border-2 border-iris-border border-t-iris-teal"></span>
-                    </span>
-                  }
-                  @if (isMainCoverDropdownOpen()) {
-                    <div id="main-cover-options" class="absolute z-20 mt-2 max-h-64 w-full overflow-auto rounded-2xl border border-iris-border bg-white p-2 shadow-xl">
-                      @if (isMainCoverLoading()) {
-                        <p class="px-3 py-3 text-sm text-iris-slate">Loading main covers...</p>
-                      } @else if (mainCoverLookupError()) {
-                        <p class="px-3 py-3 text-sm text-rose-700">Unable to load main covers</p>
-                      } @else if (filteredMainCovers().length > 0) {
-                        @for (mainCover of filteredMainCovers(); track mainCover.id; let index = $index) {
-                          <button
-                            type="button"
-                            (click)="selectMainCover(mainCover)"
-                            (mouseenter)="setActiveMainCoverIndex(index)"
-                            class="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left text-sm text-iris-navy transition hover:bg-iris-bg"
-                            [ngClass]="activeMainCoverIndex() === index ? 'bg-iris-bg' : ''"
-                          >
-                            <span class="min-w-0">
-                              <span class="block font-semibold">{{ formatCoverageLabel(mainCover) }}</span>
-                              <span class="mt-1 block text-xs text-iris-slate">{{ mainCover.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
-                            </span>
-                          </button>
-                        }
-                      } @else {
-                        <p class="px-3 py-3 text-sm text-iris-slate">No main cover found</p>
-                      }
-                    </div>
-                  }
-                </div>
-                @if (hasError('coverageSelection.mainCoverId', 'required')) {
-                  <p class="mt-2 text-sm text-rose-700">Main Cover is required.</p>
-                }
-                @if (hasError('coverageSelection.mainCoverId', 'serverError')) {
-                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.coverageSelection.controls.mainCoverId.errors?.['serverError'] }}</p>
-                }
-              </div>
-
-              <div class="md:col-span-3">
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sectionIds">Sections</label>
-                <select
-                  id="sectionIds"
-                  multiple
-                  formControlName="sectionIds"
-                  class="min-h-36 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-iris-bg disabled:text-iris-slate"
-                >
-                  @for (section of sections(); track section.id) {
-                    <option [ngValue]="section.id" [disabled]="isMandatorySection(section) && form.controls.coverageSelection.controls.sectionIds.value.includes(section.id)">
-                      {{ formatCoverageLabel(section) }}{{ section.isMandatory ? ' (mandatory)' : '' }} - {{ section.hasSlip ? 'Slip available' : 'Slip not available' }}
-                    </option>
-                  }
-                </select>
-                @if (isSectionsLoading()) {
-                  <p class="mt-2 text-sm text-iris-slate">Loading sections...</p>
-                } @else if (sectionsError()) {
-                  <p class="mt-2 text-sm text-rose-700">{{ sectionsError() }}</p>
-                } @else if (form.controls.coverageSelection.controls.mainCoverId.value != null && sections().length === 0) {
-                  <p class="mt-2 text-sm text-iris-slate">No sections available for this Main Cover.</p>
-                }
-              </div>
-
-              <div class="md:col-span-3">
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="extensionIds">Extensions</label>
-                <select
-                  id="extensionIds"
-                  multiple
-                  formControlName="extensionIds"
-                  class="min-h-36 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-iris-bg disabled:text-iris-slate"
-                >
-                  @for (extension of extensions(); track extension.id) {
-                    <option [ngValue]="extension.id" [disabled]="isMandatoryExtension(extension) && form.controls.coverageSelection.controls.extensionIds.value.includes(extension.id)">
-                      {{ formatCoverageLabel(extension) }}{{ extension.isMandatory ? ' (mandatory)' : '' }} - {{ extension.hasSlip ? 'Slip available' : 'Slip not available' }}
-                    </option>
-                  }
-                </select>
-                @if (isExtensionsLoading()) {
-                  <p class="mt-2 text-sm text-iris-slate">Loading extensions...</p>
-                } @else if (extensionsError()) {
-                  <p class="mt-2 text-sm text-rose-700">{{ extensionsError() }}</p>
-                } @else if (form.controls.coverageSelection.controls.mainCoverId.value != null && extensions().length === 0) {
-                  <p class="mt-2 text-sm text-iris-slate">No extensions available.</p>
-                }
-              </div>
-              </div>
-
-              <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sumInsured">Total sum insured</label>
-                <input id="sumInsured" type="number" formControlName="sumInsured" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('sumInsured', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
-              </div>
-              <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="deductible">Deductible</label>
-                <input id="deductible" type="number" formControlName="deductible" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('deductible', 'nonNegative') || form.hasError('deductibleExceedsSumInsured') ? 'border-rose-400' : 'border-iris-border'" />
-                @if (form.hasError('deductibleExceedsSumInsured') && (form.controls.deductible.touched || form.controls.sumInsured.touched)) {
-                  <p class="mt-2 text-sm text-rose-700">Deductible cannot exceed total sum insured.</p>
-                }
-              </div>
-              <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="premiumRate">Premium rate</label>
-                <input id="premiumRate" type="number" formControlName="premiumRate" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('premiumRate', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
-                <p class="mt-2 text-sm text-iris-slate">Gross premium is not auto-calculated from premium rate in this MVP.</p>
-              </div>
             </div>
           </section>
 
@@ -512,8 +591,12 @@
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().period }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Main Cover</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Primary Main Cover</dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().mainCover }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Coverages</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ summary().coverages }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
                 <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Sections</dt>
@@ -532,8 +615,12 @@
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().signedSharePct ?? 'Not provided' }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Total sum insured</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Sum Insured</dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ formatMoney(summary().sumInsured) }}</dd>
+              </div>
+              <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Limit of Liability</dt>
+                <dd class="mt-1 font-semibold text-iris-navy">{{ formatMoney(summary().limitOfLiability) }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
                 <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Gross premium</dt>

@@ -40,6 +40,10 @@ const integerValidator: ValidatorFn = (control: AbstractControl): ValidationErro
   return Number.isInteger(Number(value)) ? null : { integer: true };
 };
 
+const atLeastOneCounterpartyTypeValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
+  return Array.isArray(control.value) && control.value.length > 0 ? null : { required: true };
+};
+
 type AttachmentFormValue = {
   originalFileName: string;
 };
@@ -50,7 +54,7 @@ type AttachmentFormGroup = FormGroup<{
 
 type CounterpartyFormValue = {
   name: string;
-  type: CounterpartyType | '';
+  types: CounterpartyType[];
   activity: string;
   status: CounterpartyStatus;
   isActive: boolean;
@@ -80,7 +84,7 @@ const maxAttachmentSizeBytes = 10 * 1024 * 1024;
   styles: ``
 })
 export class AddCounterpartyComponent implements OnInit {
-  readonly counterpartyTypes: CounterpartyType[] = ['Cedent', 'Reinsurer', 'Client'];
+  readonly counterpartyTypes: CounterpartyType[] = ['Cedent', 'Reinsurer', 'Client', 'Partner'];
   readonly statusOptions: CounterpartyStatus[] = ['Active', 'Inactive', 'Pending', 'Suspended'];
   readonly attachmentAccept = '.pdf,.png,.jpg,.jpeg';
   readonly maxAttachmentSizeInMb = 10;
@@ -94,7 +98,7 @@ export class AddCounterpartyComponent implements OnInit {
 
   counterpartyForm!: FormGroup<{
     name: FormControl<string>;
-    type: FormControl<CounterpartyType | ''>;
+    types: FormControl<CounterpartyType[]>;
     activity: FormControl<string>;
     status: FormControl<CounterpartyStatus>;
     isActive: FormControl<boolean>;
@@ -126,7 +130,7 @@ export class AddCounterpartyComponent implements OnInit {
   };
   readonly emptyFormValue: CounterpartyFormValue = {
     name: '',
-    type: '' as CounterpartyType | '',
+    types: [],
     activity: '',
     status: 'Active' as CounterpartyStatus,
     isActive: true,
@@ -174,7 +178,7 @@ export class AddCounterpartyComponent implements OnInit {
 
     this.counterpartyForm = this.fb.group({
       name: this.fb.nonNullable.control(this.emptyFormValue.name, [Validators.required]),
-      type: this.fb.nonNullable.control(this.emptyFormValue.type, [Validators.required]),
+      types: this.fb.nonNullable.control(this.emptyFormValue.types, [atLeastOneCounterpartyTypeValidator]),
       activity: this.fb.nonNullable.control(this.emptyFormValue.activity),
       status: this.fb.nonNullable.control(this.emptyFormValue.status),
       isActive: this.fb.nonNullable.control(this.emptyFormValue.isActive),
@@ -206,8 +210,24 @@ export class AddCounterpartyComponent implements OnInit {
     return this.counterpartyForm.controls;
   }
 
-  get selectedType(): CounterpartyType | '' {
-    return this.f.type.value;
+  get selectedTypes(): CounterpartyType[] {
+    return this.f.types.value;
+  }
+
+  hasSelectedType(type: CounterpartyType): boolean {
+    return this.selectedTypes.includes(type);
+  }
+
+  toggleCounterpartyType(type: CounterpartyType): void {
+    const selectedTypes = this.selectedTypes;
+    const nextTypes = selectedTypes.includes(type)
+      ? selectedTypes.filter(selectedType => selectedType !== type)
+      : [...selectedTypes, type];
+
+    this.f.types.setValue(nextTypes);
+    this.f.types.markAsTouched();
+    this.f.types.markAsDirty();
+    this.counterpartyForm.markAsDirty();
   }
 
   get pageTitle(): string {
@@ -253,7 +273,7 @@ export class AddCounterpartyComponent implements OnInit {
   get completionPercentage(): number {
     const trackedValues = [
       this.f.name.value,
-      this.f.type.value,
+      this.f.types.value.length > 0,
       this.f.activity.value,
       this.f.status.value,
       this.f.cedantLegalEntity.value,
@@ -445,7 +465,7 @@ export class AddCounterpartyComponent implements OnInit {
 
     return {
       name: rawValue.name,
-      type: rawValue.type,
+      types: [...rawValue.types],
       email: rawValue.email,
       phoneNumber: rawValue.phoneNumber,
       addressLine: rawValue.addressLine,
@@ -507,7 +527,7 @@ export class AddCounterpartyComponent implements OnInit {
   private mapCounterpartyToFormValue(counterparty: Partial<Counterparty> | null | undefined): CounterpartyFormValue {
     return {
       name: this.toText(counterparty?.name),
-      type: this.toCounterpartyType(counterparty?.type),
+      types: this.toCounterpartyTypes(counterparty?.types),
       activity: this.toText(counterparty?.activity),
       status: this.toCounterpartyStatus(counterparty?.status),
       isActive: counterparty?.isActive ?? true,
@@ -534,7 +554,7 @@ export class AddCounterpartyComponent implements OnInit {
   }
 
   private shouldOpenLegacySection(formValue: CounterpartyFormValue): boolean {
-    return formValue.type === 'Client' || !!formValue.legacyClientId || !!formValue.legacyCompanyCode;
+    return formValue.types.includes('Client') || !!formValue.legacyClientId || !!formValue.legacyCompanyCode;
   }
 
   private trimFormValues(): void {
@@ -648,7 +668,8 @@ export class AddCounterpartyComponent implements OnInit {
     const normalizedField = fieldName.toLowerCase().replace(/\[(\w+)\]/g, '.$1');
     const map: Record<string, string> = {
       name: 'name',
-      type: 'type',
+      types: 'types',
+      'types.0': 'types',
       email: 'email',
       phonenumber: 'phoneNumber',
       addressline: 'addressLine',
@@ -730,8 +751,12 @@ export class AddCounterpartyComponent implements OnInit {
     return typeof value === 'string' ? value : '';
   }
 
-  private toCounterpartyType(value: unknown): CounterpartyType | '' {
-    return value === 'Cedent' || value === 'Reinsurer' || value === 'Client' ? value : '';
+  private toCounterpartyTypes(value: unknown): CounterpartyType[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return this.counterpartyTypes.filter(type => value.includes(type));
   }
 
   private toCounterpartyStatus(value: unknown): CounterpartyStatus {
@@ -747,6 +772,7 @@ export class AddCounterpartyComponent implements OnInit {
   private createInitialFormValue(value: CounterpartyFormValue): CounterpartyFormValue {
     return {
       ...value,
+      types: [...value.types],
       commercialRegisterAttachment: this.cloneAttachmentValue(value.commercialRegisterAttachment),
       taxIdentificationNumberAttachment: this.cloneAttachmentValue(value.taxIdentificationNumberAttachment)
     };

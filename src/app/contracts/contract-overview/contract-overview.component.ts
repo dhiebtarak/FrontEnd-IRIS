@@ -14,13 +14,15 @@ import {
 } from '../../shared/models/contract.model';
 import { getContractStatusClasses, getContractStatusDisplay, normalizeContractStatus } from '../../shared/models/contract-status.util';
 import { CounterpartyListItem } from '../../shared/models/counterparty.model';
+import { DocumentAttachmentsComponent } from '../../shared/components/document-attachments/document-attachments.component';
+import { DocumentContext } from '../../shared/models/document.model';
 import { CounterpartiesService } from '../../shared/services/counterparties.service';
 import { ContractsService } from '../../shared/services/contracts.service';
 
 @Component({
   selector: 'app-contract-overview',
   standalone: true,
-  imports: [CommonModule, MatSnackBarModule, ReactiveFormsModule],
+  imports: [CommonModule, MatSnackBarModule, ReactiveFormsModule, DocumentAttachmentsComponent],
   templateUrl: './contract-overview.component.html',
   styles: ``
 })
@@ -76,6 +78,10 @@ export class ContractOverviewComponent implements OnInit {
   readonly hasConfirmedPanel = computed(() => this.panels().some(panel => this.isPanelConfirmed(panel)));
   readonly startBindingBlockedMessage = 'Confirm at least one reinsurer before starting the binding phase.';
   readonly isStartBindingDisabled = computed(() => this.isStartingBinding() || !this.hasConfirmedPanel());
+  readonly contractDocumentContext = computed<DocumentContext | null>(() => {
+    const contractId = this.contractId();
+    return contractId == null ? null : { scope: 'contract', contractId };
+  });
 
   readonly contractInformationRows = computed(() => {
     const contract = this.contract();
@@ -125,7 +131,8 @@ export class ContractOverviewComponent implements OnInit {
     return [
       { label: 'Written share', value: this.formatPercent(contract.writtenSharePct) },
       { label: 'Signed share', value: this.formatPercent(contract.signedSharePct) },
-      { label: 'TSI', value: this.formatMoney(contract.sumInsured) },
+      { label: 'Sum Insured', value: this.formatMoney(contract.sumInsured) },
+      { label: 'Limit of Liability', value: this.formatMoney(contract.limitOfLiability ?? null) },
       { label: 'Deductible', value: this.formatMoney(contract.deductible) },
       { label: 'Premium rate', value: this.formatPercent(contract.premiumRate) },
       { label: 'Gross premium', value: this.formatMoney(contract.grossPremium) }
@@ -142,7 +149,8 @@ export class ContractOverviewComponent implements OnInit {
     return [
       { label: 'Written share', value: this.formatPercent(contract.writtenSharePct) },
       { label: 'Signed share', value: this.formatPercent(contract.signedSharePct) },
-      { label: 'TSI / Total Sum Insured', value: this.formatMoney(contract.sumInsured) },
+      { label: 'Sum Insured', value: this.formatMoney(contract.sumInsured) },
+      { label: 'Limit of Liability', value: this.formatMoney(contract.limitOfLiability ?? null) },
       { label: 'Deductible', value: this.formatMoney(contract.deductible) },
       { label: 'Gross premium', value: this.formatMoney(contract.grossPremium) },
       { label: 'Cedent commission', value: this.formatPercent(contract.cedentCommissionPct) },
@@ -440,6 +448,13 @@ export class ContractOverviewComponent implements OnInit {
     this.activePanelId.set(panel.idPanel);
   }
 
+  placementDocumentContext(panel: ContractPanelItem): DocumentContext | null {
+    const contractId = this.contractId();
+    return contractId == null || panel.idPanel <= 0
+      ? null
+      : { scope: 'placement', contractId, panelId: panel.idPanel };
+  }
+
   confirmReinsurer(panel: ContractPanelItem): void {
     const contractId = this.contractId();
 
@@ -506,10 +521,14 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   getPanelStatusClasses(panel: ContractPanelItem): string {
-    const normalizedStatus = panel.status.trim().toLowerCase();
+    const normalizedStatus = this.getPanelDisplayStatus(panel).trim().toLowerCase();
 
     if (normalizedStatus === 'confirmed') {
       return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+    }
+
+    if (normalizedStatus === 'not taken up') {
+      return 'border-slate-200 bg-slate-50 text-slate-700';
     }
 
     if (normalizedStatus.includes('binding')) {
@@ -525,7 +544,7 @@ export class ContractOverviewComponent implements OnInit {
       { label: 'Role', value: panel.role || 'Not provided' },
       { label: 'Written share', value: this.formatPercent(panel.writtenSharePct) },
       { label: 'Signed share', value: this.formatPercent(panel.signedSharePct) },
-      { label: 'TSI', value: this.formatMoney(panel.tsi) },
+      { label: 'Sum Insured', value: this.formatMoney(panel.tsi) },
       { label: 'Deductible', value: this.formatMoney(panel.deductible) },
       { label: 'Premium rate', value: this.formatPercent(panel.premiumRatePct) },
       { label: 'Gross premium', value: this.formatMoney(panel.grossPremium) },
@@ -533,8 +552,16 @@ export class ContractOverviewComponent implements OnInit {
       { label: 'Other deductions', value: this.formatMoney(panel.otherDeductions) },
       { label: 'Net premium', value: this.formatMoney(panel.netPremium) },
       { label: 'Reinsurance premium reference', value: panel.premiumReference || 'Not provided' },
-      { label: 'Panel status', value: panel.status || 'Not provided' }
+      { label: 'Panel status', value: this.getPanelDisplayStatus(panel) }
     ];
+  }
+
+  getPanelDisplayStatus(panel: ContractPanelItem): string {
+    if (normalizeContractStatus(this.contract()?.status) === 'bound' && !this.isPanelConfirmed(panel)) {
+      return 'Not taken up';
+    }
+
+    return panel.status || 'Not provided';
   }
 
   formatMoney(value: number | null): string {

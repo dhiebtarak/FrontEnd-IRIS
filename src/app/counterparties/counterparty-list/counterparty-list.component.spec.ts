@@ -18,7 +18,7 @@ describe('CounterpartyListComponent', () => {
             legacyClientId: null,
             legacyCompanyCode: 'CED-7',
             name: 'Atlas Re',
-            type: 'Cedent',
+            types: ['Cedent', 'Reinsurer'],
             email: 'atlas@example.com',
             status: 'Active',
             isActive: true
@@ -58,5 +58,8 @@ describe('CounterpartyListComponent', () => {
   it('renders backend counterparty records in the responsive directory', () => {
     expect(fixture.nativeElement.textContent).toContain('Atlas Re');
     expect(fixture.nativeElement.textContent).toContain('CED-7');
+    expect(fixture.nativeElement.textContent).toContain('Cedent');
+    expect(fixture.nativeElement.textContent).toContain('Reinsurer');
+    expect(fixture.nativeElement.textContent).toContain('Partner');
   });
 });

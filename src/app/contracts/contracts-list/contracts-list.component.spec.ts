@@ -21,7 +21,7 @@ describe('ContractsListComponent', () => {
   const contracts: ContractListItem[] = [
     {
       idContract: 2,
-      umr: 'B1235FAC2026-X',
+      umr: 'IT26-F-PD-0001',
       name: 'Property Facultative Contract STAR',
       cedentId: 2,
       cedentName: 'STAR Assurances',
@@ -30,6 +30,7 @@ describe('ContractsListComponent', () => {
       currencyId: 1,
       currencyCode: 'TND',
       status: 'Draft',
+      receptionDate: '2026-08-20',
       inceptionDate: '2026-09-20',
       expiryDate: '2027-08-10',
       grossPremium: 125000,
@@ -39,7 +40,7 @@ describe('ContractsListComponent', () => {
     },
     {
       idContract: 1,
-      umr: null,
+      umr: '',
       name: 'Marine Facultative Contract',
       cedentId: 8,
       cedentName: 'Atlas Cedent',
@@ -48,6 +49,7 @@ describe('ContractsListComponent', () => {
       currencyId: 2,
       currencyCode: 'EUR',
       status: 'Draft',
+      receptionDate: null,
       inceptionDate: '2026-10-01',
       expiryDate: '2027-09-30',
       grossPremium: null,
@@ -134,9 +136,11 @@ describe('ContractsListComponent', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].getAttribute('data-contract-id')).toBe('2');
     expect(rows[1].getAttribute('data-contract-id')).toBe('1');
-    expect(text).toContain('B1235FAC2026-X');
+    expect(text).toContain('IT26-F-PD-0001');
     expect(text).toContain('Property Facultative Contract STAR');
     expect(text).toContain('STAR Assurances');
+    expect(text).toContain('Reception');
+    expect(text).not.toContain('Gross premium');
     expect(text).not.toContain('Portfolio data source required');
     expect(text).not.toContain('waiting for a backend portfolio endpoint');
   });

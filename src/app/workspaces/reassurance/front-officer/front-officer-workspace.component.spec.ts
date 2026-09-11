@@ -24,7 +24,7 @@ describe('FrontOfficerWorkspaceComponent', () => {
     recentContracts: [
       {
         idContract: 2,
-        umr: 'B1235FAC2026-X',
+        umr: 'IT26-F-PD-0001',
         name: 'Property Facultative Contract STAR',
         cedentId: 2,
         cedentName: 'STAR Assurances',
@@ -83,7 +83,7 @@ describe('FrontOfficerWorkspaceComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Draft');
     expect(fixture.nativeElement.textContent).toContain('2 contracts');
     expect(fixture.nativeElement.textContent).toContain('100%');
-    expect(fixture.nativeElement.textContent).toContain('B1235FAC2026-X');
+    expect(fixture.nativeElement.textContent).toContain('IT26-F-PD-0001');
     expect(fixture.nativeElement.textContent).toContain('Property Facultative Contract STAR');
     expect(fixture.nativeElement.textContent).toContain('STAR Assurances');
   });

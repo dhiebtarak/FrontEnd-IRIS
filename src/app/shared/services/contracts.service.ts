@@ -88,7 +88,9 @@ export class ContractsService {
   getMainCovers(): Observable<CoverageOption[]> {
     return this.httpClient.get<unknown>(`${this.baseUrl}/coverage-catalog/main-covers`).pipe(
       map(payload => this.uniqueBy(
-        this.toArray(payload).map(item => this.mapCoverageOption(item, 'MAIN_COVER', null)),
+        this.toArray(payload)
+          .map(item => this.mapCoverageOption(item, 'MAIN_COVER', null))
+          .filter(option => option.level === 'MAIN_COVER'),
         option => option.id
       ))
     );
@@ -99,7 +101,9 @@ export class ContractsService {
 
     return this.httpClient.get<unknown>(`${this.baseUrl}/coverage-catalog/${parentId}/children`, { params }).pipe(
       map(payload => this.uniqueBy(
-        this.toArray(payload).map(item => this.mapCoverageOption(item, level, parentId)),
+        this.toArray(payload)
+          .map(item => this.mapCoverageOption(item, level, parentId))
+          .filter(option => option.level === level && option.parentId === parentId),
         option => option.id
       ))
     );
@@ -267,7 +271,7 @@ export class ContractsService {
       status: this.toText(record['status']) || 'DRAFT',
       allowedActions: this.toStringArray(record['allowedActions']),
       netPremiumCedent: this.toNullableNumber(record['netPremiumCedent']),
-      umr: this.toNullableText(record['umr']),
+      umr: this.toText(record['umr']),
       name: this.toText(record['name']),
       contractType: this.toNullableText(record['contractType']),
       counterpartyId: this.toNumber(record['counterpartyId']) ?? 0,
@@ -285,6 +289,7 @@ export class ContractsService {
       fees: this.toNullableNumber(record['fees']),
       isHighPriority: this.toBoolean(record['isHighPriority']),
       sumInsured: this.toNullableNumber(record['sumInsured']),
+      limitOfLiability: this.toNullableNumber(record['limitOfLiability']),
       deductible: this.toNullableNumber(record['deductible']),
       premiumRate: this.toNullableNumber(record['premiumRate']),
       grossPremium: this.toNullableNumber(record['grossPremium']),
@@ -321,6 +326,10 @@ export class ContractsService {
 
     return {
       mainCoverId: this.toNumber(record['mainCoverId']) ?? null,
+      primaryMainCoverId: this.toNumber(record['primaryMainCoverId'] ?? record['mainCoverId']) ?? null,
+      coverageIds: this.toNumberArray(record['coverageIds']).length > 0
+        ? this.toNumberArray(record['coverageIds'])
+        : this.toNumberArray(record['mainCoverId'] == null ? [] : [record['mainCoverId']]),
       sectionIds: this.toNumberArray(record['sectionIds']),
       extensionIds: this.toNumberArray(record['extensionIds']),
       mainCover: record['mainCover'] ? this.mapCoverageOption(record['mainCover'], 'MAIN_COVER', null) : null,
@@ -332,11 +341,13 @@ export class ContractsService {
   private mapCoverageOption(value: unknown, fallbackLevel: CoverageLevel, fallbackParentId: number | null): CoverageOption {
     const record = this.toRecord(value);
     const level = this.toCoverageLevel(record['level'] ?? record['coverageLevel']) ?? fallbackLevel;
+    const description = this.toNullableText(record['description'] ?? record['coverageDescription']);
 
     return {
       id: this.toNumber(record['id'] ?? record['coverageItemId'] ?? record['idCoverageItem']) ?? 0,
       code: this.toText(record['code'] ?? record['coverageCode']).trim(),
       name: this.toText(record['name'] ?? record['coverageName']).trim(),
+      ...(description ? { description } : {}),
       level,
       parentId: this.toNumber(record['parentId'] ?? record['parentCoverageItemId'] ?? record['idParentCoverageItem']) ?? fallbackParentId,
       relationType: this.toCoverageRelationType(record['relationType']),

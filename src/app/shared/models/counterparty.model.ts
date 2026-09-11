@@ -1,4 +1,4 @@
-export type CounterpartyType = 'Cedent' | 'Reinsurer' | 'Client';
+export type CounterpartyType = 'Cedent' | 'Reinsurer' | 'Client' | 'Partner';
 export type CounterpartyStatus = 'Active' | 'Inactive' | 'Pending' | 'Suspended';
 export type CounterpartyAttachmentControlName = 'commercialRegisterAttachment' | 'taxIdentificationNumberAttachment';
 
@@ -28,7 +28,7 @@ export interface CounterpartyAttachment {
 
 interface CounterpartyBase {
   name: string;
-  type: CounterpartyType | '';
+  types: CounterpartyType[];
   email: string;
   phoneNumber: string;
   addressLine: string;
@@ -77,7 +77,7 @@ export interface CounterpartyListItem {
   legacyClientId: number | null;
   legacyCompanyCode: string | null;
   name: string;
-  type: string;
+  types: CounterpartyType[];
   email: string | null;
   status: string;
   isActive: boolean;

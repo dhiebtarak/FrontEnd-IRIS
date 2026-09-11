@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { ToastrService } from 'ngx-toastr';
 import { ContractOverviewComponent } from './contract-overview.component';
 
 describe('ContractOverviewComponent', () => {
@@ -15,10 +16,11 @@ describe('ContractOverviewComponent', () => {
 
   const contractResponse = {
     id: 123,
-    umr: 'B1235FAC2026-X',
+    umr: 'IT26-F-PD-0001',
     name: 'Property Facultative Contract STAR',
     contractType: 'Facultative',
-    status: 'Draft',
+    status: 'PlacementInProgress',
+    allowedActions: ['ModifyContract', 'AddReinsurer', 'CancelContract', 'StartBinding', 'EditPlacement'],
     counterpartyId: 2,
     cedent: { id: 2, name: 'STAR Assurances' },
     currencyId: 1,
@@ -55,6 +57,7 @@ describe('ContractOverviewComponent', () => {
   const panelsResponse = [
     {
       idPanel: 44,
+      idContract: 123,
       idCounterparty: 9,
       reinsurerName: 'Global Re',
       role: 'Lead',
@@ -82,6 +85,7 @@ describe('ContractOverviewComponent', () => {
         provideNoopAnimations(),
         provideHttpClient(),
         provideHttpClientTesting(),
+        { provide: ToastrService, useValue: { success: vi.fn(), error: vi.fn() } },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: convertToParamMap({ contractId: '123' }) } }
@@ -118,16 +122,17 @@ describe('ContractOverviewComponent', () => {
     flushContract();
 
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('B1235FAC2026-X');
+    expect(text).toContain('IT26-F-PD-0001');
     expect(text).toContain('Property Facultative Contract STAR');
     expect(text).toContain('STAR Assurances');
     expect(text).toContain('TND');
     expect(text).toContain('PD - Property Damage');
     expect(text).toContain('PD-MB - Machinery Breakdown');
     expect(text).toContain('PD-EXT - Debris Removal');
-    expect(text).toContain('TSI');
+    expect(text).toContain('Sum Insured');
+    expect(text).toContain('Limit of Liability');
     expect(text).toContain('Gross premium');
-    expect(text).toContain('Draft');
+    expect(text).toContain('Placement in progress');
     expect(text).toContain('Global Re');
     expect(text).toContain('Add Reinsurer');
     expect(text).toContain('Start Binding Phase');
@@ -158,14 +163,14 @@ describe('ContractOverviewComponent', () => {
       && req.params.get('pageSize') === '20'
     );
     reinsurerLookup.flush({
-      items: [{ id: 9, name: 'Global Re', type: 'Reinsurer', email: null, status: 'Active', isActive: true, legacyClientId: null, legacyCompanyCode: null }],
+      items: [{ id: 9, name: 'Global Re', types: ['Reinsurer'], email: null, status: 'Active', isActive: true, legacyClientId: null, legacyCompanyCode: null }],
       pageNumber: 1,
       pageSize: 20,
       totalCount: 1,
       totalPages: 1
     });
 
-    component.selectReinsurer({ id: 9, name: 'Global Re', type: 'Reinsurer', email: null, status: 'Active', isActive: true, legacyClientId: null, legacyCompanyCode: null });
+    component.selectReinsurer({ id: 9, name: 'Global Re', types: ['Reinsurer'], email: null, status: 'Active', isActive: true, legacyClientId: null, legacyCompanyCode: null });
     component.panelForm.patchValue({
       writtenSharePct: 40,
       signedSharePct: 35,
@@ -193,12 +198,14 @@ describe('ContractOverviewComponent', () => {
       otherDeductions: 300,
       premiumReference: 'RE-PREM-2'
     });
-    createPanel.flush({ idPanel: 45, idContract: 123, idCounterparty: 9, reinsurerName: 'Global Re', status: 'Draft' });
-
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([
-      ...panelsResponse,
-      { idPanel: 45, idContract: 123, idCounterparty: 9, reinsurerName: 'Global Re', role: 'Follower', status: 'Draft' }
-    ]);
+    createPanel.flush({
+      ...contractResponse,
+      status: 'PlacementInProgress',
+      panels: [
+        ...panelsResponse,
+        { idPanel: 45, idContract: 123, idCounterparty: 9, reinsurerName: 'Global Re', role: 'Follower', status: 'Draft' }
+      ]
+    });
     fixture.detectChanges();
 
     expect(component.isReinsurerFormOpen()).toBe(false);
@@ -242,11 +249,12 @@ describe('ContractOverviewComponent', () => {
       netPremium: 53000,
       status: 'Confirmed'
     }));
-    updateRequest.flush({ ...panelsResponse[0], signedSharePct: 46, netPremium: 53000, status: 'Confirmed' });
-
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([
-      { ...panelsResponse[0], signedSharePct: 46, netPremium: 53000, status: 'Confirmed' }
-    ]);
+    updateRequest.flush({
+      ...contractResponse,
+      panels: [
+        { ...panelsResponse[0], signedSharePct: 46, netPremium: 53000, status: 'Confirmed' }
+      ]
+    });
     fixture.detectChanges();
 
     expect(component.isReinsurerFormOpen()).toBe(false);
@@ -280,26 +288,23 @@ describe('ContractOverviewComponent', () => {
   });
 
   it('shows the backend message when no confirmed reinsurer can start binding', () => {
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush(contractResponse);
+    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush({
+      ...contractResponse,
+      status: 'PlacementInProgress',
+      allowedActions: ['ModifyContract', 'AddReinsurer', 'CancelContract', 'StartBinding', 'EditPlacement']
+    });
     httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([]);
     fixture.detectChanges();
 
     component.startBindingPhase();
-
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/slips').flush(new Blob([]));
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding').flush({
-      message: 'Please confirm at least one reinsurer before starting the binding phase.'
-    }, {
-      status: 400,
-      statusText: 'Bad Request'
-    });
     fixture.detectChanges();
 
-    expect(component.slipMessage()).toBe('Please confirm at least one reinsurer before starting the binding phase.');
+    expect(component.slipMessage()).toBe('Confirm at least one reinsurer before starting the binding phase.');
   });
 
   it('downloads the slip blob and starts the binding phase', () => {
     flushContract();
+    component.contractPanels.set([{ ...panelsResponse[0], status: 'Confirmed' }]);
 
     component.startBindingPhase();
     const request = httpMock.expectOne('http://localhost:5151/api/contracts/123/slips');
@@ -310,10 +315,12 @@ describe('ContractOverviewComponent', () => {
 
     const bindingRequest = httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding');
     expect(bindingRequest.request.method).toBe('POST');
-    bindingRequest.flush({});
-
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush(contractResponse);
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush(panelsResponse);
+    bindingRequest.flush({
+      ...contractResponse,
+      status: 'Bound',
+      allowedActions: [],
+      panels: [{ ...panelsResponse[0], status: 'Confirmed' }]
+    });
     fixture.detectChanges();
 
     expect(window.URL.createObjectURL).toHaveBeenCalled();
@@ -328,12 +335,16 @@ describe('ContractOverviewComponent', () => {
 
   it('shows a non-blocking message and still starts binding when no slip is available', () => {
     flushContract();
+    component.contractPanels.set([{ ...panelsResponse[0], status: 'Confirmed' }]);
 
     component.startBindingPhase();
     httpMock.expectOne('http://localhost:5151/api/contracts/123/slips').flush(new Blob([]));
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding').flush({});
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush(contractResponse);
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush(panelsResponse);
+    httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding').flush({
+      ...contractResponse,
+      status: 'Bound',
+      allowedActions: [],
+      panels: [{ ...panelsResponse[0], status: 'Confirmed' }]
+    });
     fixture.detectChanges();
 
     expect(component.slipMessage()).toBe('Slip is not available for this contract selection.');
@@ -347,15 +358,19 @@ describe('ContractOverviewComponent', () => {
 
   it('does not block binding when slip download fails unexpectedly', () => {
     flushContract();
+    component.contractPanels.set([{ ...panelsResponse[0], status: 'Confirmed' }]);
 
     component.startBindingPhase();
     httpMock.expectOne('http://localhost:5151/api/contracts/123/slips').flush(new Blob(['server error']), {
       status: 500,
       statusText: 'Server Error'
     });
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding').flush({});
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush(contractResponse);
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush(panelsResponse);
+    httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding').flush({
+      ...contractResponse,
+      status: 'Bound',
+      allowedActions: [],
+      panels: [{ ...panelsResponse[0], status: 'Confirmed' }]
+    });
     fixture.detectChanges();
 
     expect(component.slipMessage()).toBe('Unable to check or download slips for this contract right now.');

@@ -59,20 +59,17 @@
   <main class="mx-auto max-w-7xl px-4 py-8 md:px-8">
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <section class="space-y-6">
-        @if (selectedType) {
+        @if (selectedTypes.length) {
           <div class="rounded-2xl border px-5 py-4 shadow-sm"
             [ngClass]="{
-              'border-sky-200 bg-sky-50 text-sky-950': selectedType === 'Cedent',
-              'border-cyan-200 bg-cyan-50 text-cyan-950': selectedType === 'Reinsurer',
-              'border-indigo-200 bg-indigo-50 text-indigo-950': selectedType === 'Client'
+              'border-sky-200 bg-sky-50 text-sky-950': hasSelectedType('Cedent'),
+              'border-cyan-200 bg-cyan-50 text-cyan-950': hasSelectedType('Reinsurer'),
+              'border-indigo-200 bg-indigo-50 text-indigo-950': hasSelectedType('Client'),
+              'border-violet-200 bg-violet-50 text-violet-950': hasSelectedType('Partner')
             }"
           >
             <p class="text-sm font-semibold">
-              @switch (selectedType) {
-                @case ('Cedent') { The counterparty will be registered as a cedent. }
-                @case ('Reinsurer') { The counterparty will be registered as a reinsurer. }
-                @case ('Client') { The counterparty will be registered as a client. }
-              }
+              Selected counterparty types: {{ selectedTypes.join(', ') }}.
             </p>
             <p class="mt-1 text-sm opacity-80">
               All displayed fields map directly to the backend counterparty model.
@@ -125,31 +122,33 @@
               </div>
 
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="type">Counterparty Type</label>
-                <div class="relative">
-                  <select
-                    id="type"
-                    formControlName="type"
-                    [attr.aria-invalid]="hasError('type', 'required') || hasError('type', 'serverError')"
-                    class="w-full appearance-none rounded-2xl border bg-white px-4 py-3 pr-11 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    [ngClass]="hasError('type', 'required') || hasError('type', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
-                  >
-                    <option value="">Select a type</option>
-                    @for (type of counterpartyTypes; track type) {
-                      <option [value]="type">{{ type }}</option>
-                    }
-                  </select>
-                  <span class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-iris-slate">
-                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                      <path d="M5.5 7.5 10 12l4.5-4.5" />
-                    </svg>
-                  </span>
+                <span class="mb-2 block text-sm font-semibold text-iris-navy">Counterparty types <span aria-hidden="true">*</span></span>
+                <div
+                  class="grid gap-3 sm:grid-cols-2"
+                  role="group"
+                  aria-label="Counterparty types"
+                  [attr.aria-invalid]="hasError('types', 'required') || hasError('types', 'serverError')"
+                >
+                  @for (type of counterpartyTypes; track type) {
+                    <label
+                      class="flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition"
+                      [ngClass]="hasSelectedType(type) ? 'border-iris-teal bg-sky-50 text-iris-navy ring-2 ring-sky-100' : 'border-iris-border bg-white text-iris-slate hover:border-iris-teal'"
+                    >
+                      <input
+                        type="checkbox"
+                        [checked]="hasSelectedType(type)"
+                        (change)="toggleCounterpartyType(type)"
+                        class="h-4 w-4 accent-[var(--color-iris-teal)]"
+                      />
+                      <span>{{ type }}</span>
+                    </label>
+                  }
                 </div>
-                @if (hasError('type', 'required')) {
-                  <p class="mt-2 text-sm text-rose-700">Counterparty type is required.</p>
+                @if (hasError('types', 'required')) {
+                  <p class="mt-2 text-sm text-rose-700">Select at least one counterparty type.</p>
                 }
-                @if (hasError('type', 'serverError')) {
-                  <p class="mt-2 text-sm text-rose-700">{{ f.type.errors?.['serverError'] }}</p>
+                @if (hasError('types', 'serverError')) {
+                  <p class="mt-2 text-sm text-rose-700">{{ f.types.errors?.['serverError'] }}</p>
                 }
               </div>
 
@@ -215,7 +214,7 @@
             </div>
 
             <div class="mt-6 grid gap-5 md:grid-cols-2">
-              <div [ngClass]="selectedType === 'Cedent' ? 'rounded-2xl border border-sky-200 bg-sky-50 p-4 md:col-span-2' : 'md:col-span-2'">
+              <div [ngClass]="hasSelectedType('Cedent') ? 'rounded-2xl border border-sky-200 bg-sky-50 p-4 md:col-span-2' : 'md:col-span-2'">
                 <label class="mb-2 block text-sm font-semibold text-iris-navy" for="cedantLegalEntity">Legal Entity</label>
                 <input
                   id="cedantLegalEntity"
@@ -226,7 +225,7 @@
                   [ngClass]="hasError('cedantLegalEntity', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
                   placeholder="Official registered legal entity"
                 />
-                @if (selectedType === 'Cedent') {
+                @if (hasSelectedType('Cedent')) {
                   <p class="mt-2 text-sm text-sky-900">Cedent records typically rely on an exact legal entity match.</p>
                 }
                 @if (hasError('cedantLegalEntity', 'serverError')) {
@@ -501,7 +500,7 @@
                 <h2 class="mt-2 font-cambria text-2xl font-bold text-iris-navy">Legacy Information</h2>
                 <p class="mt-2 text-sm text-iris-slate">
                   Primarily used for migrated or imported counterparties.
-                  @if (selectedType === 'Client') {
+                  @if (hasSelectedType('Client')) {
                     <span class="font-semibold text-iris-navy">Client records can also capture legacy identifiers here.</span>
                   }
                 </p>
@@ -627,8 +626,14 @@
 
             <dl class="mt-5 space-y-4 text-sm">
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Type</dt>
-                <dd class="mt-1 font-semibold text-iris-navy">{{ selectedType || 'Not selected' }}</dd>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Types</dt>
+                <dd class="mt-1 flex flex-wrap gap-2 font-semibold text-iris-navy">
+                  @for (type of selectedTypes; track type) {
+                    <span class="rounded-full bg-white px-2.5 py-1 text-xs ring-1 ring-iris-border">{{ type }}</span>
+                  } @empty {
+                    <span>Not selected</span>
+                  }
+                </dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
                 <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Name</dt>

@@ -29,7 +29,7 @@ export class CounterpartyListComponent implements OnInit {
   readonly startItem = computed(() => (this.totalCount() === 0 ? 0 : (this.pageNumber() - 1) * this.pageSize() + 1));
   readonly endItem = computed(() => Math.min(this.pageNumber() * this.pageSize(), this.totalCount()));
   readonly pageSizeOptions = [10, 25, 50, 100];
-  readonly counterpartyTypes = ['Cedent', 'Reinsurer', 'Client'];
+  readonly counterpartyTypes = ['Cedent', 'Reinsurer', 'Client', 'Partner'];
   readonly counterpartyStatuses = ['Active', 'Inactive', 'Pending', 'Suspended'];
 
   readonly searchControl = new FormControl('', { nonNullable: true });

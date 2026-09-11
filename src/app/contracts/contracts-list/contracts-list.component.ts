@@ -1,4 +1,4 @@
-import { CurrencyPipe, DatePipe, NgClass } from '@angular/common';
+import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -22,7 +22,7 @@ type ContractListState = 'loading' | 'loaded' | 'error';
 @Component({
   selector: 'app-contracts-list',
   standalone: true,
-  imports: [CurrencyPipe, DatePipe, NgClass, ReactiveFormsModule, RouterLink],
+  imports: [DatePipe, NgClass, ReactiveFormsModule, RouterLink],
   templateUrl: './contracts-list.component.html',
   styles: ``
 })
@@ -59,9 +59,9 @@ export class ContractsListComponent implements OnInit {
     { value: 'cedentName', label: 'Cedent' },
     { value: 'contractType', label: 'Contract type' },
     { value: 'status', label: 'Status' },
+    { value: 'receptionDate', label: 'Reception date' },
     { value: 'inceptionDate', label: 'Inception date' },
-    { value: 'expiryDate', label: 'Expiry date' },
-    { value: 'grossPremium', label: 'Gross premium' }
+    { value: 'expiryDate', label: 'Expiry date' }
   ];
 
   readonly filters = new FormGroup({
@@ -231,7 +231,7 @@ export class ContractsListComponent implements OnInit {
     return normalizeContractStatus(contract.status) === 'readyforplacement';
   }
 
-  getDisplayStatus(contract: ContractListItem): string {
+  getDisplayStatus(contract: Pick<ContractListItem, 'status'>): string {
     return getContractStatusDisplay(contract.status);
   }
 

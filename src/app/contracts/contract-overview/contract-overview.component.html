@@ -34,6 +34,9 @@
             </div>
 
             <div class="flex flex-wrap gap-3">
+              @if (contractDocumentContext(); as documentContext) {
+                <app-document-attachments [context]="documentContext" title="Contract documents" />
+              }
               @if (canModifyContract()) {
                 <button type="button" (click)="backToInformation()" [disabled]="isStartingBinding()" class="rounded-xl border border-iris-border bg-white px-4 py-2.5 text-sm font-semibold text-iris-navy transition hover:border-iris-navy-light disabled:cursor-not-allowed disabled:opacity-60">
                   Modify Contract
@@ -188,9 +191,14 @@
                   <div class="mt-1 flex flex-wrap items-center gap-3">
                     <h2 class="font-cambria text-2xl font-bold text-iris-navy">{{ activePanel()?.reinsurerName }}</h2>
                     <span class="rounded-full border px-3 py-1 text-xs font-bold" [ngClass]="getPanelStatusClasses(activePanel()!)">
-                      Status: {{ activePanel()?.status || 'Not provided' }}
+                      Status: {{ getPanelDisplayStatus(activePanel()!) }}
                     </span>
                   </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  @if (placementDocumentContext(activePanel()!); as documentContext) {
+                    <app-document-attachments [context]="documentContext" title="Reinsurer documents" />
+                  }
                 </div>
                 @if (canEditPlacements()) {
                   <div class="flex flex-wrap gap-2">
@@ -293,7 +301,7 @@
             <input type="number" formControlName="signedSharePct" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
           </label>
           <label>
-            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Total Sum Insured / TSI</span>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Sum Insured</span>
             <input type="number" formControlName="sumInsured" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
           </label>
           <label>

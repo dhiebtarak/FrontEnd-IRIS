@@ -69,7 +69,7 @@
         <select formControlName="status" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100">
           <option value="">All statuses</option>
           @for (status of contractStatuses; track status) {
-            <option [value]="status">{{ getDisplayStatus({ status }$any) }}</option>
+            <option [value]="status">{{ getDisplayStatus({ status }) }}</option>
           }
         </select>
       </label>
@@ -191,9 +191,9 @@
               <th class="px-4 py-4">Contract type</th>
               <th class="px-4 py-4">Currency</th>
               <th class="px-4 py-4">Status</th>
+              <th class="px-4 py-4">Reception</th>
               <th class="px-4 py-4">Inception</th>
               <th class="px-4 py-4">Expiry</th>
-              <th class="px-4 py-4 text-right">Gross premium</th>
               <th class="px-4 py-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -201,11 +201,7 @@
             @for (contract of contracts(); track contract.idContract) {
               <tr class="transition hover:bg-iris-bg/55" [attr.data-contract-id]="contract.idContract">
                 <td class="px-4 py-4 font-bold text-iris-teal">
-                  @if (contract.umr) {
-                    {{ contract.umr }}
-                  } @else {
-                    &mdash;
-                  }
+                  {{ contract.umr ?? '—' }}
                 </td>
                 <td class="px-4 py-4 font-cambria text-base font-bold text-iris-navy">{{ contract.name }}</td>
                 <td class="px-4 py-4 text-iris-slate">{{ contract.cedentName }}</td>
@@ -222,15 +218,9 @@
                     {{ getDisplayStatus(contract) }}
                   </span>
                 </td>
+                <td class="px-4 py-4 text-iris-slate">{{ contract.receptionDate ? (contract.receptionDate | date:'mediumDate') : '—' }}</td>
                 <td class="px-4 py-4 text-iris-slate">{{ contract.inceptionDate | date:'mediumDate' }}</td>
                 <td class="px-4 py-4 text-iris-slate">{{ contract.expiryDate | date:'mediumDate' }}</td>
-                <td class="px-4 py-4 text-right font-semibold text-iris-navy">
-                  @if (contract.grossPremium != null) {
-                    {{ contract.grossPremium | currency:contract.currencyCode:'symbol':'1.0-2' }}
-                  } @else {
-                    &mdash;
-                  }
-                </td>
                 <td class="px-4 py-4 text-right">
                   @if (isFacultative(contract)) {
                     <a [routerLink]="getDetailsRoute(contract)" [queryParams]="getDetailsQueryParams(contract)" class="text-sm font-bold text-iris-teal transition hover:text-iris-navy">View details</a>
@@ -250,11 +240,7 @@
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="text-xs font-bold uppercase tracking-[0.12em] text-iris-teal">
-                  @if (contract.umr) {
-                    {{ contract.umr }}
-                  } @else {
-                    &mdash;
-                  }
+                  {{ contract.umr ?? '—' }}
                 </p>
                 <h3 class="mt-2 font-cambria text-xl font-bold text-iris-navy">{{ contract.name }}</h3>
                 <p class="mt-1 text-sm text-iris-slate">{{ contract.cedentName }}</p>
@@ -273,18 +259,9 @@
                 </dd>
               </div>
               <div><dt class="font-bold text-iris-navy">Currency</dt><dd class="mt-1 text-iris-slate">{{ contract.currencyCode }}</dd></div>
+              <div><dt class="font-bold text-iris-navy">Reception</dt><dd class="mt-1 text-iris-slate">{{ contract.receptionDate ? (contract.receptionDate | date:'mediumDate') : '—' }}</dd></div>
               <div><dt class="font-bold text-iris-navy">Inception</dt><dd class="mt-1 text-iris-slate">{{ contract.inceptionDate | date:'mediumDate' }}</dd></div>
               <div><dt class="font-bold text-iris-navy">Expiry</dt><dd class="mt-1 text-iris-slate">{{ contract.expiryDate | date:'mediumDate' }}</dd></div>
-              <div class="col-span-2">
-                <dt class="font-bold text-iris-navy">Gross premium</dt>
-                <dd class="mt-1 text-iris-slate">
-                  @if (contract.grossPremium != null) {
-                    {{ contract.grossPremium | currency:contract.currencyCode:'symbol':'1.0-2' }}
-                  } @else {
-                    &mdash;
-                  }
-                </dd>
-              </div>
             </dl>
             @if (isFacultative(contract)) {
               <a [routerLink]="getDetailsRoute(contract)" [queryParams]="getDetailsQueryParams(contract)" class="mt-5 inline-flex text-sm font-bold text-iris-teal">View details</a>

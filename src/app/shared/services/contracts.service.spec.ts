@@ -34,7 +34,7 @@ describe('ContractsService', () => {
       recentContracts: [
         {
           idContract: 2,
-          umr: 'B1235FAC2026-X',
+          umr: 'IT26-F-PD-0001',
           name: 'Property Facultative Contract STAR',
           cedentId: 2,
           cedentName: 'STAR Assurances',
@@ -60,7 +60,7 @@ describe('ContractsService', () => {
     request.flush(expected);
 
     expect(result).toEqual(expected);
-    expect(result?.recentContracts[0].umr).toBe('B1235FAC2026-X');
+    expect(result?.recentContracts[0].umr).toBe('IT26-F-PD-0001');
   });
 
   it('requests the first contract page with backend defaults and JWT authorization', () => {
@@ -246,6 +246,22 @@ describe('ContractsService', () => {
         coverageLevel: 'MAIN_COVER',
         hasSlip: true,
         idSlipTemplate: 10
+      },
+      {
+        idCoverageItem: 2,
+        coverageCode: 'PD-MB',
+        coverageName: 'Machinery Breakdown',
+        coverageLevel: 'SECTION',
+        parentId: 1,
+        relationType: 'HAS_SECTION'
+      },
+      {
+        idCoverageItem: 7,
+        coverageCode: 'PD-EXT',
+        coverageName: 'Debris Removal',
+        coverageLevel: 'EXTENSION',
+        parentId: 1,
+        relationType: 'HAS_EXTENSION'
       }
     ]);
   });
@@ -289,6 +305,8 @@ describe('ContractsService', () => {
   it('preserves coverageSelection on Facultative contract responses', () => {
     service.getFacultativeContract(7).subscribe(result => {
       expect(result.coverageSelection).toEqual({
+        primaryMainCoverId: 1,
+        coverageIds: [1],
         mainCoverId: 1,
         sectionIds: [2, 3],
         extensionIds: [7],
@@ -460,12 +478,13 @@ describe('ContractsService', () => {
       otherDeductions: 300,
       premiumReference: 'RE-PREM-1'
     }).subscribe(result => {
-      expect(result.reinsurerName).toBe('Global Re');
-      expect(result.tsi).toBe(400000);
-      expect(result.premiumRatePct).toBe(1.2);
-      expect(result.brokeragePct).toBe(2);
-      expect(result.premiumReference).toBe('RE-PREM-1');
-      expect(result.netPremium).toBe(46740);
+      expect(result.status).toBe('PlacementInProgress');
+      expect(result.panels?.[0].reinsurerName).toBe('Global Re');
+      expect(result.panels?.[0].tsi).toBe(400000);
+      expect(result.panels?.[0].premiumRatePct).toBe(1.2);
+      expect(result.panels?.[0].brokeragePct).toBe(2);
+      expect(result.panels?.[0].premiumReference).toBe('RE-PREM-1');
+      expect(result.panels?.[0].netPremium).toBe(46740);
     });
 
     const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels');
@@ -484,22 +503,34 @@ describe('ContractsService', () => {
       premiumReference: 'RE-PREM-1'
     });
     request.flush({
-      idPanel: 3,
       idContract: 123,
-      idCounterparty: 9,
-      reinsurerName: 'Global Re',
-      role: 'Lead',
-      writtenSharePct: 40,
-      signedSharePct: 35,
-      tsi: 400000,
-      deductible: 2000,
-      premiumRatePct: 1.2,
-      grossPremium: 48000,
-      brokeragePct: 2,
-      otherDeductions: 300,
-      netPremium: 46740,
-      premiumReference: 'RE-PREM-1',
-      status: 'Draft'
+      umr: 'IT26-F-PD-0001',
+      status: 'PlacementInProgress',
+      name: 'Coverage Draft',
+      counterpartyId: 2,
+      currencyId: 1,
+      inceptionDate: '2026-09-20',
+      expiryDate: '2027-08-10',
+      isHighPriority: false,
+      isFronting: false,
+      panels: [{
+        idPanel: 3,
+        idContract: 123,
+        idCounterparty: 9,
+        reinsurerName: 'Global Re',
+        role: 'Lead',
+        writtenSharePct: 40,
+        signedSharePct: 35,
+        tsi: 400000,
+        deductible: 2000,
+        premiumRatePct: 1.2,
+        grossPremium: 48000,
+        brokeragePct: 2,
+        otherDeductions: 300,
+        netPremium: 46740,
+        premiumReference: 'RE-PREM-1',
+        status: 'Draft'
+      }]
     });
   });
 
@@ -518,9 +549,9 @@ describe('ContractsService', () => {
       netPremium: 47000,
       status: 'Confirmed'
     }).subscribe(result => {
-      expect(result.signedSharePct).toBe(36);
-      expect(result.netPremium).toBe(47000);
-      expect(result.status).toBe('Confirmed');
+      expect(result.panels?.[0].signedSharePct).toBe(36);
+      expect(result.panels?.[0].netPremium).toBe(47000);
+      expect(result.panels?.[0].status).toBe('Confirmed');
     });
 
     const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels/3');
@@ -541,22 +572,34 @@ describe('ContractsService', () => {
       status: 'Confirmed'
     });
     request.flush({
-      idPanel: 3,
       idContract: 123,
-      idCounterparty: 9,
-      reinsurerName: 'Global Re',
-      role: 'Lead',
-      writtenSharePct: 40,
-      signedSharePct: 36,
-      tsi: 400000,
-      deductible: 2000,
-      premiumRatePct: 1.2,
-      grossPremium: 48000,
-      brokeragePct: 2,
-      otherDeductions: 300,
-      netPremium: 47000,
-      premiumReference: 'RE-PREM-1',
-      status: 'Confirmed'
+      umr: 'IT26-F-PD-0001',
+      status: 'PlacementInProgress',
+      name: 'Coverage Draft',
+      counterpartyId: 2,
+      currencyId: 1,
+      inceptionDate: '2026-09-20',
+      expiryDate: '2027-08-10',
+      isHighPriority: false,
+      isFronting: false,
+      panels: [{
+        idPanel: 3,
+        idContract: 123,
+        idCounterparty: 9,
+        reinsurerName: 'Global Re',
+        role: 'Lead',
+        writtenSharePct: 40,
+        signedSharePct: 36,
+        tsi: 400000,
+        deductible: 2000,
+        premiumRatePct: 1.2,
+        grossPremium: 48000,
+        brokeragePct: 2,
+        otherDeductions: 300,
+        netPremium: 47000,
+        premiumReference: 'RE-PREM-1',
+        status: 'Confirmed'
+      }]
     });
   });
 
@@ -579,12 +622,25 @@ describe('ContractsService', () => {
   });
 
   it('starts the binding phase on the contract start-binding endpoint', () => {
-    service.startBindingPhase(123).subscribe();
+    service.startBindingPhase(123).subscribe(result => {
+      expect(result.status).toBe('Bound');
+    });
 
     const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/start-binding');
     expect(request.request.method).toBe('POST');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
-    request.flush({});
+    request.flush({
+      idContract: 123,
+      umr: 'IT26-F-PD-0001',
+      status: 'Bound',
+      name: 'Coverage Draft',
+      counterpartyId: 2,
+      currencyId: 1,
+      inceptionDate: '2026-09-20',
+      expiryDate: '2027-08-10',
+      isHighPriority: false,
+      isFronting: false
+    });
   });
 
   it('downloads contract slips as a blob and reads the response filename', () => {
