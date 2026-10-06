@@ -85,8 +85,24 @@ export interface CounterpartyListItem {
   activity?: string | null;
 }
 
+export interface FinanceCounterpartyListItem {
+  id: number;
+  name: string;
+  status: string;
+  hasActiveBankAccount: boolean;
+  activeBankAccountCount: number;
+}
+
 export interface CounterpartyListResponse {
   items: CounterpartyListItem[];
+  pageNumber: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+export interface FinanceCounterpartyListResponse {
+  items: FinanceCounterpartyListItem[];
   pageNumber: number;
   pageSize: number;
   totalCount: number;

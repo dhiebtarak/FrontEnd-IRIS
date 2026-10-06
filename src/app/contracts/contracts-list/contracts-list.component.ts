@@ -15,6 +15,7 @@ import {
   CurrencyReference
 } from '../../shared/models/contract.model';
 import { getContractStatusClasses, getContractStatusDisplay, normalizeContractStatus } from '../../shared/models/contract-status.util';
+import { Auth } from '../../shared/services/auth';
 import { ContractsService } from '../../shared/services/contracts.service';
 
 type ContractListState = 'loading' | 'loaded' | 'error';
@@ -47,8 +48,12 @@ export class ContractsListComponent implements OnInit {
   readonly startItem = computed(() => this.totalCount() === 0 ? 0 : (this.pageNumber() - 1) * this.pageSize() + 1);
   readonly endItem = computed(() => Math.min(this.pageNumber() * this.pageSize(), this.totalCount()));
   readonly isLoading = computed(() => this.listState() === 'loading');
+  readonly isBackOfficeMode = computed(() => this.authService.hasWorkspaceRole('BackOfficer') || this.route.snapshot.data?.['workspace'] === 'back-office');
+  readonly canCreateContract = computed(() => !this.isBackOfficeMode());
   readonly createContractRoute = '/workspace/reassurance/front-officer/contracts/new/type';
-  readonly overviewRoute = '/workspace/reassurance/front-officer/contracts/new/overview';
+  readonly overviewRoute = computed(() => this.isBackOfficeMode()
+    ? '/workspace/reassurance/back-officer/contracts/overview'
+    : '/workspace/reassurance/front-officer/contracts/new/overview');
   readonly pageSizeOptions = [10, 20, 50, 100];
   readonly contractStatuses = ['Draft', 'ReadyForPlacement', 'PlacementInProgress', 'Bound', 'Expired', 'Cancelled'];
   readonly sortOptions: ReadonlyArray<{ value: ContractSortField; label: string }> = [
@@ -78,6 +83,7 @@ export class ContractsListComponent implements OnInit {
 
   constructor(
     private readonly contractsService: ContractsService,
+    private readonly authService: Auth,
     private readonly route: ActivatedRoute,
     private readonly router: Router
   ) {}
@@ -236,11 +242,13 @@ export class ContractsListComponent implements OnInit {
   }
 
   getDetailsRoute(contract: ContractListItem): string {
-    return this.overviewRoute;
+    return this.isBackOfficeMode()
+      ? `/workspace/reassurance/back-officer/contracts/${contract.idContract}/overview`
+      : this.overviewRoute();
   }
 
-  getDetailsQueryParams(contract: ContractListItem): { contractId: number } {
-    return { contractId: contract.idContract };
+  getDetailsQueryParams(contract: ContractListItem): { contractId: number } | null {
+    return this.isBackOfficeMode() ? null : { contractId: contract.idContract };
   }
 
   getStatusClasses(status: string): string {

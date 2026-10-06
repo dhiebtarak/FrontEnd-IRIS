@@ -1,0 +1,801 @@
+<div class="mx-auto max-w-[1500px] px-4 py-7 md:px-7 lg:px-10 lg:py-9">
+  <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-iris-teal">{{ role() === 'finance' ? 'Finance Officer' : 'Back Officer' }}</p>
+      <h1 class="mt-2 font-cambria text-4xl font-bold text-iris-navy">{{ pageTitle() }}</h1>
+      <p class="mt-3 max-w-3xl text-sm leading-6 text-iris-slate md:text-base">
+        Real financial workflow data from the authenticated IRIS backend APIs.
+      </p>
+    </div>
+
+    @if (role() === 'finance' && page() === 'receipts') {
+      <button type="button" (click)="openReceiptModal()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light">
+        Create Encaissement
+      </button>
+    }
+  </header>
+
+  @if (successMessage()) {
+    <div class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-semibold text-emerald-900">{{ successMessage() }}</div>
+  }
+  @if (errorMessage()) {
+    <div class="mt-5 flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between">
+      <span>{{ errorMessage() }}</span>
+      <button type="button" (click)="loadPage()" class="font-bold underline underline-offset-4">Retry</button>
+    </div>
+  }
+
+  @if (page() === 'dashboard') {
+    <section class="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <article class="rounded-2xl border border-iris-border bg-white p-5">
+        <p class="text-sm font-bold text-iris-slate">Incoming receipts</p>
+        <p class="mt-2 text-3xl font-bold text-iris-navy">{{ totalReceipts() }}</p>
+      </article>
+      <article class="rounded-2xl border border-rose-200 bg-white p-5">
+        <p class="text-sm font-bold text-iris-slate">Unpaired receipts</p>
+        <p class="mt-2 text-3xl font-bold text-rose-700">{{ unpairedReceipts().length }}</p>
+      </article>
+      <article class="rounded-2xl border border-amber-200 bg-white p-5">
+        <p class="text-sm font-bold text-iris-slate">Ready remittances</p>
+        <p class="mt-2 text-3xl font-bold text-amber-700">{{ readyRemittances().length }}</p>
+      </article>
+      <article class="rounded-2xl border border-iris-border bg-white p-5">
+        <p class="text-sm font-bold text-iris-slate">Pending payable invoices</p>
+        <p class="mt-2 text-3xl font-bold text-iris-teal">{{ pendingInvoices().length }}</p>
+      </article>
+      <article class="rounded-2xl border border-iris-border bg-white p-5">
+        <p class="text-sm font-bold text-iris-slate">Recent activity</p>
+        <p class="mt-2 text-3xl font-bold text-iris-navy">{{ remittances().length + invoices().length }}</p>
+      </article>
+    </section>
+  }
+
+  @if (page() === 'receipts') {
+    <section class="mt-7 rounded-[26px] border border-iris-border bg-white p-5 shadow-[0_18px_45px_rgba(13,47,79,0.07)]">
+      <form [formGroup]="receiptFilters" class="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <input type="search" formControlName="search" placeholder="Search receipts" class="rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        <select formControlName="pairingStatus" class="rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal">
+          <option value="">All statuses</option>
+          <option value="Unpaired">Unpaired</option>
+          <option value="Partially Paired">Partially Paired</option>
+          <option value="Paired">Paired</option>
+        </select>
+        <input type="number" formControlName="counterpartyId" placeholder="Counterparty ID" class="rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        <input type="number" formControlName="currencyId" placeholder="Currency ID" class="rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        <input type="date" formControlName="operationFrom" aria-label="Operation from" class="rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        <input type="date" formControlName="operationTo" aria-label="Operation to" class="rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+      </form>
+    </section>
+
+    <section class="mt-6 overflow-hidden rounded-[26px] border border-iris-border bg-white shadow-[0_18px_45px_rgba(13,47,79,0.07)]">
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[1180px] text-left text-sm">
+          <thead class="bg-iris-bg text-xs font-bold uppercase tracking-[0.1em] text-iris-slate">
+            <tr>
+              <th class="px-4 py-4">Reference</th>
+              <th class="px-4 py-4">Counterparty</th>
+              <th class="px-4 py-4">Bank account</th>
+              <th class="px-4 py-4">Reception date</th>
+              <th class="px-4 py-4">Operation date</th>
+              <th class="px-4 py-4">Amount</th>
+              <th class="px-4 py-4">Collection type</th>
+              <th class="px-4 py-4">Bank reference</th>
+              <th class="px-4 py-4">Pairing status</th>
+              <th class="px-4 py-4">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-iris-divider">
+            @for (receipt of receipts(); track receipt.idBankReceipt) {
+              <tr [ngClass]="normalizeStatus(receipt.pairingStatus) === 'unpaired' ? 'bg-rose-50/50' : ''">
+                <td class="px-4 py-4 font-bold text-iris-teal">BR-{{ receipt.idBankReceipt }}</td>
+                <td class="px-4 py-4">{{ receipt.counterpartyName }}</td>
+                <td class="px-4 py-4">#{{ receipt.bankAccountId }}</td>
+                <td class="px-4 py-4">{{ receipt.receptionDate | date:'mediumDate' }}</td>
+                <td class="px-4 py-4">{{ receipt.operationDate | date:'mediumDate' }}</td>
+                <td class="px-4 py-4 font-semibold">{{ formatMoney(receipt.amountReceived, receipt.currencyCode) }}</td>
+                <td class="px-4 py-4">{{ receipt.collectionType }}</td>
+                <td class="px-4 py-4">{{ receipt.bankReference }}</td>
+                <td class="px-4 py-4"><span class="rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(receipt.pairingStatus)">{{ receipt.pairingStatus }}</span></td>
+                <td class="px-4 py-4">
+                  @if (role() === 'back-office' && normalizeStatus(receipt.collectionType).includes('premium') && normalizeStatus(receipt.pairingStatus) !== 'paired') {
+                    <button type="button" (click)="openPairingModal(receipt)" class="font-bold text-iris-teal hover:text-iris-navy">Pair Encaissement</button>
+                  } @else {
+                    <span class="text-iris-slate">View details</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  @if (page() === 'bank-accounts') {
+    <section class="mt-7 grid gap-4">
+      @for (counterparty of counterparties(); track counterparty.id) {
+        <article class="flex flex-col gap-3 rounded-2xl border border-iris-border bg-white p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="font-cambria text-xl font-bold text-iris-navy">{{ counterparty.name }}</h2>
+            <p class="text-sm text-iris-slate">{{ counterparty.status }}</p>
+            @if (counterparty.hasActiveBankAccount === true) {
+              <div class="mt-3 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800" aria-label="Active bank account available">
+                <span aria-hidden="true">&#10003;</span>
+                <span>Active bank account available</span>
+                <span class="font-semibold text-emerald-700">{{ getActiveBankAccountCountLabel(counterparty) }}</span>
+              </div>
+            } @else {
+              <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800" aria-label="Add an active bank account before payment">
+                <span aria-hidden="true">&#9888;</span>
+                <span>Add an active bank account before payment.</span>
+              </div>
+            }
+          </div>
+          <button type="button" (click)="openBankAccounts(counterparty)" class="rounded-xl border border-iris-border px-4 py-2.5 text-sm font-bold text-iris-navy hover:bg-iris-bg">Bank Accounts</button>
+        </article>
+      }
+    </section>
+  }
+
+  @if (page() === 'disbursements' || page() === 'remittances') {
+    <section class="mt-7 overflow-hidden rounded-[26px] border border-iris-border bg-white shadow-[0_18px_45px_rgba(13,47,79,0.07)]">
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[1100px] text-left text-sm">
+          <thead class="bg-iris-bg text-xs font-bold uppercase tracking-[0.1em] text-iris-slate">
+            <tr>
+              <th class="px-4 py-4">Remittance reference</th>
+              <th class="px-4 py-4">Reinsurer</th>
+              <th class="px-4 py-4">Panel</th>
+              <th class="px-4 py-4">Gross/allocated premium</th>
+              <th class="px-4 py-4">Net payable amount</th>
+              <th class="px-4 py-4">Currency</th>
+              <th class="px-4 py-4">Status</th>
+              <th class="px-4 py-4">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-iris-divider">
+            @for (remittance of remittances(); track remittance.remittanceRef) {
+              <tr (click)="canOpenDisbursement(remittance) ? openDisbursementModal(remittance) : null" [ngClass]="canOpenDisbursement(remittance) ? 'cursor-pointer hover:bg-iris-bg' : ''">
+                <td class="px-4 py-4 font-bold text-iris-teal">{{ remittance.remittanceRef }}</td>
+                <td class="px-4 py-4">{{ remittance.counterpartyName }}</td>
+                <td class="px-4 py-4">{{ remittance.panelId ?? 'Not linked' }}</td>
+                <td class="px-4 py-4">{{ formatMoney(remittance.netPremiumDue, remittance.currencyCode) }}</td>
+                <td class="px-4 py-4 font-semibold">{{ formatMoney(remittance.netPayableAmount, remittance.currencyCode) }}</td>
+                <td class="px-4 py-4">{{ remittance.currencyCode }}</td>
+                <td class="px-4 py-4"><span class="rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(remittance.status)">{{ getRemittanceStatusLabel(remittance.status) }}</span></td>
+                <td class="px-4 py-4">
+                  @if (role() === 'back-office' && canConfirmRemittance(remittance)) {
+                    <button type="button" (click)="confirmRemittance(remittance)" [disabled]="isSubmitting()" class="font-bold text-iris-teal hover:text-iris-navy disabled:opacity-50">Confirm</button>
+                  } @else if (canMakeDisbursement(remittance)) {
+                    <button type="button" (click)="$event.stopPropagation(); openDisbursementModal(remittance)" class="font-bold text-iris-teal hover:text-iris-navy">Make Disbursement</button>
+                  } @else if (role() === 'finance' && (isPaymentInProgress(remittance.status) || isClosedDisbursement(remittance.status))) {
+                    <button type="button" (click)="$event.stopPropagation(); openDisbursementModal(remittance)" class="font-bold text-iris-teal hover:text-iris-navy">View Disbursement</button>
+                  } @else {
+                    <span class="text-iris-slate">No action</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  @if (page() === 'invoices') {
+    <section class="mt-7 rounded-[26px] border border-iris-border bg-white p-5 shadow-[0_18px_45px_rgba(13,47,79,0.07)]">
+      <form [formGroup]="invoiceFilters" class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <label class="space-y-1 md:col-span-2 xl:col-span-6">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Search</span>
+          <input type="search" formControlName="search" placeholder="Search invoice number, label, contract, UMR or counterparty" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        </label>
+        <label class="space-y-1 xl:col-span-2">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Contract</span>
+          <input type="search" formControlName="contractSearch" list="invoice-contract-options" (input)="onInvoiceContractFilterInput()" placeholder="UMR - Contract Name" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+          <datalist id="invoice-contract-options">
+            @for (option of invoiceContractOptions(); track option.contractId) {
+              <option [value]="option.label"></option>
+            }
+          </datalist>
+        </label>
+        <label class="space-y-1 xl:col-span-2">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Cedent</span>
+          <input type="search" formControlName="cedentSearch" list="invoice-cedent-options" (input)="onInvoiceCedentFilterInput()" placeholder="Cedent name" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+          <datalist id="invoice-cedent-options">
+            @for (option of invoiceCedentOptions(); track option.counterpartyId) {
+              <option [value]="option.label"></option>
+            }
+          </datalist>
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Invoice type</span>
+          <select formControlName="invoiceType" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm outline-none focus:border-iris-teal">
+            <option value="">All types</option>
+            <option value="CEDENT_PREMIUM_INVOICE">Cedent Premium Invoice</option>
+            <option value="REINSURER_PAYABLE">Reinsurer Payable</option>
+          </select>
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Pairing status</span>
+          <select formControlName="recoveryStatus" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm outline-none focus:border-iris-teal">
+            <option value="">All statuses</option>
+            <option value="Paired">Paired</option>
+            <option value="Unpaired">Unpaired</option>
+          </select>
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Currency</span>
+          <select formControlName="currencyId" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm outline-none focus:border-iris-teal">
+            <option [ngValue]="null">All currencies</option>
+            @for (currency of currencies(); track currency.id) {
+              <option [ngValue]="currency.id">{{ currency.code }}</option>
+            }
+          </select>
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Invoice date from</span>
+          <input type="date" formControlName="from" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Invoice date to</span>
+          <input type="date" formControlName="to" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        </label>
+        <div class="flex items-end">
+          <button type="button" (click)="clearInvoiceFilters()" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm font-bold text-iris-navy hover:border-iris-teal">Clear filters</button>
+        </div>
+      </form>
+    </section>
+    <section class="mt-5">
+      @if (isLoading()) {
+        <p class="rounded-xl border border-iris-border bg-white p-5 text-center text-sm font-semibold text-iris-slate">Loading invoices…</p>
+      } @else if (invoiceError()) {
+        <div class="rounded-xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-900" role="alert">
+          <p class="font-semibold">{{ invoiceError() }}</p>
+          <button type="button" (click)="loadInvoices()" class="mt-3 rounded-lg border border-rose-300 bg-white px-4 py-2 font-bold hover:bg-rose-100">Retry</button>
+        </div>
+      } @else if (!invoices().length) {
+        <p class="rounded-xl border border-iris-border bg-white p-5 text-center text-sm font-semibold text-iris-slate">
+          {{ hasInvoiceFilters() ? 'No invoices match the selected filters' : 'No invoices found' }}
+        </p>
+      } @else {
+      <div class="hidden overflow-x-auto rounded-2xl border border-iris-border bg-white md:block">
+        <table class="w-full min-w-[1080px] text-left text-sm">
+          <thead class="bg-iris-bg text-[11px] font-bold uppercase tracking-[0.12em] text-iris-slate">
+            <tr>
+              <th class="px-3 py-2">Invoice number</th>
+              <th class="px-3 py-2">Label</th>
+              <th class="px-3 py-2">Contract</th>
+              <th class="px-3 py-2">Counterparty</th>
+              <th class="px-3 py-2">Type</th>
+              <th class="px-3 py-2">Date</th>
+              <th class="px-3 py-2 text-right">Amount</th>
+              <th class="px-3 py-2">Currency</th>
+              <th class="px-3 py-2">Pairing</th>
+              <th class="px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-iris-divider">
+            @for (invoice of invoices(); track invoice.idInvoice) {
+              <tr class="align-top">
+                <td class="px-3 py-2 font-bold text-iris-navy">{{ invoice.invoiceNumber || ('INV-' + invoice.idInvoice) }}</td>
+                <td class="px-3 py-2 text-iris-slate">{{ getInvoiceLabel(invoice) }}</td>
+                <td class="px-3 py-2 font-semibold text-iris-navy">{{ getInvoiceContractDisplay(invoice) }}</td>
+                <td class="px-3 py-2">{{ getInvoiceCounterpartyName(invoice) }}</td>
+                <td class="px-3 py-2">{{ getInvoiceTypeLabel(invoice.invoiceType) }}</td>
+                <td class="px-3 py-2">{{ invoice.invoiceDate | date:'mediumDate' }}</td>
+                <td class="px-3 py-2 text-right font-bold text-iris-navy">{{ formatMoney(getInvoicePrimaryAmount(invoice), invoice.currencyCode) }}</td>
+                <td class="px-3 py-2">{{ invoice.currencyCode || 'N/A' }}</td>
+                <td class="px-3 py-2"><span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.recoveryStatus)">{{ getInvoiceRecoveryStatus(invoice) }}</span></td>
+                <td class="px-3 py-2"><span class="text-iris-slate">View</span></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="grid gap-3 md:hidden">
+        @for (invoice of invoices(); track invoice.idInvoice) {
+          <article class="rounded-2xl border border-iris-border bg-white p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h2 class="font-bold text-iris-navy">{{ invoice.invoiceNumber || ('INV-' + invoice.idInvoice) }}</h2>
+                <p class="text-sm font-semibold text-iris-slate">{{ getInvoiceLabel(invoice) }}</p>
+              </div>
+              <span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.recoveryStatus)">{{ getInvoiceRecoveryStatus(invoice) }}</span>
+            </div>
+            <dl class="mt-3 grid grid-cols-2 gap-2 text-xs text-iris-slate">
+              <div><dt class="font-bold uppercase tracking-[0.12em]">Contract</dt><dd class="font-semibold text-iris-navy">{{ getInvoiceContractDisplay(invoice) }}</dd></div>
+              <div><dt class="font-bold uppercase tracking-[0.12em]">Counterparty</dt><dd>{{ getInvoiceCounterpartyName(invoice) }}</dd></div>
+              <div><dt class="font-bold uppercase tracking-[0.12em]">Type</dt><dd>{{ getInvoiceTypeLabel(invoice.invoiceType) }}</dd></div>
+              <div><dt class="font-bold uppercase tracking-[0.12em]">Amount</dt><dd class="font-bold text-iris-navy">{{ formatMoney(getInvoicePrimaryAmount(invoice), invoice.currencyCode) }}</dd></div>
+            </dl>
+          </article>
+        }
+      </div>
+      @if (invoiceTotalPages() > 1) {
+        <nav class="mt-4 flex items-center justify-between gap-3 border-t border-iris-divider pt-4" aria-label="Invoice pages">
+          <span class="text-sm text-iris-slate">Page {{ invoicePageNumber() }} of {{ invoiceTotalPages() }} · {{ invoiceTotalCount() }} invoices</span>
+          <div class="flex gap-2">
+            <button type="button" (click)="goToInvoicePage(invoicePageNumber() - 1)" [disabled]="invoicePageNumber() <= 1 || isLoading()" class="rounded-lg border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy disabled:opacity-50">Previous</button>
+            <button type="button" (click)="goToInvoicePage(invoicePageNumber() + 1)" [disabled]="invoicePageNumber() >= invoiceTotalPages() || isLoading()" class="rounded-lg border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy disabled:opacity-50">Next</button>
+          </div>
+        </nav>
+      }
+      }
+    </section>
+  }
+
+  @if (!isLoading() && page() !== 'dashboard' && page() !== 'bank-accounts' && page() !== 'invoices' && !receipts().length && !remittances().length) {
+    <div class="mt-7 rounded-2xl border border-iris-border bg-white p-8 text-center text-sm text-iris-slate">No records returned by the backend.</div>
+  }
+</div>
+
+@if (modal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-iris-navy-dark/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" [attr.aria-label]="modalTitle()" (click)="onModalBackdropClick($event)">
+    <section class="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-[26px] border border-iris-border bg-white p-6 shadow-2xl" (click)="$event.stopPropagation()">
+      <header class="flex items-start justify-between gap-4 border-b border-iris-divider pb-4">
+        <h2 class="font-cambria text-2xl font-bold text-iris-navy">{{ modalTitle() }}</h2>
+        <button type="button" (click)="closeModal()" [disabled]="isSubmitting()" class="rounded-xl border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy disabled:opacity-50">Close</button>
+      </header>
+
+      @if (modal() === 'receipt') {
+        <form [formGroup]="receiptForm" (ngSubmit)="createReceipt()" class="mt-5 space-y-6">
+          @if (receiptValidationMessages().length) {
+            <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p class="font-bold">Create Encaissement is blocked by:</p>
+              <ul class="mt-2 list-disc space-y-1 pl-5">
+                @for (message of receiptValidationMessages(); track message) {
+                  <li>{{ message }}</li>
+                }
+              </ul>
+            </div>
+          }
+          <section class="space-y-3">
+            <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Counterparty and bank information</h3>
+            <div class="relative" data-receipt-bank-account-combobox>
+              <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                <span>Compte bancaire</span>
+                <div class="flex rounded-xl border border-iris-border bg-white focus-within:border-iris-teal">
+                  <input
+                    type="search"
+                    formControlName="bankAccountSearch"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    [attr.aria-expanded]="isReceiptBankAccountDropdownOpen()"
+                    aria-controls="receipt-bank-account-options"
+                    placeholder="Search by counterparty, bank, IBAN, SWIFT/BIC, or currency"
+                    (focus)="openReceiptBankAccountDropdown()"
+                    (click)="openReceiptBankAccountDropdown()"
+                    (keydown)="onReceiptBankAccountKeydown($event)"
+                    class="min-w-0 flex-1 rounded-l-xl px-4 py-3 text-sm outline-none"
+                  />
+                  @if (receiptForm.controls.bankAccountSearch.value) {
+                    <button type="button" (click)="clearReceiptBankAccountSelection()" class="border-l border-iris-border px-3 text-sm font-bold text-iris-slate" aria-label="Clear bank account">Clear</button>
+                  }
+                </div>
+                @if (receiptForm.controls.bankAccountId.touched && receiptForm.controls.bankAccountId.hasError('required')) {
+                  <span class="text-xs font-semibold text-rose-700">An active bank account is required.</span>
+                }
+              </label>
+
+              @if (isReceiptBankAccountDropdownOpen()) {
+                <div id="receipt-bank-account-options" role="listbox" class="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-iris-border bg-white p-2 text-sm shadow-xl">
+                  @if (isReceiptBankAccountLoading()) {
+                    <p class="px-3 py-2 font-semibold text-iris-slate">Loading active bank accounts...</p>
+                  } @else if (hasLoadedReceiptBankAccounts() && !filteredReceiptBankAccounts().length) {
+                    <p class="px-3 py-2 font-semibold text-amber-800">No matching active bank accounts.</p>
+                  } @else {
+                    @for (account of filteredReceiptBankAccounts(); track account.idBankAccount; let index = $index) {
+                      <button type="button" role="option" [attr.aria-selected]="receiptForm.controls.bankAccountId.value === account.idBankAccount" (click)="selectReceiptBankAccount(account)" [ngClass]="index === highlightedReceiptBankAccountIndex() ? 'bg-iris-teal/10' : 'hover:bg-iris-bg'" class="block w-full rounded-lg px-3 py-2 text-left">
+                        <span class="block font-bold text-iris-navy">{{ account.beneficiaryName || 'Beneficiary unavailable' }}</span>
+                        <span class="block text-xs font-semibold text-iris-slate">{{ account.bankName }} - {{ getBankAccountIbanDisplay(account) }} - {{ account.swiftBic || 'No SWIFT/BIC' }} - {{ account.currencyCode }}</span>
+                      </button>
+                    }
+                  }
+                </div>
+              }
+            </div>
+
+            @if (selectedReceiptBankAccount()) {
+              <div class="grid gap-3 rounded-xl border border-iris-border bg-iris-bg p-4 text-sm md:grid-cols-2">
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Counterparty / C&eacute;dante</span><strong class="text-iris-navy">{{ displayValue(selectedReceiptBankAccount()?.beneficiaryName) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Bank</span><strong class="text-iris-navy">{{ displayValue(selectedReceiptBankAccount()?.bankName) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">IBAN</span><strong class="text-iris-navy">{{ getBankAccountIbanDisplay(selectedReceiptBankAccount()) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Currency</span><strong class="text-iris-navy">{{ displayValue(selectedReceiptBankAccount()?.currencyCode) }}</strong></p>
+              </div>
+            }
+          </section>
+
+          <section class="space-y-3">
+            <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Encaissement information</h3>
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                <span>Mois de r&eacute;ception du virement</span>
+                <input type="month" formControlName="receiptMonth" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+                @if (receiptForm.controls.receiptMonth.touched && receiptForm.controls.receiptMonth.hasError('required')) {
+                  <span class="text-xs font-semibold text-rose-700">Receipt month must use YYYY-MM format.</span>
+                }
+              </label>
+              <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                <span>Type de l&rsquo;op&eacute;ration</span>
+                <select formControlName="settlementMethod" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal">
+                  <option value="BankTransfer">Bank transfer</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+              <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                <span>Prime / Commission</span>
+                <select formControlName="collectionType" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal">
+                  <option value="Premium">Prime</option>
+                  <option value="Commission">Commission</option>
+                </select>
+              </label>
+              <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                <span>Montant</span>
+                <input type="number" formControlName="amountReceived" min="0.0001" step="0.0001" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+                @if (receiptForm.controls.amountReceived.touched && receiptForm.controls.amountReceived.invalid) {
+                  <span class="text-xs font-semibold text-rose-700">Amount must be greater than zero.</span>
+                }
+              </label>
+            </div>
+          </section>
+
+          <button type="submit" [disabled]="isSubmitting() || isReceiptBankAccountLoading()" class="w-full rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white disabled:opacity-50 md:w-auto">
+            {{ isSubmitting() ? 'Saving...' : 'Create Encaissement' }}
+          </button>
+        </form>
+      }
+
+      @if (modal() === 'bank-account') {
+        <div class="mt-5 space-y-6">
+          @if (isBeneficiaryLoading() || isBankAccountLoading()) {
+            <p class="rounded-xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-slate">Loading bank-account data...</p>
+          }
+
+          <section class="space-y-3">
+            <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Beneficiary information</h3>
+            <div class="grid gap-3 rounded-2xl border border-iris-border bg-iris-bg p-4 text-sm md:grid-cols-2">
+              <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Nom du b&eacute;n&eacute;ficiaire</span><strong class="text-iris-navy">{{ displayValue(beneficiaryInfo().name) }}</strong></p>
+              <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Adresse</span><strong class="text-iris-navy">{{ displayValue(beneficiaryInfo().address) }}</strong></p>
+              <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Ville</span><strong class="text-iris-navy">{{ displayValue(beneficiaryInfo().city) }}</strong></p>
+              <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Pays</span><strong class="text-iris-navy">{{ displayValue(beneficiaryInfo().country) }}</strong></p>
+            </div>
+          </section>
+
+          <section class="space-y-3">
+            <div class="flex items-center justify-between gap-3">
+              <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Existing accounts</h3>
+              @if (selectedBankAccount()) {
+                <button type="button" (click)="resetBankAccountForm()" class="rounded-lg border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy">New account</button>
+              }
+            </div>
+            @if (!bankAccounts().length && !isBankAccountLoading()) {
+              <p class="rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-slate">No bank account.</p>
+            }
+            @for (account of bankAccounts(); track account.idBankAccount) {
+              <article class="rounded-2xl border border-iris-border p-4" [ngClass]="selectedBankAccount()?.idBankAccount === account.idBankAccount ? 'bg-iris-bg' : ''">
+                <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p class="font-bold text-iris-navy">{{ account.bankName }} - {{ account.currencyCode }}</p>
+                    <p class="text-sm text-iris-slate">{{ account.iban || account.rib || account.swiftBic || 'No account reference' }}</p>
+                    @if (account.hasCorrespondentBank) {
+                      <p class="mt-1 text-xs font-semibold text-iris-teal">Banque correspondante: {{ account.correspondentBankName || 'Configured' }}</p>
+                    }
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button type="button" (click)="editBankAccount(account)" class="rounded-lg border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy">Edit</button>
+                    <button type="button" (click)="setBankAccountStatus(account, !account.isActive)" [disabled]="isSubmitting()" class="rounded-lg border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy disabled:opacity-50">{{ account.isActive ? 'Deactivate' : 'Activate' }}</button>
+                  </div>
+                </div>
+              </article>
+            }
+          </section>
+
+          <form [formGroup]="bankAccountForm" (ngSubmit)="saveBankAccount()" class="space-y-6">
+            <section class="space-y-3">
+              <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Bank information</h3>
+              <div class="grid gap-4 md:grid-cols-2">
+                <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                  <span>Nom de la banque</span>
+                  <input type="text" formControlName="bankName" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+                  @if (bankAccountForm.controls.bankName.touched && bankAccountForm.controls.bankName.hasError('required')) {
+                    <span class="text-xs font-semibold text-rose-700">Bank name is required.</span>
+                  }
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                  <span>Devise du compte</span>
+                  <input type="search" list="bank-account-currencies" formControlName="currencySearch" (input)="onCurrencySearchInput($event)" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+                  <datalist id="bank-account-currencies">
+                    @for (currency of currencies(); track currency.id) {
+                      <option [value]="getCurrencyLabel(currency.id)"></option>
+                    }
+                  </datalist>
+                  @if (bankAccountForm.controls.currencyId.touched && bankAccountForm.controls.currencyId.hasError('required')) {
+                    <span class="text-xs font-semibold text-rose-700">Currency is required.</span>
+                  }
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                  <span>Ville de la banque</span>
+                  <input type="text" formControlName="bankCity" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+                  @if (bankAccountForm.controls.bankCity.touched && bankAccountForm.controls.bankCity.hasError('required')) {
+                    <span class="text-xs font-semibold text-rose-700">Bank city is required.</span>
+                  }
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                  <span>Pays de la banque</span>
+                  <input type="text" formControlName="bankCountry" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+                  @if (bankAccountForm.controls.bankCountry.touched && bankAccountForm.controls.bankCountry.hasError('required')) {
+                    <span class="text-xs font-semibold text-rose-700">Bank country is required.</span>
+                  }
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                  <span>IBAN</span>
+                  <input type="text" formControlName="iban" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm uppercase outline-none focus:border-iris-teal" />
+                  @if (bankAccountForm.controls.iban.touched && bankAccountForm.controls.iban.hasError('required')) {
+                    <span class="text-xs font-semibold text-rose-700">IBAN is required.</span>
+                  }
+                  @if (bankAccountForm.controls.iban.touched && (bankAccountForm.controls.iban.hasError('ibanLength') || bankAccountForm.controls.iban.hasError('ibanCharacters'))) {
+                    <span class="text-xs font-semibold text-rose-700">IBAN must be 34 or fewer alphanumeric characters.</span>
+                  }
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                  <span>Code SWIFT/BIC</span>
+                  <input type="text" formControlName="swiftBic" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm uppercase outline-none focus:border-iris-teal" />
+                  @if (bankAccountForm.controls.swiftBic.touched && bankAccountForm.controls.swiftBic.hasError('required')) {
+                    <span class="text-xs font-semibold text-rose-700">SWIFT/BIC is required.</span>
+                  }
+                  @if (bankAccountForm.controls.swiftBic.touched && bankAccountForm.controls.swiftBic.hasError('swiftBic')) {
+                    <span class="text-xs font-semibold text-rose-700">SWIFT/BIC must contain 8 or 11 characters.</span>
+                  }
+                </label>
+                <label class="flex items-center gap-2 text-sm font-semibold text-iris-navy">
+                  <input type="checkbox" formControlName="isActive" class="h-4 w-4" />
+                  Active
+                </label>
+              </div>
+            </section>
+
+            <section class="space-y-3">
+              <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Correspondent bank</h3>
+              <label class="flex items-center gap-2 text-sm font-semibold text-iris-navy">
+                <input type="checkbox" formControlName="hasCorrespondentBank" class="h-4 w-4" />
+                Banque correspondante
+              </label>
+              @if (bankAccountForm.controls.hasCorrespondentBank.value) {
+                <div class="grid gap-4 md:grid-cols-2">
+                  <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                    <span>Nom de la banque correspondante</span>
+                    <input type="text" formControlName="correspondentBankName" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+                    @if (bankAccountForm.controls.correspondentBankName.touched && bankAccountForm.controls.correspondentBankName.hasError('required')) {
+                      <span class="text-xs font-semibold text-rose-700">Correspondent bank name is required.</span>
+                    }
+                  </label>
+                  <label class="space-y-1 text-sm font-semibold text-iris-navy">
+                    <span>Code SWIFT/BIC de la banque correspondante</span>
+                    <input type="text" formControlName="correspondentSwiftBic" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm uppercase outline-none focus:border-iris-teal" />
+                    @if (bankAccountForm.controls.correspondentSwiftBic.touched && bankAccountForm.controls.correspondentSwiftBic.hasError('required')) {
+                      <span class="text-xs font-semibold text-rose-700">Correspondent SWIFT/BIC is required.</span>
+                    }
+                    @if (bankAccountForm.controls.correspondentSwiftBic.touched && bankAccountForm.controls.correspondentSwiftBic.hasError('swiftBic')) {
+                      <span class="text-xs font-semibold text-rose-700">Correspondent SWIFT/BIC must contain 8 or 11 characters.</span>
+                    }
+                  </label>
+                </div>
+              }
+            </section>
+
+            <button type="submit" [disabled]="bankAccountForm.invalid || isSubmitting() || isBankAccountLoading() || isBeneficiaryLoading()" class="w-full rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white disabled:opacity-50 md:w-auto">
+              {{ isSubmitting() ? 'Saving...' : bankAccountModeLabel() }}
+            </button>
+          </form>
+        </div>
+      }
+
+      @if (modal() === 'pairing') {
+        <form [formGroup]="pairingForm" (ngSubmit)="allocateReceipt()" class="mt-5 space-y-6">
+          @if (selectedReceipt(); as receipt) {
+            <section class="space-y-3">
+              <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Encaissement information</h3>
+              <div class="grid gap-3 rounded-2xl bg-iris-bg p-4 text-sm md:grid-cols-3">
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Counterparty / C&eacute;dante</span><strong class="text-iris-navy">{{ receipt.counterpartyName }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Bank name</span><strong class="text-iris-navy">{{ displayValue(selectedPairingBankAccount()?.bankName) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Masked IBAN</span><strong class="text-iris-navy">{{ getBankAccountIbanDisplay(selectedPairingBankAccount()) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Currency</span><strong class="text-iris-navy">{{ receipt.currencyCode }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Receipt month</span><strong class="text-iris-navy">{{ getReceiptMonth(receipt) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Operation type</span><strong class="text-iris-navy">{{ receipt.settlementMethod }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Prime / Commission</span><strong class="text-iris-navy">{{ receipt.collectionType }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Amount</span><strong class="text-iris-navy">{{ formatMoney(receipt.amountReceived, receipt.currencyCode) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Bank reference</span><strong class="text-iris-navy">{{ displayValue(receipt.bankReference) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Current pairing status</span><strong class="text-iris-navy">{{ receipt.pairingStatus }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Allocated</span><strong class="text-iris-navy">{{ formatMoney(receipt.allocatedAmount, receipt.currencyCode) }}</strong></p>
+                <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Remaining</span><strong class="text-iris-navy">{{ formatMoney(receipt.availableAmount, receipt.currencyCode) }}</strong></p>
+              </div>
+            </section>
+            <section class="space-y-3">
+              <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Pair Encaissement with Invoices</h3>
+              <label class="block space-y-1 text-sm font-semibold text-iris-navy" data-invoice-combobox>
+                <span>Search eligible invoices</span>
+                <input type="search" formControlName="invoiceSearch" (focus)="openInvoiceDropdown()" (keydown)="onInvoiceKeydown($event)" placeholder="Search invoice number, label, UMR, contract, or cedent" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+              </label>
+
+              @if (eligibleInvoicesLoadState() === 'loading') {
+                <p class="rounded-xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-slate">Loading eligible invoices...</p>
+              } @else if (eligibleInvoicesLoadState() === 'failed') {
+                <div class="space-y-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-800">
+                  <p class="font-semibold">{{ eligibleInvoicesError() }}</p>
+                  @if (eligibleInvoicesHttpStatus() !== null) {
+                    <p class="text-xs font-semibold">HTTP status: {{ eligibleInvoicesHttpStatus() }}</p>
+                  }
+                  <button type="button" (click)="retryEligibleInvoices()" class="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-800 hover:bg-rose-100">Retry</button>
+                </div>
+              } @else if (eligibleInvoicesLoadState() === 'empty') {
+                <p class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">No eligible invoices found.</p>
+              } @else {
+                <div class="overflow-x-auto rounded-2xl border border-iris-border">
+                  <table class="w-full min-w-[1180px] text-left text-sm">
+                    <thead class="bg-iris-bg text-xs font-bold uppercase tracking-[0.1em] text-iris-slate">
+                      <tr>
+                        <th class="px-4 py-3">Select</th>
+                        <th class="px-4 py-3">Invoice number</th>
+                        <th class="px-4 py-3">Label</th>
+                        <th class="px-4 py-3">Contract</th>
+                        <th class="px-4 py-3">Cedent</th>
+                        <th class="px-4 py-3 text-right">Gross amount</th>
+                        <th class="px-4 py-3 text-right">Already paired</th>
+                        <th class="px-4 py-3 text-right">Outstanding</th>
+                        <th class="px-4 py-3">Currency</th>
+                        <th class="px-4 py-3">Allocated amount</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-iris-divider">
+                      @for (invoice of filteredEligibleInvoices(); track invoice.invoiceId) {
+                        <tr>
+                          <td class="px-4 py-3">
+                            <input type="checkbox" class="h-4 w-4" [checked]="isInvoiceChecked(invoice)" (change)="toggleInvoiceAllocation(invoice, $any($event.target).checked)" [attr.aria-label]="'Select ' + invoice.invoiceNumber" />
+                          </td>
+                          <td class="px-4 py-3 font-bold text-iris-teal">{{ invoice.invoiceNumber }}</td>
+                          <td class="px-4 py-3">{{ invoice.label || 'No label' }}</td>
+                          <td class="px-4 py-3 font-semibold text-iris-navy">{{ getEligibleInvoiceContractDisplay(invoice) }}</td>
+                          <td class="px-4 py-3">{{ invoice.cedentName }}</td>
+                          <td class="px-4 py-3 text-right font-bold text-iris-navy">{{ formatMoney(invoice.grossAmount, invoice.currencyCode) }}</td>
+                          <td class="px-4 py-3 text-right">{{ formatMoney(invoice.alreadyPairedAmount, invoice.currencyCode) }}</td>
+                          <td class="px-4 py-3 text-right">{{ formatMoney(invoice.outstandingAmount, invoice.currencyCode) }}</td>
+                          <td class="px-4 py-3">{{ invoice.currencyCode }}</td>
+                          <td class="px-4 py-3">
+                            @if (isInvoiceChecked(invoice)) {
+                              <input type="number" min="0.0001" [max]="invoice.outstandingAmount" step="0.0001" [value]="getProposedAllocationAmount(invoice)" (input)="updateInvoiceAllocation(invoice, $event)" class="w-40 rounded-xl border border-iris-border px-3 py-2 text-sm outline-none focus:border-iris-teal" />
+                            } @else {
+                              <span class="text-iris-slate">Not selected</span>
+                            }
+                          </td>
+                        </tr>
+                      } @empty {
+                        <tr>
+                          <td colspan="10" class="px-4 py-6 text-center font-semibold text-amber-800">No matching eligible invoices found.</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </section>
+            <section class="grid gap-3 rounded-2xl border border-iris-border bg-white p-4 text-sm md:grid-cols-4">
+              <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Receipt amount</span><strong class="text-iris-navy">{{ formatMoney(receipt.amountReceived, receipt.currencyCode) }}</strong></p>
+              <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Previously allocated</span><strong class="text-iris-navy">{{ formatMoney(receipt.allocatedAmount, receipt.currencyCode) }}</strong></p>
+              <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Allocated in form</span><strong class="text-iris-navy">{{ formatMoney(allocatedAmountInForm(), receipt.currencyCode) }}</strong></p>
+              <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Remaining</span><strong class="text-iris-navy">{{ formatMoney(pairingRemainingAmount(), receipt.currencyCode) }}</strong></p>
+            </section>
+          }
+          @if (generatedRemittances().length) {
+            <section class="space-y-3">
+              <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Generated reinsurer remittances</h3>
+              <div class="overflow-x-auto rounded-2xl border border-iris-border">
+                <table class="w-full min-w-[760px] text-left text-sm">
+                  <thead class="bg-iris-bg text-xs font-bold uppercase tracking-[0.1em] text-iris-slate">
+                    <tr>
+                      <th class="px-4 py-3">Reinsurer</th>
+                      <th class="px-4 py-3">Signed share</th>
+                      <th class="px-4 py-3">Allocated amount</th>
+                      <th class="px-4 py-3">Net payable</th>
+                      <th class="px-4 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-iris-divider">
+                    @for (remittance of generatedRemittances(); track remittance.remittanceRef) {
+                      <tr>
+                        <td class="px-4 py-3 font-semibold text-iris-navy">{{ remittance.counterpartyName }}</td>
+                        <td class="px-4 py-3">{{ remittance.signedSharePct == null ? 'Backend value' : remittance.signedSharePct + '%' }}</td>
+                        <td class="px-4 py-3">{{ formatMoney(remittance.allocatedAmount ?? remittance.netPremiumDue, remittance.currencyCode) }}</td>
+                        <td class="px-4 py-3">{{ formatMoney(remittance.netPayableAmount, remittance.currencyCode) }}</td>
+                        <td class="px-4 py-3"><span class="rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(remittance.status)">{{ remittance.status }}</span></td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          }
+          <button type="submit" [disabled]="!isPairingFormValid() || isSubmitting()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{{ isSubmitting() ? 'Pairing...' : 'Confirm pairing' }}</button>
+        </form>
+      }
+
+      @if (modal() === 'disbursement') {
+        <section class="mt-5 space-y-4">
+          @if (selectedRemittance(); as remittance) {
+            <section class="grid gap-3 rounded-2xl border border-iris-border bg-iris-bg p-4 text-sm md:grid-cols-3">
+              @for (row of getDisbursementContextRows(remittance); track row.label) {
+                <p>
+                  <span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">{{ row.label }}</span>
+                  <strong class="text-iris-navy">{{ row.value }}</strong>
+                </p>
+              }
+            </section>
+
+            @if (isBankAccountLoading()) {
+              <p class="rounded-xl border border-iris-border bg-white px-4 py-3 text-sm font-semibold text-iris-slate">Loading reinsurer bank account...</p>
+            } @else if (disbursementLoadError()) {
+              <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                <p class="font-semibold">{{ disbursementLoadError() }}</p>
+              </div>
+            } @else if (!hasValidDisbursementBankAccount()) {
+              <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                <p class="font-semibold">{{ getDisbursementValidationMessage() }}</p>
+                <button type="button" (click)="goToBankAccounts()" class="mt-3 rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-900">Bank Accounts</button>
+              </div>
+            } @else {
+              <section class="grid gap-3 rounded-2xl border border-iris-border bg-white p-4 text-sm md:grid-cols-2">
+                @for (row of getSelectedBankAccountRows(); track row.label) {
+                  <p>
+                    <span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">{{ row.label }}</span>
+                    <strong class="text-iris-navy">{{ row.value }}</strong>
+                  </p>
+                }
+              </section>
+            }
+
+            <div class="flex flex-wrap gap-3 border-t border-iris-divider pt-4">
+              @if (isAwaitingFinanceDisbursement(remittance.status)) {
+                <button type="button" (click)="startDisbursement()" [disabled]="!canSubmitDisbursement()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{{ isSubmitting() ? 'Downloading...' : 'Download Invoice' }}</button>
+              } @else if (isPaymentInProgress(remittance.status)) {
+                <button type="button" (click)="downloadExistingInvoice()" [disabled]="!canDownloadExistingInvoice()" class="rounded-xl border border-iris-border px-5 py-3 text-sm font-bold text-iris-navy disabled:opacity-50">{{ isDownloadingInvoice() ? 'Downloading...' : 'Download Invoice Again' }}</button>
+                <button type="button" (click)="openTransferConfirmation()" [disabled]="!canConfirmSelectedTransfer()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white disabled:opacity-50">Confirm Amount Transferred</button>
+              } @else if (isClosedDisbursement(remittance.status)) {
+                <span class="rounded-full border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-bold text-sky-800">Closed</span>
+                <button type="button" (click)="downloadExistingInvoice()" [disabled]="!canDownloadExistingInvoice()" class="rounded-xl border border-iris-border px-5 py-3 text-sm font-bold text-iris-navy disabled:opacity-50">{{ isDownloadingInvoice() ? 'Downloading...' : 'Download Invoice' }}</button>
+              }
+            </div>
+
+            @if (isTransferConfirmationOpen()) {
+              <section class="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
+                <p class="text-base font-bold">Confirm that {{ formatMoney(remittance.netPayableAmount, remittance.currencyCode) }} was transferred to {{ remittance.counterpartyName }}?</p>
+                <p class="mt-2">This will close the disbursement.</p>
+                <div class="mt-4 flex flex-wrap gap-3">
+                  <button type="button" (click)="closeTransferConfirmation()" [disabled]="isConfirmingTransfer()" class="rounded-xl border border-amber-300 bg-white px-5 py-3 text-sm font-bold text-amber-950 disabled:opacity-50">Cancel</button>
+                  <button type="button" (click)="confirmTransfer()" [disabled]="!canConfirmSelectedTransfer()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{{ isConfirmingTransfer() ? 'Confirming...' : 'Confirm Transfer' }}</button>
+                </div>
+              </section>
+            }
+
+          }
+        </section>
+      }
+
+      @if (modal() === 'remittance-confirmation') {
+        <section class="mt-5 max-w-xl space-y-5">
+          <p class="text-lg font-bold text-iris-navy">Confirm this remittance for Finance disbursement?</p>
+          @if (remittanceToConfirm(); as remittance) {
+            <div class="rounded-2xl border border-iris-border bg-iris-bg p-4 text-sm">
+              <p><span class="font-bold text-iris-slate">Reinsurer:</span> <strong class="text-iris-navy">{{ remittance.counterpartyName }}</strong></p>
+              <p class="mt-2"><span class="font-bold text-iris-slate">Net payable:</span> <strong class="text-iris-navy">{{ formatMoney(remittance.netPayableAmount, remittance.currencyCode) }}</strong></p>
+            </div>
+          }
+          <div class="flex flex-wrap gap-3">
+            <button type="button" (click)="closeModal()" [disabled]="isSubmitting()" class="rounded-xl border border-iris-border px-5 py-3 text-sm font-bold text-iris-navy disabled:opacity-50">Cancel</button>
+            <button type="button" (click)="confirmSelectedRemittance()" [disabled]="isSubmitting()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{{ isSubmitting() ? 'Confirming...' : 'Confirm for disbursement' }}</button>
+          </div>
+        </section>
+      }
+    </section>
+  </div>
+}

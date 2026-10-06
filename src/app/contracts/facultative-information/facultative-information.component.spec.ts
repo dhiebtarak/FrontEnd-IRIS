@@ -257,6 +257,90 @@ describe('FacultativeInformationComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('CAR — Construction All Risks');
   });
 
+  it('uses restored coverage relationships for PD, GL, and CAR and includes selected child ids in the payload', () => {
+    const restoredMainCovers: CoverageOption[] = [
+      { id: 6, code: 'PD', name: 'Property Damage', level: 'MAIN', parentId: null, relationType: null, isMandatory: false, hasSlip: false },
+      { id: 11, code: 'GL', name: 'General Liability', level: 'MAIN', parentId: null, relationType: null, isMandatory: false, hasSlip: false },
+      { id: 12, code: 'CAR', name: 'Construction All Risks', level: 'MAIN', parentId: null, relationType: null, isMandatory: false, hasSlip: false }
+    ];
+    const pdSections: CoverageOption[] = [
+      { id: 7, code: 'PD/MB', name: 'Machinery Breakdown', level: 'SECTION', parentId: 6, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: false },
+      { id: 35, code: 'PD/BI', name: 'Business Interruption', level: 'SECTION', parentId: 6, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: false },
+      { id: 36, code: 'PD/TPL', name: 'Third Party Liability', level: 'SECTION', parentId: 6, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: false },
+      { id: 37, code: 'DBB', name: 'DBB', level: 'SECTION', parentId: 6, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: false }
+    ];
+    const glSections: CoverageOption[] = [
+      { id: 37, code: 'DBB', name: 'DBB', level: 'SECTION', parentId: 11, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: false }
+    ];
+    const carSections: CoverageOption[] = [
+      { id: 5, code: 'CAR/CWL', name: 'Contract Works Liability', level: 'SECTION', parentId: 12, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: false },
+      { id: 37, code: 'DBB', name: 'DBB', level: 'SECTION', parentId: 12, relationType: 'HAS_SECTION', isMandatory: false, hasSlip: false }
+    ];
+    const glExtensions: CoverageOption[] = [
+      { id: 8, code: 'GL/EPL', name: 'Employers Liability', level: 'EXTENSION', parentId: 11, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false },
+      { id: 9, code: 'GL/PI', name: 'Professional Indemnity', level: 'EXTENSION', parentId: 11, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false },
+      { id: 10, code: 'GL/PL', name: 'Product Liability', level: 'EXTENSION', parentId: 11, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false },
+      { id: 38, code: 'GL/LSL', name: 'Life Science Liability', level: 'EXTENSION', parentId: 11, relationType: 'HAS_EXTENSION', isMandatory: false, hasSlip: false }
+    ];
+
+    function flushCoverageChildren(
+      mainCoverIds: number[],
+      sectionMap: Record<number, CoverageOption[]>,
+      extensionMap: Record<number, CoverageOption[]>
+    ): void {
+      for (const mainCoverId of mainCoverIds) {
+        expectCoverageChildren(mainCoverId, 'SECTION').flush(sectionMap[mainCoverId] ?? []);
+      }
+      for (const mainCoverId of mainCoverIds) {
+        expectCoverageChildren(mainCoverId, 'EXTENSION').flush(extensionMap[mainCoverId] ?? []);
+      }
+      fixture.detectChanges();
+    }
+
+    component.coverageCatalog.set(restoredMainCovers);
+    fixture.detectChanges();
+
+    component.selectMainCover(restoredMainCovers[0]);
+    flushCoverageChildren([6], { 6: pdSections }, { 6: [] });
+    expect(component.availableSections().map(section => section.code)).toEqual(['PD/MB', 'PD/BI', 'PD/TPL', 'DBB']);
+    expect(component.availableExtensions().map(extension => extension.code)).toEqual([]);
+
+    component.clearMainCoverSelection();
+    component.selectMainCover(restoredMainCovers[1]);
+    flushCoverageChildren([11], { 11: glSections }, { 11: glExtensions });
+    expect(component.availableSections().map(section => section.code)).toEqual(['DBB']);
+    expect(component.availableExtensions().map(extension => extension.code)).toEqual(['GL/EPL', 'GL/PI', 'GL/PL', 'GL/LSL']);
+
+    component.clearMainCoverSelection();
+    component.selectMainCover(restoredMainCovers[2]);
+    flushCoverageChildren([12], { 12: carSections }, { 12: [] });
+    expect(component.availableSections().map(section => section.code)).toEqual(['CAR/CWL', 'DBB']);
+    expect(component.availableExtensions().map(extension => extension.code)).toEqual([]);
+
+    component.clearMainCoverSelection();
+    component.selectMainCover(restoredMainCovers[0]);
+    flushCoverageChildren([6], { 6: pdSections }, { 6: [] });
+    component.selectMainCover(restoredMainCovers[1]);
+    flushCoverageChildren([6, 11], { 6: pdSections, 11: glSections }, { 6: [], 11: glExtensions });
+    component.selectMainCover(restoredMainCovers[2]);
+    flushCoverageChildren([6, 11, 12], { 6: pdSections, 11: glSections, 12: carSections }, { 6: [], 11: glExtensions, 12: [] });
+
+    expect(component.availableSections().map(section => section.code)).toEqual(['PD/MB', 'PD/BI', 'PD/TPL', 'DBB', 'CAR/CWL']);
+    expect(component.availableExtensions().map(extension => extension.code)).toEqual(['GL/EPL', 'GL/PI', 'GL/PL', 'GL/LSL']);
+
+    component.form.controls.coverageSelection.controls.sectionIds.setValue([7, 35, 36, 37, 5], { emitEvent: false });
+    component.form.controls.coverageSelection.controls.extensionIds.setValue([8, 9, 10, 38], { emitEvent: false });
+
+    const request = (component as unknown as { buildRequest: () => { coverageSelection: unknown } }).buildRequest();
+    expect(request.coverageSelection).toEqual({
+      primaryMainCoverId: 6,
+      coverageIds: [6, 11, 12],
+      mainCoverId: 6,
+      sectionIds: [7, 35, 36, 37, 5],
+      extensionIds: [8, 9, 10, 38]
+    });
+  });
+
   it('surfaces coverage API errors instead of silently discarding them', () => {
     component.selectMainCover(mainCoversResponse[0]);
     expectCoverageChildren(1, 'SECTION').flush('no sections', { status: 500, statusText: 'Server Error' });
@@ -334,13 +418,136 @@ describe('FacultativeInformationComponent', () => {
 
   it('calculates the net premium preview using the selected currency metadata', () => {
     component.form.patchValue({
-      grossPremium: 1000,
-      cedentCommissionPct: 10
+      sumInsured: 100000,
+      premiumRate: 2,
+      cedentCommissionPct: 5
     });
     fixture.detectChanges();
 
-    expect(component.summary().estimatedNetPremium).toBe(900);
-    expect(component.formatMoney(component.summary().estimatedNetPremium)).toMatch(/^MAD 900[.,]00 \(DH\)$/);
+    expect(component.form.controls.grossPremium.value).toBe(2000);
+    expect(component.summary().estimatedNetPremium).toBe(1900);
+    expect(component.formatMoney(component.summary().estimatedNetPremium)).toMatch(/^MAD 1[,\s\u202f]?900[.,]00 \(DH\)$/);
+  });
+
+  it('recalculates gross and net when TSI, premium rate, or cedent commission changes', () => {
+    component.form.patchValue({
+      sumInsured: 100000,
+      premiumRate: 2,
+      cedentCommissionPct: 5
+    });
+    expect(component.form.controls.grossPremium.value).toBe(2000);
+    expect(component.form.controls.netPremium.value).toBe(1900);
+
+    component.form.controls.sumInsured.setValue(200000);
+    expect(component.form.controls.grossPremium.value).toBe(4000);
+    expect(component.form.controls.netPremium.value).toBe(3800);
+
+    component.form.controls.premiumRate.setValue(1);
+    expect(component.form.controls.grossPremium.value).toBe(2000);
+    expect(component.form.controls.netPremium.value).toBe(1900);
+
+    component.form.controls.cedentCommissionPct.setValue(0);
+    expect(component.form.controls.netPremium.value).toBe(2000);
+  });
+
+  it('keeps calculated controls read-only and guards their DOM events', () => {
+    fixture.detectChanges();
+
+    const grossPremium = fixture.nativeElement.querySelector('#grossPremium') as HTMLInputElement;
+    const netPremium = fixture.nativeElement.querySelector('#netPremium') as HTMLInputElement;
+    const keydown = new KeyboardEvent('keydown', { cancelable: true });
+    const paste = new Event('paste', { cancelable: true });
+    const wheel = new WheelEvent('wheel', { cancelable: true });
+
+    expect(grossPremium.readOnly).toBe(true);
+    expect(netPremium.readOnly).toBe(true);
+    grossPremium.dispatchEvent(keydown);
+    grossPremium.dispatchEvent(paste);
+    netPremium.dispatchEvent(wheel);
+    expect(keydown.defaultPrevented).toBe(true);
+    expect(paste.defaultPrevented).toBe(true);
+    expect(wheel.defaultPrevented).toBe(true);
+  });
+
+  it('preserves zero commissions and does not create a valueChanges loop', () => {
+    let changeCount = 0;
+    const subscription = component.form.valueChanges.subscribe(() => changeCount += 1);
+
+    component.form.patchValue({
+      sumInsured: 100000,
+      premiumRate: 2,
+      cedentCommissionPct: 0
+    });
+    fixture.detectChanges();
+
+    expect(component.form.controls.cedentCommissionPct.value).toBe(0);
+    expect(component.form.controls.grossPremium.value).toBe(2000);
+    expect(component.form.controls.netPremium.value).toBe(2000);
+    expect(changeCount).toBeLessThan(8);
+    subscription.unsubscribe();
+  });
+
+  it('blocks submission when total commissions exceed gross premium', async () => {
+    fillRequiredFields();
+    await selectCedent();
+    selectMainCover();
+    component.form.patchValue({
+      sumInsured: 100000,
+      premiumRate: 2,
+      cedentCommissionPct: 120
+    });
+    fixture.detectChanges();
+
+    component.saveDraft();
+    fixture.detectChanges();
+
+    expect(component.form.hasError('commissionsExceedGrossPremium')).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Cedent commission cannot exceed the gross premium.');
+    expect(httpMock.match('http://localhost:5151/api/contracts/facultative')).toHaveLength(0);
+  });
+
+  it('submits the calculated financial values and replaces them with the backend response', async () => {
+    fillRequiredFields();
+    await selectCedent();
+    selectMainCover();
+    component.form.patchValue({
+      sumInsured: 100000,
+      premiumRate: 2,
+      cedentCommissionPct: 5
+    });
+
+    component.saveDraft();
+    fixture.detectChanges();
+
+    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    expect(request.request.body).toEqual(expect.objectContaining({
+      sumInsured: 100000,
+      premiumRate: 2,
+      grossPremium: 2000,
+      cedentCommissionPct: 5
+    }));
+    expect(request.request.body.netPremium).toBeUndefined();
+
+    request.flush({
+      contractId: 123,
+      umr: 'IT26-F-PD-0001',
+      status: 'DRAFT',
+      grossPremium: 2000.1234,
+      cedentCommissionPct: 5,
+      netPremiumCedent: 1900.1234,
+      netPremium: 1900.1234,
+      name: 'FAC 2026',
+      counterpartyId: 99,
+      currencyId: 1,
+      inceptionDate: '2026-08-19',
+      expiryDate: '2026-12-31',
+      isHighPriority: false,
+      isFronting: false
+    });
+    fixture.detectChanges();
+
+    expect(component.form.controls.grossPremium.value).toBe(2000.1234);
+    expect(component.form.controls.netPremium.value).toBe(1900.1234);
   });
 
   it('uses POST on the first save and never sends multipart data', async () => {
@@ -671,7 +878,14 @@ describe('FacultativeInformationComponent existing contract', () => {
   }
 
   it('loads the selected draft into the existing form and keeps subsequent saves on PUT', () => {
-    flushExistingContract();
+    flushExistingContract({
+      fees: 200,
+      premiumRate: 2,
+      grossPremium: 2000,
+      cedentCommissionPct: 5,
+      netPremium: 1900,
+      netPremiumCedent: 1900
+    });
 
     const component = fixture.componentInstance;
     expect(component.contractId()).toBe(2);
@@ -688,10 +902,23 @@ describe('FacultativeInformationComponent existing contract', () => {
     expect(component.form.controls.coverageSelection.controls.coverageIds.value).toEqual([1]);
     expect(component.form.controls.coverageSelection.controls.sectionIds.value).toEqual([2, 3]);
     expect(component.form.controls.coverageSelection.controls.extensionIds.value).toEqual([7]);
+    expect(component.form.controls.grossPremium.value).toBe(2000);
+    expect(component.form.controls.netPremium.value).toBe(1900);
+    expect(component.canDeactivate()).toBe(true);
 
+    component.form.controls.sumInsured.setValue(200000);
+    expect(component.form.controls.grossPremium.value).toBe(4000);
+    expect(component.form.controls.netPremium.value).toBe(3800);
     component.saveDraft();
     const update = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2');
     expect(update.request.method).toBe('PUT');
+    expect(update.request.body).toEqual(expect.objectContaining({
+      sumInsured: 200000,
+      premiumRate: 2,
+      fees: 200,
+      grossPremium: 4000,
+      cedentCommissionPct: 5
+    }));
     expect(update.request.body.coverageSelection).toEqual({
       primaryMainCoverId: 1,
       coverageIds: [1],
@@ -704,10 +931,16 @@ describe('FacultativeInformationComponent existing contract', () => {
       contractId: 2,
       umr: 'IT26-F-PD-0001',
       status: 'Draft',
-      netPremiumCedent: 112500,
+      netPremiumCedent: 3800,
       name: 'Property Facultative Contract STAR',
       counterpartyId: 2,
       currencyId: 1,
+      fees: 200,
+      sumInsured: 200000,
+      premiumRate: 2,
+      grossPremium: 4000,
+      cedentCommissionPct: 5,
+      netPremium: 3800,
       inceptionDate: '2026-09-20',
       expiryDate: '2027-08-10',
       isHighPriority: false,

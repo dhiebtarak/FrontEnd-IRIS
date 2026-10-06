@@ -327,7 +327,7 @@
                 </div>
               } @else if (availableSections().length > 0) {
                 <div class="md:col-span-3">
-                  <p class="mb-2 block text-sm font-semibold text-iris-navy">Sections</p>
+                  <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sectionSearch">Sections</label>
                   @if (selectedSections().length > 0) {
                     <div class="mb-3 flex flex-wrap gap-2">
                       @for (section of selectedSections(); track section.id) {
@@ -336,19 +336,32 @@
                           @if (isMandatorySection(section)) {
                             <span class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white">Mandatory</span>
                           }
-                          <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(section)" (click)="removeSection(section.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
+                          @if (!isMandatorySection(section)) {
+                            <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(section)" (click)="removeSection(section.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
+                          }
                         </span>
                       }
                     </div>
                   }
+                  <input
+                    id="sectionSearch"
+                    type="text"
+                    [value]="sectionSearch()"
+                    (input)="onSectionSearchInput($event)"
+                    class="mb-3 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                    placeholder="Search sections by code or description"
+                  />
                   <div class="rounded-2xl border border-iris-border bg-white p-3">
-                    @for (group of groupedSections(); track group.parentLabel) {
+                    @if (filteredSections().length === 0) {
+                      <p class="px-2 py-2 text-sm text-iris-slate">No sections match your search.</p>
+                    }
+                    @for (group of groupedFilteredSections(); track group.parentLabel) {
                       <div class="py-2">
                         <p class="px-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">{{ group.parentLabel }}</p>
                         <div class="mt-2 grid gap-2 md:grid-cols-2">
                           @for (section of group.items; track section.id) {
-                            <label class="flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition hover:bg-iris-bg">
-                              <input type="checkbox" [checked]="isSectionSelected(section.id)" (change)="toggleSection(section)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)]" />
+                            <label class="flex items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition" [ngClass]="section.isMandatory ? 'cursor-not-allowed bg-iris-bg/70' : 'cursor-pointer hover:bg-iris-bg'">
+                              <input type="checkbox" [checked]="isSectionSelected(section.id)" [disabled]="section.isMandatory" (change)="toggleSection(section)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)] disabled:cursor-not-allowed" />
                               <span>
                                 <span class="block font-semibold">{{ formatCoverageLabel(section) }}{{ section.isMandatory ? ' (mandatory)' : '' }}</span>
                                 <span class="mt-1 block text-xs text-iris-slate">{{ section.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
@@ -359,6 +372,10 @@
                       </div>
                     }
                   </div>
+                </div>
+              } @else if (selectedCoverageIds().length > 0) {
+                <div class="md:col-span-3">
+                  <p class="text-sm text-iris-slate">No related sections are available for the selected coverages.</p>
                 </div>
               }
 
@@ -372,7 +389,7 @@
                 </div>
               } @else if (availableExtensions().length > 0) {
                 <div class="md:col-span-3">
-                  <p class="mb-2 block text-sm font-semibold text-iris-navy">Extensions</p>
+                  <label class="mb-2 block text-sm font-semibold text-iris-navy" for="extensionSearch">Extensions</label>
                   @if (selectedExtensions().length > 0) {
                     <div class="mb-3 flex flex-wrap gap-2">
                       @for (extension of selectedExtensions(); track extension.id) {
@@ -381,19 +398,32 @@
                           @if (isMandatoryExtension(extension)) {
                             <span class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white">Mandatory</span>
                           }
-                          <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(extension)" (click)="removeExtension(extension.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
+                          @if (!isMandatoryExtension(extension)) {
+                            <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(extension)" (click)="removeExtension(extension.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
+                          }
                         </span>
                       }
                     </div>
                   }
+                  <input
+                    id="extensionSearch"
+                    type="text"
+                    [value]="extensionSearch()"
+                    (input)="onExtensionSearchInput($event)"
+                    class="mb-3 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                    placeholder="Search extensions by code or description"
+                  />
                   <div class="rounded-2xl border border-iris-border bg-white p-3">
-                    @for (group of groupedExtensions(); track group.parentLabel) {
+                    @if (filteredExtensions().length === 0) {
+                      <p class="px-2 py-2 text-sm text-iris-slate">No extensions match your search.</p>
+                    }
+                    @for (group of groupedFilteredExtensions(); track group.parentLabel) {
                       <div class="py-2">
                         <p class="px-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">{{ group.parentLabel }}</p>
                         <div class="mt-2 grid gap-2 md:grid-cols-2">
                           @for (extension of group.items; track extension.id) {
-                            <label class="flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition hover:bg-iris-bg">
-                              <input type="checkbox" [checked]="isExtensionSelected(extension.id)" (change)="toggleExtension(extension)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)]" />
+                            <label class="flex items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition" [ngClass]="extension.isMandatory ? 'cursor-not-allowed bg-iris-bg/70' : 'cursor-pointer hover:bg-iris-bg'">
+                              <input type="checkbox" [checked]="isExtensionSelected(extension.id)" [disabled]="extension.isMandatory" (change)="toggleExtension(extension)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)] disabled:cursor-not-allowed" />
                               <span>
                                 <span class="block font-semibold">{{ formatCoverageLabel(extension) }}{{ extension.isMandatory ? ' (mandatory)' : '' }}</span>
                                 <span class="mt-1 block text-xs text-iris-slate">{{ extension.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
@@ -404,6 +434,10 @@
                       </div>
                     }
                   </div>
+                </div>
+              } @else if (selectedCoverageIds().length > 0) {
+                <div class="md:col-span-3">
+                  <p class="text-sm text-iris-slate">No related extensions are available for the selected coverages.</p>
                 </div>
               }
               </div>
@@ -431,8 +465,11 @@
               </div>
               <div>
                 <label class="mb-2 block text-sm font-semibold text-iris-navy" for="premiumRate">Premium rate</label>
-                <input id="premiumRate" type="number" formControlName="premiumRate" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('premiumRate', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
-                <p class="mt-2 text-sm text-iris-slate">Gross premium is not auto-calculated from premium rate in this MVP.</p>
+                <input id="premiumRate" type="text" inputmode="decimal" formControlName="premiumRate" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('premiumRate', 'nonNegative') || hasError('premiumRate', 'max') ? 'border-rose-400' : 'border-iris-border'" />
+                <p class="mt-2 text-sm text-iris-slate">Enter the premium rate as a percentage, for example 0.4 for 0.4%.</p>
+                @if (hasError('premiumRate', 'max')) {
+                  <p class="mt-2 text-sm text-rose-700">Premium rate must be between 0 and 100.</p>
+                }
               </div>
             </div>
           </section>
@@ -483,18 +520,20 @@
             <div class="mt-6 grid gap-5 md:grid-cols-2">
               <div>
                 <label class="mb-2 block text-sm font-semibold text-iris-navy" for="grossPremium">Gross premium</label>
-                <input id="grossPremium" type="number" formControlName="grossPremium" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('grossPremium', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
+                <input id="grossPremium" type="number" formControlName="grossPremium" min="0" readonly (keydown)="preventCalculatedInput($event)" (paste)="preventCalculatedInput($event)" (wheel)="preventCalculatedInput($event)" class="w-full rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy outline-none transition" />
+                <p class="mt-2 text-sm text-iris-slate">Calculated automatically</p>
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="cedentCommissionPct">Cedent commission percentage</label>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="cedentCommissionPct">Cedent Commission percentage</label>
                 <input id="cedentCommissionPct" type="number" formControlName="cedentCommissionPct" min="0" max="100" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('cedentCommissionPct', 'min') || hasError('cedentCommissionPct', 'max') ? 'border-rose-400' : 'border-iris-border'" />
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy">Net premium cedent</label>
-                <div class="rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm text-iris-navy">
-                  {{ formatMoney(summary().estimatedNetPremium) }}
-                </div>
-                <p class="mt-2 text-sm text-iris-slate">Preview only. The backend-calculated net premium remains authoritative after save.</p>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="netPremium">Net premium</label>
+                <input id="netPremium" type="number" formControlName="netPremium" min="0" readonly (keydown)="preventCalculatedInput($event)" (paste)="preventCalculatedInput($event)" (wheel)="preventCalculatedInput($event)" class="w-full rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy outline-none transition" />
+                <p class="mt-2 text-sm text-iris-slate">Calculated automatically</p>
+                @if (form.hasError('commissionsExceedGrossPremium')) {
+                  <p class="mt-2 text-sm text-rose-700">Cedent commission cannot exceed the gross premium.</p>
+                }
               </div>
               <div>
                 <label class="mb-2 block text-sm font-semibold text-iris-navy" for="cedentPremiumReference">Cedent premium reference</label>

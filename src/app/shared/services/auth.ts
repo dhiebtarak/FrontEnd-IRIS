@@ -120,6 +120,23 @@ export class Auth {
     }
   }
 
+  hasWorkspaceRole(role: 'FrontOfficer' | 'BackOfficer' | 'FinanceOfficer'): boolean {
+    const normalizedRole = this.normalizeRoleValue(role);
+    const workspace = this.getStoredWorkspace();
+    const workspaceKey = this.normalizeRoleValue(this.findUserValue(workspace, ['workspaceKey']));
+    const workspacePosition = this.normalizeRoleValue(this.findUserValue(workspace, ['position', 'role', 'roleName', 'jobTitle']));
+    const workspaceRoles = this.findStringArray(workspace, ['roles']);
+    const user = this.getCurrentUser();
+    const userPosition = this.normalizeRoleValue(this.findUserValue(user, ['position', 'role', 'roleName', 'jobTitle']));
+    const userRoles = this.findStringArray(user, ['roles']);
+
+    return workspaceKey.includes(normalizedRole)
+      || workspacePosition === normalizedRole
+      || userPosition === normalizedRole
+      || workspaceRoles.some(item => this.normalizeRoleValue(item) === normalizedRole)
+      || userRoles.some(item => this.normalizeRoleValue(item) === normalizedRole);
+  }
+
   getWorkspaceRoute(): string {
     const workspace = this.getStoredWorkspace();
     const workspaceKey = this.normalizeRoleValue(this.findUserValue(workspace, ['workspaceKey']));
@@ -205,6 +222,24 @@ export class Auth {
     }
 
     return null;
+  }
+
+  private findStringArray(source: unknown, keys: string[]): string[] {
+    if (!source || typeof source !== 'object') {
+      return [];
+    }
+
+    const record = source as Record<string, unknown>;
+
+    for (const key of keys) {
+      const value = record[key];
+
+      if (Array.isArray(value)) {
+        return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+      }
+    }
+
+    return Object.values(record).flatMap(value => this.findStringArray(value, keys));
   }
 
   private normalizeRoleValue(value: unknown): string {

@@ -89,8 +89,8 @@ export class ContractsService {
     return this.httpClient.get<unknown>(`${this.baseUrl}/coverage-catalog/main-covers`).pipe(
       map(payload => this.uniqueBy(
         this.toArray(payload)
-          .map(item => this.mapCoverageOption(item, 'MAIN_COVER', null))
-          .filter(option => option.level === 'MAIN_COVER'),
+          .map(item => this.mapCoverageOption(item, 'MAIN', null))
+          .filter(option => this.isMainCoverageLevel(option.level)),
         option => option.id
       ))
     );
@@ -294,6 +294,8 @@ export class ContractsService {
       premiumRate: this.toNullableNumber(record['premiumRate']),
       grossPremium: this.toNullableNumber(record['grossPremium']),
       cedentCommissionPct: this.toNullableNumber(record['cedentCommissionPct']),
+      cedentCommission: this.toNullableNumber(record['cedentCommission']),
+      netPremium: this.toNullableNumber(record['netPremium'] ?? record['netPremiumCedent']),
       cedentPremiumReference: this.toNullableText(record['cedentPremiumReference']),
       isFronting: this.toBoolean(record['isFronting']),
       frontingReference: this.toNullableText(record['frontingReference']),
@@ -332,7 +334,7 @@ export class ContractsService {
         : this.toNumberArray(record['mainCoverId'] == null ? [] : [record['mainCoverId']]),
       sectionIds: this.toNumberArray(record['sectionIds']),
       extensionIds: this.toNumberArray(record['extensionIds']),
-      mainCover: record['mainCover'] ? this.mapCoverageOption(record['mainCover'], 'MAIN_COVER', null) : null,
+      mainCover: record['mainCover'] ? this.mapCoverageOption(record['mainCover'], 'MAIN', null) : null,
       sections: this.toArray(record['sections']).map(item => this.mapCoverageOption(item, 'SECTION', null)),
       extensions: this.toArray(record['extensions']).map(item => this.mapCoverageOption(item, 'EXTENSION', null))
     };
@@ -344,16 +346,16 @@ export class ContractsService {
     const description = this.toNullableText(record['description'] ?? record['coverageDescription']);
 
     return {
-      id: this.toNumber(record['id'] ?? record['coverageItemId'] ?? record['idCoverageItem']) ?? 0,
-      code: this.toText(record['code'] ?? record['coverageCode']).trim(),
-      name: this.toText(record['name'] ?? record['coverageName']).trim(),
+      id: this.toNumber(record['id'] ?? record['coverageItemId'] ?? record['idCoverageItem'] ?? record['id_coverage_item']) ?? 0,
+      code: this.toText(record['code'] ?? record['coverageCode'] ?? record['coverage_code']).trim(),
+      name: this.toText(record['name'] ?? record['coverageName'] ?? record['coverage_name']).trim(),
       ...(description ? { description } : {}),
       level,
-      parentId: this.toNumber(record['parentId'] ?? record['parentCoverageItemId'] ?? record['idParentCoverageItem']) ?? fallbackParentId,
-      relationType: this.toCoverageRelationType(record['relationType']),
-      isMandatory: this.toBoolean(record['isMandatory']),
-      hasSlip: this.toBoolean(record['hasSlip']),
-      slipTemplateId: this.toNullableNumber(record['slipTemplateId'] ?? record['idSlipTemplate'])
+      parentId: this.toNumber(record['parentId'] ?? record['parentCoverageItemId'] ?? record['idParentCoverageItem'] ?? record['id_parent_coverage_item']) ?? fallbackParentId,
+      relationType: this.toCoverageRelationType(record['relationType'] ?? record['relation_type']),
+      isMandatory: this.toBoolean(record['isMandatory'] ?? record['is_mandatory']),
+      hasSlip: this.toBoolean(record['hasSlip'] ?? record['has_slip']),
+      slipTemplateId: this.toNullableNumber(record['slipTemplateId'] ?? record['idSlipTemplate'] ?? record['id_slip_template'])
     };
   }
 
@@ -375,6 +377,7 @@ export class ContractsService {
       writtenSharePct: this.toNullableNumber(record['writtenSharePct']),
       signedSharePct: this.toNullableNumber(record['signedSharePct']),
       tsi: this.toNullableNumber(record['tsi'] ?? record['sumInsured'] ?? record['totalSumInsured']),
+      limitOfLiability: this.toNullableNumber(record['limitOfLiability']),
       deductible: this.toNullableNumber(record['deductible']),
       premiumRatePct: this.toNullableNumber(record['premiumRatePct'] ?? record['premiumRate']),
       grossPremium: this.toNullableNumber(record['grossPremium']),
@@ -405,11 +408,38 @@ export class ContractsService {
   }
 
   private toCoverageLevel(value: unknown): CoverageLevel | null {
-    return value === 'MAIN_COVER' || value === 'SECTION' || value === 'EXTENSION' ? value : null;
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const normalizedValue = value.trim().toUpperCase();
+    return normalizedValue === 'MAIN'
+      || normalizedValue === 'MAIN_COVER'
+      || normalizedValue === 'SECTION'
+      || normalizedValue === 'EXTENSION'
+      ? normalizedValue
+      : null;
   }
 
   private toCoverageRelationType(value: unknown): CoverageRelationType | null {
-    return value === 'HAS_SECTION' || value === 'HAS_EXTENSION' ? value : null;
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const normalizedValue = value.trim().toUpperCase();
+    if (normalizedValue === 'HAS_SECTION' || normalizedValue === 'SECTION') {
+      return 'HAS_SECTION';
+    }
+
+    if (normalizedValue === 'HAS_EXTENSION' || normalizedValue === 'EXTENSION') {
+      return 'HAS_EXTENSION';
+    }
+
+    return null;
+  }
+
+  private isMainCoverageLevel(level: CoverageLevel): boolean {
+    return level === 'MAIN' || level === 'MAIN_COVER';
   }
 
   private getFilenameFromContentDisposition(contentDisposition: string | null): string | null {

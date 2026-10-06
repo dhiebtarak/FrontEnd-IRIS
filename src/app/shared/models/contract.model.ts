@@ -128,6 +128,7 @@ export interface DashboardSummary {
 }
 
 export type CoverageLevel =
+  | 'MAIN'
   | 'MAIN_COVER'
   | 'SECTION'
   | 'EXTENSION';
@@ -177,6 +178,7 @@ export interface ContractPanelItem {
   writtenSharePct: number | null;
   signedSharePct: number | null;
   tsi: number | null;
+  limitOfLiability?: number | null;
   deductible: number | null;
   premiumRatePct: number | null;
   grossPremium: number | null;
@@ -192,6 +194,7 @@ export interface CreateContractPanelRequest {
   writtenSharePct: number | null;
   signedSharePct: number | null;
   tsi: number | null;
+  limitOfLiability?: number | null;
   deductible: number | null;
   premiumRatePct: number | null;
   grossPremium: number | null;
@@ -257,6 +260,8 @@ export interface FacultativeContractResponse {
   premiumRate: number | null;
   grossPremium: number | null;
   cedentCommissionPct: number | null;
+  cedentCommission?: number | null;
+  netPremium?: number | null;
   cedentPremiumReference: string | null;
   isFronting: boolean;
   frontingReference: string | null;

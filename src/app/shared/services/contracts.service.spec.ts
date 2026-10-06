@@ -225,7 +225,7 @@ describe('ContractsService', () => {
           id: 1,
           code: 'PD',
           name: 'Property Damage',
-          level: 'MAIN_COVER',
+          level: 'MAIN',
           parentId: null,
           relationType: null,
           isMandatory: false,
@@ -240,12 +240,12 @@ describe('ContractsService', () => {
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
     request.flush([
       {
-        idCoverageItem: 1,
-        coverageCode: 'PD',
-        coverageName: 'Property Damage',
-        coverageLevel: 'MAIN_COVER',
-        hasSlip: true,
-        idSlipTemplate: 10
+        id_coverage_item: 1,
+        coverage_code: 'PD',
+        coverage_name: 'Property Damage',
+        coverage_level: 'main',
+        has_slip: true,
+        id_slip_template: 10
       },
       {
         idCoverageItem: 2,
@@ -253,7 +253,7 @@ describe('ContractsService', () => {
         coverageName: 'Machinery Breakdown',
         coverageLevel: 'SECTION',
         parentId: 1,
-        relationType: 'HAS_SECTION'
+        relation_type: 'section'
       },
       {
         idCoverageItem: 7,
@@ -261,7 +261,7 @@ describe('ContractsService', () => {
         coverageName: 'Debris Removal',
         coverageLevel: 'EXTENSION',
         parentId: 1,
-        relationType: 'HAS_EXTENSION'
+        relation_type: 'extension'
       }
     ]);
   });
@@ -295,7 +295,7 @@ describe('ContractsService', () => {
         name: 'Machinery Breakdown',
         level: 'SECTION',
         parentId: 1,
-        relationType: 'HAS_SECTION',
+        relationType: 'SECTION',
         isMandatory: true,
         hasSlip: false
       }
@@ -314,7 +314,7 @@ describe('ContractsService', () => {
           id: 1,
           code: 'PD',
           name: 'Property Damage',
-          level: 'MAIN_COVER',
+          level: 'MAIN',
           parentId: null,
           relationType: null,
           isMandatory: false,
@@ -334,6 +334,7 @@ describe('ContractsService', () => {
           writtenSharePct: 40,
           signedSharePct: 35,
           tsi: 400000,
+          limitOfLiability: null,
           deductible: 2000,
           premiumRatePct: 1.2,
           grossPremium: 48000,
@@ -381,6 +382,7 @@ describe('ContractsService', () => {
           writtenSharePct: 40,
           signedSharePct: 35,
           tsi: 400000,
+          limitOfLiability: null,
           deductible: 2000,
           premiumRatePct: 1.2,
           grossPremium: 48000,
@@ -398,6 +400,8 @@ describe('ContractsService', () => {
     service.getContractOverview(7).subscribe(result => {
       expect(result.contractId).toBe(7);
       expect(result.name).toBe('Coverage Draft');
+      expect(result.netPremiumCedent).toBe(0);
+      expect(result.netPremium).toBe(0);
     });
 
     const request = httpTesting.expectOne('http://localhost:5151/api/contracts/7/overview');
@@ -411,6 +415,7 @@ describe('ContractsService', () => {
       currencyId: 1,
       inceptionDate: '2026-09-20',
       expiryDate: '2027-08-10',
+      netPremiumCedent: 0,
       isHighPriority: false,
       isFronting: false
     });
@@ -428,6 +433,7 @@ describe('ContractsService', () => {
           writtenSharePct: 40,
           signedSharePct: 35,
           tsi: 400000,
+          limitOfLiability: null,
           deductible: 2000,
           premiumRatePct: 1.2,
           grossPremium: 48000,

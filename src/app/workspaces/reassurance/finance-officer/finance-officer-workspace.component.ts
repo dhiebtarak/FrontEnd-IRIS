@@ -1,33 +1,19 @@
-import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
-import { Router } from '@angular/router';
-import { ToastrService } from 'ngx-toastr';
-import { Auth } from '../../../shared/services/auth';
+import { RoleWorkspaceShellComponent, WorkspaceNavigationItem } from '../shared/role-workspace-shell.component';
 
 @Component({
   selector: 'app-finance-officer-workspace',
   standalone: true,
-  imports: [CommonModule],
+  imports: [RoleWorkspaceShellComponent],
   templateUrl: './finance-officer-workspace.component.html',
-  styles: ``,
+  styles: `:host { display: block; }`,
 })
 export class FinanceOfficerWorkspaceComponent {
-  constructor(
-    private authService: Auth,
-    private toastr: ToastrService,
-    private router: Router
-  ) {}
-
-  logout(): void {
-    this.authService.logout().subscribe({
-      next: () => {
-        this.toastr.success('You have been logged out.', 'Logout');
-        this.router.navigate(['/login']);
-      },
-      error: () => {
-        this.toastr.success('You have been logged out.', 'Logout');
-        this.router.navigate(['/login']);
-      }
-    });
-  }
+  readonly navigationItems: WorkspaceNavigationItem[] = [
+    { label: 'Dashboard', route: '/workspace/reassurance/finance-officer', icon: 'dashboard', exact: true },
+    { label: 'Incoming Remittances', route: '/workspace/reassurance/finance-officer/incoming-remittances', icon: 'receipts', exact: false },
+    { label: 'Disbursement Queue', route: '/workspace/reassurance/finance-officer/disbursement-queue', icon: 'disbursements', exact: false },
+    { label: 'Counterparty Bank Accounts', route: '/workspace/reassurance/finance-officer/counterparty-bank-accounts', icon: 'bankAccounts', exact: false },
+    { label: 'Notifications', route: '/workspace/reassurance/finance-officer/notifications', icon: 'notifications', exact: false }
+  ];
 }

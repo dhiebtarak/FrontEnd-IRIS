@@ -47,9 +47,10 @@ type FacultativeFormGroup = FormGroup<{
   sumInsured: FormControl<number | null>;
   limitOfLiability: FormControl<number | null>;
   deductible: FormControl<number | null>;
-  premiumRate: FormControl<number | null>;
+  premiumRate: FormControl<number | string | null>;
   grossPremium: FormControl<number | null>;
   cedentCommissionPct: FormControl<number | null>;
+  netPremium: FormControl<number | null>;
   cedentPremiumReference: FormControl<string>;
   isFronting: FormControl<boolean>;
   frontingReference: FormControl<string>;
@@ -60,6 +61,13 @@ type CoverageOptionGroup = {
   parentLabel: string;
   items: CoverageOption[];
 };
+
+interface FacultativeFinancialCalculation {
+  grossPremium: number | null;
+  cedentCommission: number;
+  netPremium: number | null;
+  commissionsExceedGrossPremium: boolean;
+}
 
 const optionalNonNegativeValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
   if (control.value == null || control.value === '') {
@@ -127,6 +135,67 @@ const deductibleValidator: ValidatorFn = (control: AbstractControl): ValidationE
   return deductible <= sumInsured ? null : { deductibleExceedsSumInsured: true };
 };
 
+const financialCalculationValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
+  const form = control as FacultativeFormGroup;
+  const calculation = calculateFacultativeFinancials({
+    sumInsured: form.controls.sumInsured.value,
+    premiumRate: form.controls.premiumRate.value,
+    cedentCommissionPct: form.controls.cedentCommissionPct.value
+  });
+
+  return calculation.commissionsExceedGrossPremium ? { commissionsExceedGrossPremium: true } : null;
+};
+
+function calculateFacultativeFinancials(values: {
+  sumInsured: number | null | undefined;
+  premiumRate: number | string | null | undefined;
+  cedentCommissionPct: number | null | undefined;
+}): FacultativeFinancialCalculation {
+  const tsi = toFiniteNumber(values.sumInsured);
+  const premiumRate = toFiniteNumber(values.premiumRate);
+  const cedentCommissionPct = toFiniteNumber(values.cedentCommissionPct) ?? 0;
+
+  if (tsi == null || premiumRate == null) {
+    return {
+      grossPremium: null,
+      cedentCommission: 0,
+      netPremium: null,
+      commissionsExceedGrossPremium: false
+    };
+  }
+
+  const grossPremium = roundMoney(tsi * premiumRate / 100);
+  const cedentCommission = roundMoney(grossPremium * cedentCommissionPct / 100);
+
+  return {
+    grossPremium,
+    cedentCommission,
+    netPremium: roundMoney(Math.max(0, grossPremium - cedentCommission)),
+    commissionsExceedGrossPremium: cedentCommission > grossPremium
+  };
+}
+
+function toFiniteNumber(value: number | string | null | undefined): number | null {
+  if (value == null) {
+    return null;
+  }
+
+  const normalizedValue = typeof value === 'string'
+    ? value.trim().replace(/\s/g, '').replace(',', '.')
+    : value;
+
+  if (normalizedValue === '') {
+    return null;
+  }
+
+  const numericValue = Number(normalizedValue);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 10000) / 10000;
+}
+
 @Component({
   selector: 'app-facultative-information',
   standalone: true,
@@ -156,6 +225,8 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   readonly isMainCoverDropdownOpen = signal(false);
   readonly isCoverageDropdownOpen = signal(false);
   readonly coverageSearch = signal('');
+  readonly sectionSearch = signal('');
+  readonly extensionSearch = signal('');
   readonly isSaving = signal(false);
   readonly saveMode = signal<'draft' | 'continue' | null>(null);
   readonly retrySaveMode = signal<'draft' | 'continue' | null>(null);
@@ -170,7 +241,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   readonly currencies = signal<CurrencyReference[]>([]);
   readonly cedentResults = signal<CedentReference[]>([]);
   readonly coverageCatalog = signal<CoverageOption[]>([]);
-  readonly mainCovers = computed(() => this.coverageCatalog().filter(option => option.level === 'MAIN_COVER'));
+  readonly mainCovers = computed(() => this.coverageCatalog().filter(option => this.isMainCoverageLevel(option)));
   readonly sections = signal<CoverageOption[]>([]);
   readonly extensions = signal<CoverageOption[]>([]);
   readonly activeCedentIndex = signal(-1);
@@ -217,6 +288,10 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   });
   readonly groupedSections = computed(() => this.groupCoverageOptionsByParent(this.availableSections()));
   readonly groupedExtensions = computed(() => this.groupCoverageOptionsByParent(this.availableExtensions()));
+  readonly filteredSections = computed(() => this.filterCoverageOptions(this.availableSections(), this.sectionSearch()));
+  readonly filteredExtensions = computed(() => this.filterCoverageOptions(this.availableExtensions(), this.extensionSearch()));
+  readonly groupedFilteredSections = computed(() => this.groupCoverageOptionsByParent(this.filteredSections()));
+  readonly groupedFilteredExtensions = computed(() => this.groupCoverageOptionsByParent(this.filteredExtensions()));
   readonly selectedMainCovers = computed(() => this.findCoverageOptions(this.mainCovers(), this.selectedCoverageIds()));
   readonly selectedMainCover = computed(() => this.findCoverageOption(this.mainCovers(), this.formSnapshot().coverageSelection.primaryMainCoverId));
   readonly selectedSections = computed(() => this.findCoverageOptions(this.availableSections(), this.selectedSectionIds()));
@@ -243,7 +318,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       sumInsured: snapshot.sumInsured,
       limitOfLiability: snapshot.limitOfLiability,
       grossPremium: snapshot.grossPremium,
-      estimatedNetPremium: this.getNetPremiumPreview(snapshot.grossPremium, snapshot.cedentCommissionPct),
+      estimatedNetPremium: snapshot.netPremium,
       mainCover: this.selectedMainCover() ? this.formatCoverageLabel(this.selectedMainCover()!) : 'Not selected',
       coverages: this.selectedMainCovers().length > 0 ? this.selectedMainCovers().map(option => this.formatCoverageLabel(option)).join(', ') : 'Not selected',
       sections: this.selectedSections().length > 0 ? this.selectedSections().map(option => this.formatCoverageLabel(option)).join(', ') : 'None',
@@ -273,15 +348,16 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     sumInsured: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
     limitOfLiability: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
     deductible: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
-    premiumRate: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
+    premiumRate: this.fb.control<number | string | null>(null, [optionalNonNegativeValidator, Validators.max(100)]),
     grossPremium: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
     cedentCommissionPct: this.fb.control<number | null>(null, [Validators.min(0), Validators.max(100)]),
+    netPremium: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
     cedentPremiumReference: this.fb.nonNullable.control(''),
     isFronting: this.fb.nonNullable.control(false),
     frontingReference: this.fb.nonNullable.control(''),
     memoText: this.fb.nonNullable.control('', [Validators.maxLength(500)])
   }, {
-    validators: [dateRangeValidator, shareValidator, deductibleValidator]
+    validators: [dateRangeValidator, shareValidator, deductibleValidator, financialCalculationValidator]
   });
 
   private selectedCedentName = '';
@@ -294,6 +370,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   ngOnInit(): void {
     this.setSectionsEnabled(false);
     this.setExtensionsEnabled(false);
+    this.bindFinancialCalculations();
     this.bindFormState();
     this.bindCedentSearch();
     this.bindMainCoverSearch();
@@ -482,6 +559,11 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     control.markAsTouched();
   }
 
+  onSectionSearchInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.sectionSearch.set(input.value);
+  }
+
   removeSection(sectionId: number): void {
     const control = this.form.controls.coverageSelection.controls.sectionIds;
     control.setValue(control.value.filter(id => id !== sectionId));
@@ -503,6 +585,11 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     control.setValue(this.uniquePositiveNumberArray(nextExtensionIds));
     control.markAsDirty();
     control.markAsTouched();
+  }
+
+  onExtensionSearchInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.extensionSearch.set(input.value);
   }
 
   removeExtension(extensionId: number): void {
@@ -763,6 +850,10 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     return `${currency.code} ${number}${currency.symbol ? ` (${currency.symbol})` : ''}`;
   }
 
+  preventCalculatedInput(event: Event): void {
+    event.preventDefault();
+  }
+
   private bindFormState(): void {
     this.form.valueChanges.pipe(
       startWith(this.form.getRawValue()),
@@ -772,6 +863,37 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       this.formSnapshot.set(snapshot);
       this.syncCedentValidation();
     });
+  }
+
+  private bindFinancialCalculations(): void {
+    const controls = this.form.controls;
+
+    merge(
+      controls.sumInsured.valueChanges,
+      controls.premiumRate.valueChanges,
+      controls.cedentCommissionPct.valueChanges
+    ).pipe(
+      startWith(null),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(() => {
+      this.syncCalculatedFinancialControls();
+    });
+  }
+
+  private syncCalculatedFinancialControls(authoritative?: { grossPremium?: number | null; netPremium?: number | null }): void {
+    const calculation = calculateFacultativeFinancials({
+      sumInsured: this.form.controls.sumInsured.value,
+      premiumRate: this.form.controls.premiumRate.value,
+      cedentCommissionPct: this.form.controls.cedentCommissionPct.value
+    });
+
+    const grossPremium = authoritative?.grossPremium ?? calculation.grossPremium;
+    const netPremium = authoritative?.netPremium ?? calculation.netPremium;
+
+    this.form.controls.grossPremium.setValue(grossPremium, { emitEvent: false });
+    this.form.controls.netPremium.setValue(netPremium, { emitEvent: false });
+    this.form.updateValueAndValidity({ emitEvent: false });
+    this.formSnapshot.set(this.createSnapshot());
   }
 
   private bindCedentSearch(): void {
@@ -966,19 +1088,26 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private loadCoverageChildren(mainCoverIds: number[], savedSectionIds: number[], savedExtensionIds: number[]) {
+    const validMainCoverIds = this.uniquePositiveNumberArray(mainCoverIds);
+
+    if (!validMainCoverIds.length) {
+      this.clearCoverageChildren();
+      return of(null);
+    }
+
     this.isSectionsLoading.set(true);
     this.isExtensionsLoading.set(true);
     this.sectionsError.set('');
     this.extensionsError.set('');
 
     return forkJoin({
-      sectionsByCoverage: forkJoin(mainCoverIds.map(mainCoverId => this.contractsService.getCoverageChildren(mainCoverId, 'SECTION').pipe(
+      sectionsByCoverage: forkJoin(validMainCoverIds.map(mainCoverId => this.contractsService.getCoverageChildren(mainCoverId, 'SECTION').pipe(
         catchError(() => {
           this.sectionsError.set('Sections could not be loaded for the selected coverages.');
           return of([] as CoverageOption[]);
         })
       ))),
-      directExtensionsByCoverage: forkJoin(mainCoverIds.map(mainCoverId => this.contractsService.getCoverageChildren(mainCoverId, 'EXTENSION').pipe(
+      directExtensionsByCoverage: forkJoin(validMainCoverIds.map(mainCoverId => this.contractsService.getCoverageChildren(mainCoverId, 'EXTENSION').pipe(
         catchError(() => {
           this.extensionsError.set('Extensions could not be loaded for the selected coverages.');
           return of([] as CoverageOption[]);
@@ -989,13 +1118,13 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
         const sections = this.uniqueCoverageOptions(sectionsByCoverage.flat().filter(section =>
           section.level === 'SECTION'
           && section.parentId != null
-          && mainCoverIds.includes(section.parentId)
+          && validMainCoverIds.includes(section.parentId)
           && section.relationType === 'HAS_SECTION'
         ));
         const directExtensions = this.uniqueCoverageOptions(directExtensionsByCoverage.flat().filter(extension =>
           extension.level === 'EXTENSION'
           && extension.parentId != null
-          && mainCoverIds.includes(extension.parentId)
+          && validMainCoverIds.includes(extension.parentId)
           && extension.relationType === 'HAS_EXTENSION'
         ));
         this.sections.set(sections);
@@ -1015,7 +1144,8 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private loadExtensionsForSelection(sectionIds: number[], savedExtensionIds: number[], directExtensions?: CoverageOption[]) {
-    const mainCoverIds = this.form.controls.coverageSelection.controls.coverageIds.value;
+    const mainCoverIds = this.uniquePositiveNumberArray(this.form.controls.coverageSelection.controls.coverageIds.value);
+    const validSectionIds = this.uniquePositiveNumberArray(sectionIds);
 
     if (!mainCoverIds.length) {
       this.extensions.set([]);
@@ -1038,7 +1168,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
           })
         ))).pipe(map(results => this.uniqueCoverageOptions(results.flat())));
 
-    const sectionExtensionRequests = sectionIds.map(sectionId =>
+    const sectionExtensionRequests = validSectionIds.map(sectionId =>
       this.contractsService.getCoverageChildren(sectionId, 'EXTENSION').pipe(
         catchError(() => {
           this.extensionsError.set('Some section extensions could not be loaded.');
@@ -1053,7 +1183,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     ]).pipe(
       tap(([mainCoverExtensions, sectionExtensions]) => {
         const selectedMainCoverIds = new Set(mainCoverIds);
-        const selectedSectionIds = new Set(sectionIds);
+        const selectedSectionIds = new Set(validSectionIds);
         const extensions = this.uniqueCoverageOptions([...mainCoverExtensions, ...sectionExtensions.flat()].filter(extension => {
           if (extension.level !== 'EXTENSION' || extension.parentId == null || extension.relationType !== 'HAS_EXTENSION') {
             return false;
@@ -1094,7 +1224,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     const mainCover = this.mainCovers().find(option => option.id === primaryMainCoverId) ?? embeddedMainCover ?? null;
 
     if (mainCover) {
-      this.coverageCatalog.set(this.uniqueCoverageOptions([...this.coverageCatalog(), { ...mainCover, level: 'MAIN_COVER' }]));
+      this.coverageCatalog.set(this.uniqueCoverageOptions([...this.coverageCatalog(), mainCover]));
       this.coverageSearch.set('');
     }
 
@@ -1133,10 +1263,15 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       premiumRate: contract.premiumRate,
       grossPremium: contract.grossPremium,
       cedentCommissionPct: contract.cedentCommissionPct,
+      netPremium: contract.netPremium ?? contract.netPremiumCedent,
       cedentPremiumReference: contract.cedentPremiumReference ?? '',
       isFronting: contract.isFronting,
       frontingReference: contract.frontingReference ?? '',
       memoText: contract.memoText ?? ''
+    });
+    this.syncCalculatedFinancialControls({
+      grossPremium: contract.grossPremium,
+      netPremium: contract.netPremium ?? contract.netPremiumCedent
     });
 
     this.selectedCedentName = contract.counterpartyName?.trim() ?? '';
@@ -1205,6 +1340,16 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
 
     this.generatedUmr.set(response.umr);
     this.backendNetPremium.set(response.netPremiumCedent);
+    this.form.patchValue({
+      fees: response.fees ?? this.form.controls.fees.value,
+      grossPremium: response.grossPremium ?? this.form.controls.grossPremium.value,
+      cedentCommissionPct: response.cedentCommissionPct ?? this.form.controls.cedentCommissionPct.value,
+      netPremium: response.netPremium ?? response.netPremiumCedent ?? this.form.controls.netPremium.value
+    }, { emitEvent: false });
+    this.syncCalculatedFinancialControls({
+      grossPremium: response.grossPremium ?? this.form.controls.grossPremium.value,
+      netPremium: response.netPremium ?? response.netPremiumCedent ?? this.form.controls.netPremium.value
+    });
     this.lastSavedSnapshot = this.createSnapshot();
     this.form.markAsPristine();
   }
@@ -1253,7 +1398,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       sumInsured: raw.sumInsured,
       limitOfLiability: raw.limitOfLiability,
       deductible: raw.deductible,
-      premiumRate: raw.premiumRate,
+      premiumRate: toFiniteNumber(raw.premiumRate),
       grossPremium: raw.grossPremium,
       cedentCommissionPct: raw.cedentCommissionPct,
       cedentPremiumReference: this.toNullableText(raw.cedentPremiumReference),
@@ -1295,7 +1440,9 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     this.syncCedentValidation();
     this.form.updateValueAndValidity({ emitEvent: false });
 
-    return requiredControls.every(control => control.valid) && !this.form.hasError('expiryBeforeInception');
+    return requiredControls.every(control => control.valid)
+      && !this.form.hasError('expiryBeforeInception')
+      && !this.form.hasError('commissionsExceedGrossPremium');
   }
 
   private markDraftFieldsTouched(): void {
@@ -1387,6 +1534,8 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private clearCoverageChildren(): void {
     this.sections.set([]);
     this.extensions.set([]);
+    this.sectionSearch.set('');
+    this.extensionSearch.set('');
     this.sectionsError.set('');
     this.extensionsError.set('');
     this.form.controls.coverageSelection.controls.sectionIds.setValue([], { emitEvent: false });
@@ -1447,6 +1596,25 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private findCoverageOptions(options: CoverageOption[], ids: number[]): CoverageOption[] {
     const selectedIds = new Set(ids);
     return options.filter(option => selectedIds.has(option.id));
+  }
+
+  private filterCoverageOptions(options: CoverageOption[], searchValue: string): CoverageOption[] {
+    const search = searchValue.trim().toLowerCase();
+
+    if (!search) {
+      return options;
+    }
+
+    return options.filter(option => {
+      const description = option.description ?? option.name;
+      return option.code.toLowerCase().includes(search)
+        || option.name.toLowerCase().includes(search)
+        || description.toLowerCase().includes(search);
+    });
+  }
+
+  private isMainCoverageLevel(option: CoverageOption): boolean {
+    return option.level === 'MAIN' || option.level === 'MAIN_COVER';
   }
 
   private areNumberArraysEqual(previous: number[], current: number[]): boolean {
@@ -1634,15 +1802,6 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     return cedent?.name ?? this.selectedCedentName;
   }
 
-  private getNetPremiumPreview(grossPremium: number | null, cedentCommissionPct: number | null): number | null {
-    if (grossPremium == null) {
-      return null;
-    }
-
-    const commission = cedentCommissionPct ?? 0;
-    return grossPremium - ((grossPremium * commission) / 100);
-  }
-
   private canLeaveWithoutPrompt(): boolean {
     return this.isBusy || !this.hasUnsavedChanges();
   }
@@ -1693,9 +1852,10 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       sumInsured: raw.sumInsured,
       limitOfLiability: raw.limitOfLiability,
       deductible: raw.deductible,
-      premiumRate: raw.premiumRate,
+      premiumRate: toFiniteNumber(raw.premiumRate),
       grossPremium: raw.grossPremium,
       cedentCommissionPct: raw.cedentCommissionPct,
+      netPremium: raw.netPremium,
       cedentPremiumReference: raw.cedentPremiumReference,
       isFronting: raw.isFronting,
       frontingReference: raw.frontingReference,
@@ -1728,6 +1888,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       premiumRate: null as number | null,
       grossPremium: null as number | null,
       cedentCommissionPct: null as number | null,
+      netPremium: null as number | null,
       cedentPremiumReference: '',
       isFronting: false,
       frontingReference: '',
