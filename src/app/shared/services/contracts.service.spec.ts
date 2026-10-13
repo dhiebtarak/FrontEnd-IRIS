@@ -401,7 +401,7 @@ describe('ContractsService', () => {
       expect(result.contractId).toBe(7);
       expect(result.name).toBe('Coverage Draft');
       expect(result.netPremiumCedent).toBe(0);
-      expect(result.netPremium).toBe(0);
+      expect(result.netPremium).toBeNull();
     });
 
     const request = httpTesting.expectOne('http://localhost:5151/api/contracts/7/overview');

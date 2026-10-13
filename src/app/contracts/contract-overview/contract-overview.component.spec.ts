@@ -40,6 +40,8 @@ describe('ContractOverviewComponent', () => {
     premiumRate: 1.25,
     grossPremium: 125000,
     cedentCommissionPct: 10,
+    cedentCommissionAmount: 12500,
+    netPremium: 112500,
     netPremiumCedent: 112500,
     cedentPremiumReference: null,
     isFronting: false,
@@ -224,20 +226,23 @@ describe('ContractOverviewComponent', () => {
     expect(text).not.toContain('Start Placement');
   });
 
-  it('calculates the contract financial summary from TSI, premium rate and commission amounts', () => {
+  it('calculates the contract net premium from gross premium minus cedent commission and ignores reinsurer panel net premium', () => {
     flushContract(123, {
       ...contractResponse,
       sumInsured: 100000,
       premiumRate: 2,
-      grossPremium: null,
+      grossPremium: 50000,
       cedentCommissionPct: 5,
+      cedentCommissionAmount: 2500,
+      netPremium: 47500,
       netPremiumCedent: null
     }, [{
       ...panelsResponse[0],
       tsi: 100000,
       premiumRatePct: 2,
       grossPremium: 2000,
-      brokeragePct: 10
+      brokeragePct: 10,
+      netPremium: 1900
     }]);
 
     const rows = component.contractFinancialRows();
@@ -249,7 +254,7 @@ describe('ContractOverviewComponent', () => {
     expect(normalizedMoney(rows.find(row => row.label === 'Net Premium')?.value)).toBe('TND1900.000');
   });
 
-  it('calculates contract net premium from the displayed gross premium before using stale persisted net premium', () => {
+  it('calculates contract net premium from the displayed gross premium instead of stale persisted values', () => {
     flushContract(123, {
       ...contractResponse,
       sumInsured: 100000,
@@ -257,6 +262,7 @@ describe('ContractOverviewComponent', () => {
       grossPremium: null,
       cedentCommissionPct: 10,
       cedentCommission: 4000,
+      netPremium: 4600,
       netPremiumCedent: 4500
     }, [{
       ...panelsResponse[0],
@@ -281,6 +287,7 @@ describe('ContractOverviewComponent', () => {
       premiumRate: 2,
       grossPremium: null,
       cedentCommissionPct: 0,
+      netPremium: 2000,
       netPremiumCedent: null
     }, [{
       ...panelsResponse[0],
@@ -298,6 +305,7 @@ describe('ContractOverviewComponent', () => {
       ...contractResponse,
       grossPremium: 4000,
       cedentCommissionPct: 100,
+      netPremium: 0,
       netPremiumCedent: 0
     });
 
@@ -311,6 +319,7 @@ describe('ContractOverviewComponent', () => {
       premiumRate: null,
       grossPremium: null,
       cedentCommissionPct: null,
+      netPremium: undefined,
       netPremiumCedent: null
     }, []);
 
@@ -334,6 +343,7 @@ describe('ContractOverviewComponent', () => {
       premiumRate: 2,
       grossPremium: null,
       cedentCommissionPct: 5,
+      netPremium: 1900,
       netPremiumCedent: null
     });
     httpMock.expectOne('http://localhost:5151/api/contracts/456/panels').flush([{
@@ -918,11 +928,12 @@ describe('ContractOverviewComponent', () => {
         grossAmount: 50,
         alreadyInvoicedAmount: 50,
         remainingAmount: 1450,
-        totalNetAmount: 45,
-        currencyCode: 'TND',
+        totalNetAmount: 999,
+        currencyCode: 'USD',
+        paymentStatus: 'Unsettled',
         status: 'Draft',
         label: '',
-        allocations: []
+        allocations: [{ panelId: 1, cedentCommissionPct: 14, cedentCommissionAmount: 7, grossPremium: 50, netAmount: 40 }]
       },
       {
         invoiceId: 92,
@@ -937,6 +948,7 @@ describe('ContractOverviewComponent', () => {
         remainingAmount: 1440,
         totalNetAmount: 54,
         currencyCode: 'TND',
+        paymentStatus: 'Settled',
         status: 'Draft',
         label: '',
         allocations: []
@@ -947,12 +959,91 @@ describe('ContractOverviewComponent', () => {
     expect(component.invoiceHistory().map(invoice => invoice.invoiceId)).toEqual([91]);
     expect(fixture.nativeElement.textContent).toContain('Invoice History');
     expect(fixture.nativeElement.textContent).toContain('Invoice type');
+    expect(fixture.nativeElement.textContent).toContain('Payment Status');
     expect(fixture.nativeElement.textContent).toContain('INV-2026-000001');
+    expect(fixture.nativeElement.textContent).toContain('Unsettled');
+    expect(fixture.nativeElement.textContent).not.toContain('Draft');
+    const invoice = component.invoiceHistory()[0];
+    expect(normalizedMoney(component.formatMoney(component.getInvoiceAmount(invoice), invoice.currencyCode))).toBe('USD43.000');
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('th') as NodeListOf<HTMLElement>).map(header => header.textContent?.trim());
+    expect(headers).toContain('Amount');
+    expect(headers).not.toContain('Gross amount');
+    expect(headers).not.toContain('Net amount');
+    const amountCell = fixture.nativeElement.querySelector('tbody tr td:nth-child(5)');
+    expect(normalizedMoney(amountCell.textContent)).toBe('USD43.000');
+    expect(component.getInvoiceAmount({ ...invoice, allocations: [] })).toBe(45);
+    expect(component.getInvoiceAmount({ ...invoice, allocations: [{ ...invoice.allocations[0], cedentCommissionAmount: 0 }] })).toBe(50);
+    expect(fixture.nativeElement.textContent).not.toContain('999');
     expect(fixture.nativeElement.textContent).not.toContain('INV-2026-000002');
     const rowButtons = Array.from(fixture.nativeElement.querySelectorAll('td button') as NodeListOf<HTMLButtonElement>)
       .map(button => button.textContent?.trim());
     expect(rowButtons).toContain('View Allocation');
     expect(rowButtons).not.toContain('Download Debit Note');
+  });
+
+  it('formats invoice payment status values in invoice history', () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
+    flushInvoiceContextAndHistory(invoiceContextResponse, [
+      {
+        invoiceId: 91,
+        contractId: 123,
+        invoiceNumber: 'INV-2026-000001',
+        sequence: 1,
+        invoiceType: 'CEDENT_PREMIUM_INVOICE',
+        invoiceDate: '2026-09-23',
+        invoiceableGrossPremium: 1500,
+        grossAmount: 50,
+        alreadyInvoicedAmount: 50,
+        remainingAmount: 1450,
+        totalNetAmount: 45,
+        currencyCode: 'TND',
+        paymentStatus: 'Partially_Settled',
+        status: 'Draft',
+        label: '',
+        allocations: []
+      }
+    ]);
+    fixture.detectChanges();
+
+    expect(component.getInvoicePaymentStatus(component.invoiceHistory()[0])).toBe('Partially settled');
+    expect(fixture.nativeElement.textContent).toContain('Partially settled');
+    expect(fixture.nativeElement.textContent).not.toContain('Draft');
+  });
+
+  it('identifies missing backend payment status fields in invoice history', () => {
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
+    flushInvoiceContextAndHistory(invoiceContextResponse, [
+      {
+        invoiceId: 91,
+        contractId: 123,
+        invoiceNumber: 'INV-2026-000001',
+        sequence: 1,
+        invoiceType: 'CEDENT_PREMIUM_INVOICE',
+        invoiceDate: '2026-09-23',
+        invoiceableGrossPremium: 1500,
+        grossAmount: 50,
+        alreadyInvoicedAmount: 50,
+        remainingAmount: 1450,
+        totalNetAmount: 45,
+        currencyCode: 'TND',
+        status: 'Draft',
+        label: '',
+        allocations: []
+      }
+    ]);
+    fixture.detectChanges();
+
+    expect(component.getInvoicePaymentStatus(component.invoiceHistory()[0])).toBe('Missing paymentStatus');
+    expect(fixture.nativeElement.textContent).toContain('Missing paymentStatus');
+    expect(debugSpy).toHaveBeenCalledWith('Contract overview invoice history response is missing paymentStatus.', {
+      invoiceId: 91,
+      invoiceNumber: 'INV-2026-000001',
+      fields: ['paymentStatus', 'recoveryStatus']
+    });
   });
 
   it('keeps created invoices visible and offers retry when invoice-history reload fails', () => {

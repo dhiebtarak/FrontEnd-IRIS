@@ -58,6 +58,24 @@ export interface FinancialReceiptQuery {
   sortDirection?: 'asc' | 'desc' | null;
 }
 
+export interface RemittanceQuery {
+  search?: string | null;
+  reinsurer?: string | null;
+  reinsurerId?: number | null;
+  contract?: string | null;
+  umr?: string | null;
+  contractId?: number | null;
+  status?: string | null;
+  currency?: string | null;
+  currencyId?: number | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  pageNumber?: number;
+  pageSize?: number;
+  sortBy?: string | null;
+  sortDirection?: string | null;
+}
+
 export interface BankReceiptResponse {
   idBankReceipt: number;
   bankAccountId: number;
@@ -129,6 +147,10 @@ export interface EligibleInvoice {
   counterpartyName?: string | null;
   invoiceType?: string | null;
   invoiceDate?: string | null;
+  invoiceAmount?: number | null;
+  settledAmount?: number | null;
+  remainingAmount?: number | null;
+  paymentStatus?: string | null;
   grossAmount: number;
   alreadyPairedAmount: number;
   outstandingAmount: number;
@@ -145,16 +167,21 @@ export interface RemittanceResponse {
   remittanceRef: number;
   remittanceId?: number | null;
   remittanceReference?: string | null;
+  receiptReference?: string | null;
   receiptAllocationId: number | null;
   disbursementId: number | null;
   invoiceId?: number | null;
+  invoiceNumber?: string | null;
   panelId: number | null;
+  panelName?: string | null;
   contractId?: number | null;
   contractName?: string | null;
   umr?: string | null;
   cedentName?: string | null;
   counterpartyId: number;
   counterpartyName: string;
+  reinsurerId?: number | null;
+  reinsurerName?: string | null;
   signedSharePct?: number | null;
   allocatedAmount?: number | null;
   deductions?: number | null;
@@ -170,6 +197,12 @@ export interface RemittanceResponse {
   confirmedBy?: string | null;
   transferCompletedAt?: string | null;
   hasActiveBankAccount?: boolean | null;
+  createdAt?: string | null;
+  closingIssuedDate?: string | null;
+  closingId?: number | null;
+  closingReference?: string | null;
+  closingEligible?: boolean | null;
+  remainingPayableAmount?: number | null;
   invoiceDownloadUrl?: string | null;
   documentDownloadUrl?: string | null;
   documentId?: number | null;
@@ -206,6 +239,7 @@ export interface InvoiceQuery {
   panelId?: number | null;
   invoiceType?: string | null;
   status?: string | null;
+  paymentStatus?: string | null;
   recoveryStatus?: string | null;
   pairingStatus?: string | null;
   currencyId?: number | string | null;
@@ -233,6 +267,10 @@ export interface InvoiceResponse {
   invoiceNumber: string;
   invoiceType: string;
   invoiceDate: string;
+  invoiceAmount?: number | null;
+  settledAmount?: number | null;
+  remainingAmount?: number | null;
+  paymentStatus?: string | null;
   grossAmount?: number | null;
   actualAmount?: number | null;
   amount?: number | null;
@@ -328,10 +366,13 @@ export interface PremiumDebitNoteResponse extends PremiumDebitNotePreview {
   totalNetAmount: number;
   currencyCode: string;
   status: string;
+  paymentStatus?: string | null;
+  recoveryStatus?: string | null;
   label: string;
 }
 
 export interface NotificationItem {
+  closingId?: number | null;
   idNotification: number;
   notificationType: string;
   title: string;
@@ -383,6 +424,7 @@ export interface BankAccountSnapshot {
 }
 
 export interface DisbursementContext {
+  closingId?: number | null;
   remittanceId: number;
   contractId?: number | null;
   contractName?: string | null;
@@ -406,6 +448,30 @@ export interface DisbursementContext {
   defaultBankAccount?: BankAccountSnapshot | null;
   validationMessage?: string | null;
   closedAt?: string | null;
+}
+
+export interface ClosingDisbursementContext {
+  closingId: number;
+  closingReference: string;
+  closingDate: string;
+  status: string;
+  reinsurerId: number;
+  reinsurerName: string;
+  reinsurerAddress: string | null;
+  reinsurerCity: string | null;
+  reinsurerCountry: string | null;
+  currencyId: number;
+  currencyCode: string;
+  totalClosingAmount: number;
+  lines: RemittanceResponse[];
+  bankAccounts: BankAccountResponse[];
+  selectedBankAccount: BankAccountSnapshot | null;
+  canDownloadPdf: boolean;
+  pdfDownloadUrl: string | null;
+  disbursementId: number | null;
+  canStartPayment: boolean;
+  canConfirmTransfer: boolean;
+  validationMessage: string | null;
 }
 
 export interface DisbursementCommandResponse {
@@ -459,4 +525,8 @@ export interface CedentClosingResponse {
   status: string;
   closingInformation: string;
   operationDate: string | null;
+}
+
+export interface OutgoingClosingRequest {
+  remittanceIds: number[];
 }

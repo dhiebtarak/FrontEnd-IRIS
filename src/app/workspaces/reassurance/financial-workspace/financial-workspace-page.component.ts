@@ -14,11 +14,20 @@ import {
   BackendFileDownload,
   DisbursementCommandResponse,
   DisbursementContext,
+  ClosingDisbursementContext,
   DisbursementResponse,
   EligibleInvoice,
   InvoiceResponse,
   RemittanceResponse
 } from '../../../shared/models/financial-workflow.model';
+import {
+  getInvoicePaymentStatusClasses,
+  getInvoicePaymentStatusValue,
+  InvoicePaymentStatus,
+  normalizePaymentStatus
+} from '../../../shared/models/payment-status.util';
+import { DocumentAttachmentsComponent } from '../../../shared/components/document-attachments/document-attachments.component';
+import { DocumentContext } from '../../../shared/models/document.model';
 import { CounterpartiesService } from '../../../shared/services/counterparties.service';
 import { ContractsService } from '../../../shared/services/contracts.service';
 import { FinancialWorkflowService } from '../../../shared/services/financial-workflow.service';
@@ -46,7 +55,7 @@ enum RemittanceWorkflowStatus {
 @Component({
   selector: 'app-financial-workspace-page',
   standalone: true,
-  imports: [CommonModule, DatePipe, NgClass, ReactiveFormsModule],
+  imports: [CommonModule, DatePipe, NgClass, ReactiveFormsModule, DocumentAttachmentsComponent],
   templateUrl: './financial-workspace-page.component.html',
   styles: `:host { display: block; }`
 })
@@ -63,6 +72,10 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly receipts = signal<BankReceiptResponse[]>([]);
   readonly totalReceipts = signal(0);
   readonly remittances = signal<RemittanceResponse[]>([]);
+  readonly remittancePageNumber = signal(1);
+  readonly remittancePageSize = signal(20);
+  readonly remittanceTotalCount = signal(0);
+  readonly remittanceTotalPages = signal(0);
   readonly invoices = signal<InvoiceResponse[]>([]);
   readonly invoicePageNumber = signal(1);
   readonly invoicePageSize = signal(20);
@@ -87,6 +100,8 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly remittanceToConfirm = signal<RemittanceResponse | null>(null);
   readonly completedDisbursement = signal<DisbursementResponse | null>(null);
   readonly disbursementContext = signal<DisbursementContext | null>(null);
+  readonly closingContext = signal<ClosingDisbursementContext | null>(null);
+  readonly selectedClosingId = signal<number | null>(null);
   readonly isLoading = signal(false);
   readonly isBankAccountLoading = signal(false);
   readonly isReceiptBankAccountLoading = signal(false);
@@ -107,8 +122,11 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly receiptError = signal('');
   readonly remittanceError = signal('');
   readonly invoiceError = signal('');
+  readonly downloadingInvoiceIds = signal<Set<number>>(new Set());
   readonly isSubmitting = signal(false);
   readonly isDownloadingInvoice = signal(false);
+  readonly isGeneratingClosing = signal(false);
+  readonly isDownloadingClosing = signal(false);
   readonly isConfirmingTransfer = signal(false);
   readonly isLoadingContext = signal(false);
   readonly disbursementLoadError = signal('');
@@ -123,6 +141,16 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly unpairedReceipts = computed(() => this.receipts().filter(receipt => this.normalizeStatus(receipt.pairingStatus) === 'unpaired'));
   readonly pendingInvoices = computed(() => this.invoices().filter(invoice => this.normalizeStatus(invoice.status).includes('pending')));
   readonly readyRemittances = computed(() => this.remittances().filter(remittance => this.normalizeStatus(remittance.status).includes('ready')));
+  readonly selectedRemittanceIds = signal<Set<number>>(new Set());
+  readonly selectedRemittanceLock = computed(() => {
+    const selected = this.remittances().filter(remittance => this.selectedRemittanceIds().has(this.getRemittanceId(remittance)));
+    const first = selected[0];
+    return first ? { reinsurerId: this.getRemittanceReinsurerId(first), currencyCode: first.currencyCode } : null;
+  });
+  readonly selectedRemittanceRows = computed(() => this.remittances().filter(remittance => this.selectedRemittanceIds().has(this.getRemittanceId(remittance))));
+  readonly selectedRemittanceTotal = computed(() => this.selectedRemittanceRows()
+    .reduce((total, remittance) => total + (remittance.remainingPayableAmount ?? remittance.netPayableAmount ?? 0), 0));
+  readonly selectedRemittanceCurrency = computed(() => this.selectedRemittanceRows()[0]?.currencyCode ?? '');
   readonly activeBankAccounts = computed(() => this.bankAccounts().filter(account => account.isActive));
   readonly selectedDisbursementBankAccount = computed(() => {
     return this.activeBankAccounts().find(account => this.isValidDisbursementBankAccount(account)) ?? null;
@@ -207,6 +235,36 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
     return [...options.values()].sort((a, b) => a.label.localeCompare(b.label));
   });
+  readonly remittanceReinsurerOptions = computed(() => {
+    const options = new Map<number, { reinsurerId: number; label: string }>();
+    this.remittances().forEach(remittance => {
+      const reinsurerId = this.getRemittanceReinsurerId(remittance);
+      const label = this.getRemittanceReinsurerName(remittance);
+      if (!reinsurerId || !label || options.has(reinsurerId)) {
+        return;
+      }
+
+      options.set(reinsurerId, { reinsurerId, label });
+    });
+
+    return [...options.values()].sort((a, b) => a.label.localeCompare(b.label));
+  });
+  readonly remittanceContractOptions = computed(() => {
+    const options = new Map<number, { contractId: number; label: string }>();
+    this.remittances().forEach(remittance => {
+      const contractId = this.getPositiveId(remittance.contractId);
+      if (contractId == null || options.has(contractId)) {
+        return;
+      }
+
+      options.set(contractId, {
+        contractId,
+        label: this.getRemittanceContractDisplay(remittance)
+      });
+    });
+
+    return [...options.values()].sort((a, b) => a.label.localeCompare(b.label));
+  });
   readonly filteredEligibleInvoices = computed(() => {
     const query = this.normalizeSearchText(this.invoiceQuery());
 
@@ -231,6 +289,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     const invoiceId = this.getPositiveId(this.pairingForm.controls.invoiceId.value);
     return this.filteredEligibleInvoices().find(invoice => invoice.invoiceId === invoiceId) ?? null;
   }
+  readonly selectedReceiptDocumentContext = computed<DocumentContext | null>(() => this.receiptDocumentContext(this.selectedReceipt()));
   readonly proposedAllocationItems = computed(() => Object.entries(this.proposedAllocations())
     .map(([invoiceId, allocatedAmount]) => ({ invoiceId: Number(invoiceId), allocatedAmount }))
     .filter(item => Number.isInteger(item.invoiceId) && item.invoiceId > 0));
@@ -359,6 +418,18 @@ export class FinancialWorkspacePageComponent implements OnInit {
     to: new FormControl('', { nonNullable: true })
   });
 
+  readonly remittanceFilters = new FormGroup({
+    search: new FormControl('', { nonNullable: true }),
+    reinsurerSearch: new FormControl('', { nonNullable: true }),
+    reinsurerId: new FormControl<number | null>(null),
+    contractSearch: new FormControl('', { nonNullable: true }),
+    contractId: new FormControl<number | null>(null),
+    status: new FormControl('', { nonNullable: true }),
+    currencyId: new FormControl<number | null>(null),
+    from: new FormControl('', { nonNullable: true }),
+    to: new FormControl('', { nonNullable: true })
+  });
+
   ngOnInit(): void {
     this.route.data.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(data => {
       this.role.set(data['role'] === 'back-office' ? 'back-office' : 'finance');
@@ -396,6 +467,24 @@ export class FinancialWorkspacePageComponent implements OnInit {
       }
     });
 
+    merge(
+      this.remittanceFilters.controls.search.valueChanges.pipe(debounceTime(350), distinctUntilChanged()),
+      this.remittanceFilters.controls.reinsurerSearch.valueChanges.pipe(debounceTime(350), distinctUntilChanged()),
+      this.remittanceFilters.controls.reinsurerId.valueChanges,
+      this.remittanceFilters.controls.contractSearch.valueChanges.pipe(debounceTime(350), distinctUntilChanged()),
+      this.remittanceFilters.controls.contractId.valueChanges,
+      this.remittanceFilters.controls.status.valueChanges,
+      this.remittanceFilters.controls.currencyId.valueChanges,
+      this.remittanceFilters.controls.from.valueChanges,
+      this.remittanceFilters.controls.to.valueChanges
+    ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.page() === 'remittances') {
+        this.remittancePageNumber.set(1);
+        this.clearRemittanceSelection();
+        this.loadRemittances();
+      }
+    });
+
     this.bankAccountForm.controls.hasCorrespondentBank.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(hasCorrespondentBank => this.syncCorrespondentBankValidators(hasCorrespondentBank));
@@ -412,6 +501,11 @@ export class FinancialWorkspacePageComponent implements OnInit {
       this.pendingReceiptId.set(this.getPositiveId(params.get('receiptId')));
       this.pendingRemittanceRef.set(this.getPositiveId(params.get('remittanceRef')));
       this.pendingNotificationId.set(this.getPositiveId(params.get('notificationId')));
+      const closingId = this.getPositiveId(params.get('closingId'));
+      if (closingId != null && this.role() === 'finance' && this.page() === 'disbursements') {
+        this.pendingRemittanceRef.set(null);
+        this.openClosingDisbursementModal(closingId);
+      }
       this.openPendingReceiptIfAvailable();
       this.openPendingRemittanceIfAvailable();
     });
@@ -476,6 +570,9 @@ export class FinancialWorkspacePageComponent implements OnInit {
     }
 
     if (this.page() === 'disbursements' || this.page() === 'remittances') {
+      if (this.page() === 'remittances') {
+        this.loadCurrencies();
+      }
       this.loadRemittances();
       return;
     }
@@ -530,13 +627,42 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.isLoading.set(true);
     this.errorMessage.set('');
     this.remittanceError.set('');
-    const request = this.role() === 'finance'
-      ? this.workflowService.getDisbursementQueue()
-      : this.workflowService.getBackOfficeRemittances();
+    if (this.role() === 'finance') {
+      this.workflowService.getDisbursementQueue().subscribe({
+        next: remittances => {
+          this.remittances.set(Array.isArray(remittances) ? remittances : []);
+          this.remittanceTotalCount.set(remittances.length);
+          this.remittanceTotalPages.set(1);
+          this.isLoading.set(false);
+          this.openPendingRemittanceIfAvailable();
+        },
+        error: error => this.handleLoadError(error, 'Remittances could not be loaded.', this.remittanceError)
+      });
+      return;
+    }
 
-    request.subscribe({
-      next: remittances => {
-        this.remittances.set(Array.isArray(remittances) ? remittances : []);
+    this.workflowService.getBackOfficeRemittances({
+      search: this.remittanceFilters.controls.search.value,
+      reinsurer: this.remittanceFilters.controls.reinsurerSearch.value,
+      reinsurerId: this.remittanceFilters.controls.reinsurerId.value,
+      contract: this.remittanceFilters.controls.contractSearch.value,
+      contractId: this.remittanceFilters.controls.contractId.value,
+      status: this.remittanceFilters.controls.status.value,
+      currencyId: this.remittanceFilters.controls.currencyId.value,
+      dateFrom: this.remittanceFilters.controls.from.value,
+      dateTo: this.remittanceFilters.controls.to.value,
+      pageNumber: this.remittancePageNumber(),
+      pageSize: this.remittancePageSize(),
+      sortBy: 'createdAt',
+      sortDirection: 'desc'
+    }).subscribe({
+      next: response => {
+        const items = Array.isArray(response?.items) ? response.items : [];
+        this.remittances.set(items);
+        this.remittancePageNumber.set(response.pageNumber || 1);
+        this.remittancePageSize.set(response.pageSize || 20);
+        this.remittanceTotalCount.set(response.totalCount || 0);
+        this.remittanceTotalPages.set(response.totalPages || Math.ceil((response.totalCount || 0) / (response.pageSize || 20)));
         this.isLoading.set(false);
         this.openPendingRemittanceIfAvailable();
       },
@@ -561,7 +687,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
       contractId: this.invoiceFilters.controls.contractId.value,
       cedentId: this.invoiceFilters.controls.counterpartyId.value,
       invoiceType: this.invoiceFilters.controls.invoiceType.value,
-      pairingStatus: this.invoiceFilters.controls.recoveryStatus.value,
+      paymentStatus: this.invoiceFilters.controls.recoveryStatus.value,
       currencyId: this.invoiceFilters.controls.currencyId.value,
       dateFrom: this.invoiceFilters.controls.from.value,
       dateTo: this.invoiceFilters.controls.to.value,
@@ -573,7 +699,8 @@ export class FinancialWorkspacePageComponent implements OnInit {
         this.invoices.set(items.map(invoice => ({
           ...invoice,
           idInvoice: invoice.idInvoice || invoice.invoiceId || 0,
-          recoveryStatus: invoice.recoveryStatus?.trim() || 'Unpaired'
+          paymentStatus: invoice.paymentStatus?.trim() || invoice.recoveryStatus?.trim() || 'Unsettled',
+          recoveryStatus: invoice.recoveryStatus?.trim() || invoice.paymentStatus?.trim() || 'Unsettled'
         })));
         this.invoicePageNumber.set(response.pageNumber || 1);
         this.invoicePageSize.set(response.pageSize || 20);
@@ -617,6 +744,52 @@ export class FinancialWorkspacePageComponent implements OnInit {
     if (target === this.invoicePageNumber()) return;
     this.invoicePageNumber.set(target);
     this.loadInvoices();
+  }
+
+  hasRemittanceFilters(): boolean {
+    const filters = this.remittanceFilters.getRawValue();
+    return Boolean(
+      filters.search.trim() || filters.reinsurerSearch.trim() || filters.reinsurerId ||
+      filters.contractSearch.trim() || filters.contractId || filters.status.trim() ||
+      filters.currencyId || filters.from.trim() || filters.to.trim()
+    );
+  }
+
+  clearRemittanceFilters(): void {
+    this.remittanceFilters.reset({
+      search: '',
+      reinsurerSearch: '',
+      reinsurerId: null,
+      contractSearch: '',
+      contractId: null,
+      status: '',
+      currencyId: null,
+      from: '',
+      to: ''
+    });
+    this.remittancePageNumber.set(1);
+    this.clearRemittanceSelection();
+    this.loadRemittances();
+  }
+
+  goToRemittancePage(pageNumber: number): void {
+    const target = Math.min(Math.max(pageNumber, 1), Math.max(this.remittanceTotalPages(), 1));
+    if (target === this.remittancePageNumber()) return;
+    this.remittancePageNumber.set(target);
+    this.clearRemittanceSelection();
+    this.loadRemittances();
+  }
+
+  onRemittanceReinsurerFilterInput(): void {
+    const label = this.remittanceFilters.controls.reinsurerSearch.value.trim();
+    const match = this.remittanceReinsurerOptions().find(option => option.label === label);
+    this.remittanceFilters.controls.reinsurerId.setValue(match?.reinsurerId ?? null);
+  }
+
+  onRemittanceContractFilterInput(): void {
+    const label = this.remittanceFilters.controls.contractSearch.value.trim();
+    const match = this.remittanceContractOptions().find(option => option.label === label);
+    this.remittanceFilters.controls.contractId.setValue(match?.contractId ?? null);
   }
 
   loadCounterparties(): void {
@@ -1018,6 +1191,10 @@ export class FinancialWorkspacePageComponent implements OnInit {
     ).subscribe({
       next: context => {
         this.disbursementContextSubscription = null;
+        if (context.closingId != null && context.closingId > 0) {
+          this.openClosingDisbursementModal(context.closingId);
+          return;
+        }
         this.disbursementContext.set(context);
         const current = this.selectedRemittance();
         if (!current || this.getRemittanceId(current) !== remittanceRef) {
@@ -1095,6 +1272,11 @@ export class FinancialWorkspacePageComponent implements OnInit {
     });
   }
 
+  receiptDocumentContext(receipt: BankReceiptResponse | null): DocumentContext | null {
+    const receiptId = this.getPositiveId(receipt?.idBankReceipt);
+    return receiptId == null ? null : { scope: 'receipt', receiptId };
+  }
+
   retryEligibleInvoices(): void {
     this.loadEligibleInvoices();
   }
@@ -1134,6 +1316,12 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   openDisbursementModal(remittance: RemittanceResponse): void {
+    if (remittance.closingId != null && remittance.closingId > 0) {
+      this.openClosingDisbursementModal(remittance.closingId);
+      return;
+    }
+    this.selectedClosingId.set(null);
+    this.closingContext.set(null);
     const remittanceId = this.getRemittanceId(remittance);
     const selected = this.selectedRemittance();
     if (this.modal() === 'disbursement'
@@ -1158,6 +1346,73 @@ export class FinancialWorkspacePageComponent implements OnInit {
   openRemittanceConfirmation(remittance: RemittanceResponse): void {
     this.remittanceToConfirm.set(remittance);
     this.modal.set('remittance-confirmation');
+  }
+
+  openClosingDisbursementModal(closingId: number): void {
+    if (this.modal() === 'disbursement' && this.selectedClosingId() === closingId) {
+      return;
+    }
+    this.cancelDisbursementModalRequests();
+    this.selectedRemittance.set(null);
+    this.disbursementContext.set(null);
+    this.closingContext.set(null);
+    this.selectedClosingId.set(closingId);
+    this.disbursementLoadError.set('');
+    this.isTransferConfirmationOpen.set(false);
+    this.modal.set('disbursement');
+    this.isLoadingContext.set(true);
+    const subscription = this.workflowService.getClosingDisbursementContext(closingId).pipe(
+      take(1), takeUntilDestroyed(this.destroyRef), finalize(() => this.isLoadingContext.set(false))
+    ).subscribe({
+      next: context => {
+        if (this.selectedClosingId() !== closingId) return;
+        if (context.closingId !== closingId) {
+          this.disbursementLoadError.set('The backend returned a different closing.');
+          return;
+        }
+        this.closingContext.set(context);
+        const notificationId = this.pendingNotificationId();
+        if (notificationId != null) {
+          this.workflowService.markNotificationRead(notificationId).pipe(take(1)).subscribe({
+            next: () => this.pendingNotificationId.set(null),
+            error: error => this.errorMessage.set(this.getErrorMessage(error, 'Notification could not be marked as read.'))
+          });
+        }
+      },
+      error: error => this.disbursementLoadError.set(this.getErrorMessage(error, 'Closing context could not be loaded.'))
+    });
+    this.disbursementContextSubscription = subscription.closed ? null : subscription;
+  }
+
+  startClosingPayment(): void {
+    const context = this.closingContext();
+    if (!context?.canStartPayment || this.isSubmitting()) return;
+    this.submit(() => this.workflowService.startClosingDisbursement(context.closingId), 'Closing payment started.', updated => {
+      this.closingContext.set(updated);
+      this.loadRemittances();
+    }, false);
+  }
+
+  confirmClosingPayment(): void {
+    const context = this.closingContext();
+    if (!context?.canConfirmTransfer || this.isSubmitting()) return;
+    if (!window.confirm(`Confirm transfer of ${this.formatMoney(context.totalClosingAmount, context.currencyCode)} to ${context.reinsurerName}?`)) return;
+    this.submit(() => this.workflowService.confirmClosingTransfer(context.closingId), 'Closing payment confirmed.', updated => {
+      this.closingContext.set(updated);
+      this.loadRemittances();
+    }, false);
+  }
+
+  downloadFinanceClosing(): void {
+    const context = this.closingContext();
+    if (!context?.canDownloadPdf || this.isDownloadingClosing()) return;
+    this.isDownloadingClosing.set(true);
+    this.workflowService.downloadFinanceClosing(context.closingId).pipe(
+      take(1), takeUntilDestroyed(this.destroyRef), finalize(() => this.isDownloadingClosing.set(false))
+    ).subscribe({
+      next: file => this.saveDownloadedFile(file, `IRIS-${context.closingReference}.pdf`),
+      error: error => this.errorMessage.set(this.getErrorMessage(error, 'Closing PDF could not be downloaded.'))
+    });
   }
 
   closeModal(): void {
@@ -1185,6 +1440,8 @@ export class FinancialWorkspacePageComponent implements OnInit {
   forceCloseModal(): void {
     this.modal.set(null);
     this.cancelDisbursementModalRequests();
+    this.selectedClosingId.set(null);
+    this.closingContext.set(null);
     this.selectedReceipt.set(null);
     this.selectedRemittance.set(null);
     this.remittanceToConfirm.set(null);
@@ -1405,6 +1662,93 @@ export class FinancialWorkspacePageComponent implements OnInit {
     });
   }
 
+  isRemittanceSelected(remittance: RemittanceResponse): boolean {
+    return this.selectedRemittanceIds().has(this.getRemittanceId(remittance));
+  }
+
+  canSelectRemittance(remittance: RemittanceResponse): boolean {
+    if (!this.isOutgoingClosingEligible(remittance)) {
+      return false;
+    }
+
+    const lock = this.selectedRemittanceLock();
+    return !lock
+      || (lock.reinsurerId === this.getRemittanceReinsurerId(remittance) && lock.currencyCode === remittance.currencyCode);
+  }
+
+  getRemittanceSelectionDisabledReason(remittance: RemittanceResponse): string {
+    if (!this.isOutgoingClosingEligible(remittance)) {
+      if (remittance.closingId || remittance.closingReference || remittance.closingIssuedDate) {
+        return 'This row is already included in a closing.';
+      }
+
+      return 'This remittance is not eligible for closing.';
+    }
+
+    const lock = this.selectedRemittanceLock();
+    if (lock && (lock.reinsurerId !== this.getRemittanceReinsurerId(remittance) || lock.currencyCode !== remittance.currencyCode)) {
+      return 'Select remittances for the same reinsurer and currency only.';
+    }
+
+    return '';
+  }
+
+  toggleRemittanceSelection(remittance: RemittanceResponse, checked: boolean): void {
+    const remittanceId = this.getRemittanceId(remittance);
+    if (checked && !this.canSelectRemittance(remittance)) {
+      return;
+    }
+
+    this.selectedRemittanceIds.update(ids => {
+      const next = new Set(ids);
+      checked ? next.add(remittanceId) : next.delete(remittanceId);
+      return next;
+    });
+  }
+
+  clearRemittanceSelection(): void {
+    this.selectedRemittanceIds.set(new Set());
+  }
+
+  printSelectedClosing(): void {
+    const ids = [...this.selectedRemittanceIds()];
+    if (!ids.length || this.isGeneratingClosing()) {
+      return;
+    }
+
+    this.isGeneratingClosing.set(true);
+    this.errorMessage.set('');
+    this.successMessage.set('');
+    this.workflowService.createOutgoingClosing({ remittanceIds: ids }).pipe(
+      finalize(() => this.isGeneratingClosing.set(false))
+    ).subscribe({
+      next: file => {
+        this.saveDownloadedFile(file, 'outgoing-closing.pdf');
+        this.successMessage.set('Closing generated successfully.');
+        this.clearRemittanceSelection();
+        this.loadRemittances();
+        this.refreshNotifications();
+      },
+      error: (error: HttpErrorResponse) => this.setDownloadError(error, 'Closing could not be generated.')
+    });
+  }
+
+  downloadClosing(remittance: RemittanceResponse): void {
+    const closingId = this.getPositiveId(remittance.closingId);
+    if (closingId == null || this.isDownloadingClosing()) {
+      return;
+    }
+
+    this.isDownloadingClosing.set(true);
+    this.errorMessage.set('');
+    this.workflowService.downloadOutgoingClosing(closingId).pipe(
+      finalize(() => this.isDownloadingClosing.set(false))
+    ).subscribe({
+      next: file => this.saveDownloadedFile(file, `closing-${remittance.closingReference ?? closingId}.pdf`),
+      error: (error: HttpErrorResponse) => this.setDownloadError(error, 'Closing document could not be downloaded.')
+    });
+  }
+
   createDisbursement(): void {
     this.startDisbursement();
   }
@@ -1517,6 +1861,73 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.invoiceFilters.controls.counterpartyId.setValue(selected?.counterpartyId ?? null);
   }
 
+  isOutgoingClosingEligible(remittance: RemittanceResponse): boolean {
+    return remittance.closingEligible === true;
+  }
+
+  getRemittanceReference(remittance: RemittanceResponse): string {
+    return remittance.remittanceReference?.trim() || `REM-${remittance.remittanceRef}`;
+  }
+
+  getRemittanceReinsurerId(remittance: RemittanceResponse): number {
+    return remittance.reinsurerId ?? remittance.counterpartyId;
+  }
+
+  getRemittanceReinsurerName(remittance: RemittanceResponse): string {
+    return remittance.reinsurerName || remittance.counterpartyName;
+  }
+
+  getRemittanceContractDisplay(remittance: RemittanceResponse): string {
+    const name = remittance.contractName?.trim() || 'Not provided';
+    const umr = remittance.umr?.trim();
+    return umr ? `${umr} - ${name}` : name;
+  }
+
+  getRemittancePanelDisplay(remittance: RemittanceResponse): string {
+    return remittance.panelName?.trim() || (remittance.panelId == null ? 'Not linked' : `Panel ${remittance.panelId}`);
+  }
+
+  getRemittanceInvoiceDisplay(remittance: RemittanceResponse): string {
+    return remittance.invoiceNumber?.trim() || (remittance.invoiceId ? `Invoice ${remittance.invoiceId}` : 'Not provided');
+  }
+
+  getRemittanceReceiptDisplay(remittance: RemittanceResponse): string {
+    return remittance.receiptReference?.trim() || (remittance.receiptAllocationId ? `Allocation ${remittance.receiptAllocationId}` : 'Not provided');
+  }
+
+  downloadListedInvoice(invoice: InvoiceResponse): void {
+    const invoiceId = this.getPositiveId(invoice.idInvoice);
+    if (invoiceId == null) {
+      this.errorMessage.set('Invoice could not be downloaded: the invoice is missing a valid backend ID.');
+      return;
+    }
+    if (this.downloadingInvoiceIds().has(invoiceId)) return;
+    this.downloadingInvoiceIds.update(ids => new Set(ids).add(invoiceId));
+    this.errorMessage.set('');
+    this.workflowService.downloadPremiumDebitNote(invoiceId).pipe(
+      take(1),
+      takeUntilDestroyed(this.destroyRef),
+      finalize(() => this.downloadingInvoiceIds.update(ids => {
+        const remaining = new Set(ids);
+        remaining.delete(invoiceId);
+        return remaining;
+      }))
+    ).subscribe({
+      next: file => {
+        if (!this.isPdfDownload(file)) {
+          this.errorMessage.set('Invoice could not be downloaded: the backend response was not a PDF.');
+          return;
+        }
+        try {
+          this.saveDownloadedFile(file, 'invoice-' + invoiceId + '.pdf');
+        } catch {
+          this.errorMessage.set('Invoice could not be downloaded. Please retry.');
+        }
+      },
+      error: (error: HttpErrorResponse) => this.setDownloadError(error, 'Invoice could not be downloaded. Please retry.')
+    });
+  }
+
   getInvoiceLabel(invoice: InvoiceResponse): string {
     return invoice.label?.trim() || 'No label';
   }
@@ -1547,21 +1958,20 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   getInvoicePrimaryAmount(invoice: InvoiceResponse): number | null {
-    return invoice.grossAmount
+    return invoice.invoiceAmount
+      ?? invoice.grossAmount
       ?? invoice.actualAmount
       ?? invoice.amount
       ?? invoice.affectedAmount
       ?? invoice.netPremium;
   }
 
-  getInvoiceRecoveryStatus(invoice: InvoiceResponse): 'Paired' | 'Unpaired' {
-    return this.normalizeStatus(invoice.recoveryStatus ?? '') === 'paired' ? 'Paired' : 'Unpaired';
+  getInvoiceRecoveryStatus(invoice: InvoiceResponse): InvoicePaymentStatus {
+    return getInvoicePaymentStatusValue(invoice.paymentStatus ?? invoice.recoveryStatus) ?? 'Unsettled';
   }
 
   getPairingStatusClasses(status: string | null | undefined): string {
-    return this.normalizeStatus(status ?? '') === 'paired'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-      : 'border-amber-200 bg-amber-50 text-amber-800';
+    return getInvoicePaymentStatusClasses(status);
   }
 
   getEligibleInvoiceContractDisplay(invoice: EligibleInvoice): string {
@@ -1573,7 +1983,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   getEligibleInvoiceOutstandingAmount(invoice: EligibleInvoice): number {
-    return Math.max(invoice.outstandingAmount ?? 0, 0);
+    return Math.max(invoice.remainingAmount ?? invoice.outstandingAmount ?? 0, 0);
   }
 
   getEligibleInvoiceOutstandingAmountById(invoiceId: number): number {
@@ -1996,7 +2406,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     return this.disbursementContext()?.disbursementId ?? remittance.disbursementId ?? null;
   }
 
-  private getRemittanceId(remittance: RemittanceResponse): number {
+  getRemittanceId(remittance: RemittanceResponse): number {
     return remittance.remittanceId ?? remittance.remittanceRef;
   }
 
@@ -2012,6 +2422,25 @@ export class FinancialWorkspacePageComponent implements OnInit {
     anchor.download = file.fileName || fallbackFileName;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
+
+  private setDownloadError(error: HttpErrorResponse, fallback: string): void {
+    const body = error.error;
+    if (body instanceof Blob && body.size > 0) {
+      body.text().then(text => {
+        try {
+          const parsed = JSON.parse(text) as Record<string, unknown>;
+          const message = parsed['message'] ?? parsed['title'] ?? parsed['detail'];
+          const errors = Array.isArray(parsed['errors']) ? parsed['errors'].join(' ') : '';
+          this.errorMessage.set([message, errors].filter(value => typeof value === 'string' && value.trim()).join(' ') || fallback);
+        } catch {
+          this.errorMessage.set(text.trim() || fallback);
+        }
+      }).catch(() => this.errorMessage.set(this.getErrorMessage(error, fallback)));
+      return;
+    }
+
+    this.errorMessage.set(this.getErrorMessage(error, fallback));
   }
 
   private refreshNotifications(): void {
@@ -2232,7 +2661,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   normalizeStatus(status: string): string {
-    return status.trim().toLowerCase().replace(/[\s_-]+/g, '');
+    return normalizePaymentStatus(status);
   }
 
   private getRemittanceWorkflowStatus(status: string): RemittanceWorkflowStatus | string {

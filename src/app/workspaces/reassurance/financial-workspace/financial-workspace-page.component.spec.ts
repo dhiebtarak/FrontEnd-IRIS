@@ -2,14 +2,69 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
+import { ToastrService } from 'ngx-toastr';
 import { ContractsService } from '../../../shared/services/contracts.service';
 import { CounterpartiesService } from '../../../shared/services/counterparties.service';
 import { FinancialWorkflowService } from '../../../shared/services/financial-workflow.service';
+import { DocumentsService } from '../../../shared/services/documents.service';
 import { FinancialWorkspacePageComponent } from './financial-workspace-page.component';
 
 describe('FinancialWorkspacePageComponent', () => {
   let fixture: ComponentFixture<FinancialWorkspacePageComponent>;
   let routeData: BehaviorSubject<Record<string, unknown>>;
+
+  const batchContext = {
+    closingId: 1, closingReference: 'CL-1', closingDate: '2026-10-12T08:00:00Z', status: 'AwaitingFinanceDisbursement',
+    reinsurerId: 5, reinsurerName: 'AMI', reinsurerAddress: 'Tunis', reinsurerCity: 'Tunis', reinsurerCountry: 'Tunisia',
+    currencyId: 1, currencyCode: 'TND', totalClosingAmount: 1000, bankAccounts: [], selectedBankAccount: null,
+    lines: [{ remittanceRef: 6, remittanceReference: 'REM-6', contractName: 'Factory', umr: 'UMR-1', panelName: 'AMI panel', invoiceNumber: 'INV-1', receiptReference: 'ENC-1', netPayableAmount: 600 },
+      { remittanceRef: 7, remittanceReference: 'REM-7', contractName: 'Warehouse', umr: 'UMR-2', panelName: 'AMI panel 2', invoiceNumber: 'INV-2', receiptReference: 'ENC-2', netPayableAmount: 400 }],
+    canDownloadPdf: true, pdfDownloadUrl: '/api/finance/closings/1/pdf', disbursementId: null,
+    canStartPayment: true, canConfirmTransfer: false, validationMessage: null
+  };
+
+  it('opens the whole closing and never requests a remittance context for its ID', () => {
+    createComponent();
+    workflowService.getClosingDisbursementContext.mockReturnValue(of(batchContext));
+    fixture.componentInstance.openClosingDisbursementModal(1);
+    fixture.detectChanges();
+    expect(workflowService.getClosingDisbursementContext).toHaveBeenCalledWith(1);
+    expect(workflowService.getDisbursementContext).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.selectedRemittance()).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('REM-6');
+    expect(fixture.nativeElement.textContent).toContain('REM-7');
+    expect(fixture.nativeElement.textContent).toContain('UMR-2');
+    expect(fixture.nativeElement.textContent).toContain('CL-1');
+  });
+
+  it('processes the complete closing using its ID', () => {
+    createComponent();
+    workflowService.getClosingDisbursementContext.mockReturnValue(of(batchContext));
+    workflowService.startClosingDisbursement.mockReturnValue(of({ ...batchContext, status: 'PaymentInProgress', canStartPayment: false, canConfirmTransfer: true, disbursementId: 12 }));
+    workflowService.confirmClosingTransfer.mockReturnValue(of({ ...batchContext, status: 'Closed', canStartPayment: false, canConfirmTransfer: false, disbursementId: 12 }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fixture.componentInstance.openClosingDisbursementModal(1);
+    fixture.componentInstance.startClosingPayment();
+    fixture.componentInstance.confirmClosingPayment();
+    expect(workflowService.startClosingDisbursement).toHaveBeenCalledWith(1);
+    expect(workflowService.confirmClosingTransfer).toHaveBeenCalledWith(1);
+    expect(workflowService.startDisbursement).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.closingContext()?.status).toBe('Closed');
+  });
+
+  it('cancels stale closing requests and rejects mismatched closing responses', () => {
+    createComponent();
+    const first = new Subject<any>();
+    const second = new Subject<any>();
+    workflowService.getClosingDisbursementContext.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    fixture.componentInstance.openClosingDisbursementModal(1);
+    fixture.componentInstance.openClosingDisbursementModal(2);
+    first.next(batchContext);
+    expect(fixture.componentInstance.closingContext()).toBeNull();
+    second.next(batchContext);
+    expect(fixture.componentInstance.closingContext()).toBeNull();
+    expect(fixture.componentInstance.disbursementLoadError()).toContain('different closing');
+  });
   let workflowService: {
     getFinanceReceipts: ReturnType<typeof vi.fn>;
     getBackOfficeReceipts: ReturnType<typeof vi.fn>;
@@ -19,11 +74,16 @@ describe('FinancialWorkspacePageComponent', () => {
     allocateReceiptInvoices: ReturnType<typeof vi.fn>;
     getDisbursementQueue: ReturnType<typeof vi.fn>;
     getDisbursementContext: ReturnType<typeof vi.fn>;
+    getClosingDisbursementContext: ReturnType<typeof vi.fn>;
+    startClosingDisbursement: ReturnType<typeof vi.fn>;
+    confirmClosingTransfer: ReturnType<typeof vi.fn>;
+    downloadFinanceClosing: ReturnType<typeof vi.fn>;
     createDisbursement: ReturnType<typeof vi.fn>;
     startDisbursement: ReturnType<typeof vi.fn>;
     confirmTransfer: ReturnType<typeof vi.fn>;
     confirmRemittance: ReturnType<typeof vi.fn>;
     downloadDisbursementInvoice: ReturnType<typeof vi.fn>;
+    downloadPremiumDebitNote: ReturnType<typeof vi.fn>;
     downloadDocument: ReturnType<typeof vi.fn>;
     downloadDocumentUrl: ReturnType<typeof vi.fn>;
     getBackOfficeRemittances: ReturnType<typeof vi.fn>;
@@ -41,6 +101,8 @@ describe('FinancialWorkspacePageComponent', () => {
   let contractsService: {
     getCurrencies: ReturnType<typeof vi.fn>;
   };
+  let documentsService: Pick<DocumentsService, 'getDocuments' | 'uploadDocument' | 'downloadDocument' | 'archiveDocument'>;
+  let toastr: Pick<ToastrService, 'success' | 'error'>;
   let router: {
     navigate: ReturnType<typeof vi.fn>;
   };
@@ -83,14 +145,19 @@ describe('FinancialWorkspacePageComponent', () => {
       allocateReceiptInvoices: vi.fn().mockReturnValue(of({})),
       getDisbursementQueue: vi.fn().mockReturnValue(of([])),
       getDisbursementContext: vi.fn().mockReturnValue(of({})),
+      getClosingDisbursementContext: vi.fn().mockReturnValue(of({})),
+      startClosingDisbursement: vi.fn().mockReturnValue(of({})),
+      confirmClosingTransfer: vi.fn().mockReturnValue(of({})),
+      downloadFinanceClosing: vi.fn().mockReturnValue(of({})),
       createDisbursement: vi.fn().mockReturnValue(of({})),
       startDisbursement: vi.fn().mockReturnValue(of({})),
       confirmTransfer: vi.fn().mockReturnValue(of({})),
       confirmRemittance: vi.fn().mockReturnValue(of({})),
+      downloadPremiumDebitNote: vi.fn(),
       downloadDisbursementInvoice: vi.fn().mockReturnValue(of({ blob: new Blob(['pdf'], { type: 'application/pdf' }), fileName: 'invoice.pdf', contentType: 'application/pdf' })),
       downloadDocument: vi.fn().mockReturnValue(of({ blob: new Blob(['pdf'], { type: 'application/pdf' }), fileName: 'invoice.pdf', contentType: 'application/pdf' })),
       downloadDocumentUrl: vi.fn().mockReturnValue(of({ blob: new Blob(['pdf'], { type: 'application/pdf' }), fileName: 'invoice.pdf', contentType: 'application/pdf' })),
-      getBackOfficeRemittances: vi.fn().mockReturnValue(of([])),
+      getBackOfficeRemittances: vi.fn().mockReturnValue(of({ items: [], pageNumber: 1, pageSize: 20, totalCount: 0, totalPages: 0 })),
       getInvoices: vi.fn().mockReturnValue(of({ items: [], pageNumber: 1, pageSize: 20, totalCount: 0, totalPages: 0 })),
       getBankAccounts: vi.fn().mockReturnValue(of([])),
       createBankAccount: vi.fn().mockReturnValue(of({})),
@@ -134,6 +201,13 @@ describe('FinancialWorkspacePageComponent', () => {
         { id: 3, code: 'USD', name: 'US Dollar', symbol: '$', decimalPlaces: 2, isDefault: false }
       ]))
     };
+    documentsService = {
+      getDocuments: vi.fn().mockReturnValue(of([])),
+      uploadDocument: vi.fn().mockReturnValue(of({})),
+      downloadDocument: vi.fn().mockReturnValue(of({ blob: new Blob(['file']), fileName: 'receipt.pdf' })),
+      archiveDocument: vi.fn().mockReturnValue(of(void 0))
+    };
+    toastr = { success: vi.fn(), error: vi.fn() };
     router = {
       navigate: vi.fn().mockResolvedValue(true)
     };
@@ -145,7 +219,9 @@ describe('FinancialWorkspacePageComponent', () => {
         { provide: Router, useValue: router },
         { provide: FinancialWorkflowService, useValue: workflowService },
         { provide: CounterpartiesService, useValue: counterpartiesService },
-        { provide: ContractsService, useValue: contractsService }
+        { provide: ContractsService, useValue: contractsService },
+        { provide: DocumentsService, useValue: documentsService },
+        { provide: ToastrService, useValue: toastr }
       ]
     }).compileComponents();
   });
@@ -154,6 +230,57 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture = TestBed.createComponent(FinancialWorkspacePageComponent);
     fixture.detectChanges();
   }
+
+  function getButtonsByText(text: string): HTMLButtonElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('button'))
+      .filter((button): button is HTMLButtonElement => button instanceof HTMLButtonElement && button.textContent?.trim() === text);
+  }
+
+  it('downloads the selected invoice and only disables its row without navigating', () => {
+    routeData.next({ role: 'back-office', page: 'invoices' });
+    createComponent();
+    const component = fixture.componentInstance;
+    const first = { idInvoice: 91, invoiceNumber: 'INV-91', invoiceDate: '2026-10-13' } as any;
+    const second = { ...first, idInvoice: 92, invoiceNumber: 'INV-92' };
+    component.invoices.set([first, second]);
+    const request = new Subject<any>();
+    workflowService.downloadPremiumDebitNote.mockReturnValue(request);
+    const save = vi.spyOn(component as any, 'saveDownloadedFile').mockImplementation(() => {});
+    fixture.detectChanges();
+    getButtonsByText('Download Invoice')[0].click();
+    component.downloadListedInvoice(first);
+    fixture.detectChanges();
+    expect(workflowService.downloadPremiumDebitNote).toHaveBeenCalledExactlyOnceWith(91);
+    expect(getButtonsByText('Downloading...')[0].disabled).toBe(true);
+    expect(getButtonsByText('Download Invoice')[0].disabled).toBe(false);
+    const file = { blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), fileName: 'Backend-Invoice-91.pdf', contentType: 'application/pdf' };
+    request.next(file);
+    fixture.detectChanges();
+    expect(save).toHaveBeenCalledWith(file, 'invoice-91.pdf');
+    expect(component.downloadingInvoiceIds().size).toBe(0);
+    expect(getButtonsByText('Download Invoice')).toHaveLength(2);
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('shows download failures without hiding invoices and re-enables the row', () => {
+    routeData.next({ role: 'back-office', page: 'invoices' });
+    createComponent();
+    const component = fixture.componentInstance;
+    const invoice = { idInvoice: 91, invoiceNumber: 'INV-91' } as any;
+    component.invoices.set([invoice]);
+    workflowService.downloadPremiumDebitNote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    component.downloadListedInvoice(invoice);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('PDF generation failed on the backend.');
+    expect(component.invoices()).toEqual([invoice]);
+    expect(getButtonsByText('Download Invoice')[0].disabled).toBe(false);
+    const save = vi.spyOn(component as any, 'saveDownloadedFile');
+    workflowService.downloadPremiumDebitNote.mockReturnValue(of({ blob: new Blob(['error'], { type: 'application/json' }), contentType: 'application/json' }));
+    component.downloadListedInvoice(invoice);
+    expect(component.errorMessage()).toContain('not a PDF');
+    expect(save).not.toHaveBeenCalled();
+    expect(component.downloadingInvoiceIds().size).toBe(0);
+  });
 
   it('maps the paged Finance receipt response into array state for filters and @for', () => {
     routeData.next({ role: 'finance', page: 'receipts' });
@@ -167,6 +294,59 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(fixture.componentInstance.totalReceipts()).toBe(1);
     expect(fixture.componentInstance.unpairedReceipts().length).toBe(1);
     expect(fixture.nativeElement.textContent).toContain('BR-10');
+  });
+
+  it('shows Mister Clippy for Finance receipts with the selected receipt ID', () => {
+    routeData.next({ role: 'finance', page: 'receipts' });
+    createComponent();
+
+    getButtonsByText('Documents')[0].click();
+    fixture.detectChanges();
+
+    expect(documentsService.getDocuments).toHaveBeenCalledWith({ scope: 'receipt', receiptId: 10 });
+    expect(fixture.nativeElement.textContent).toContain('Encaissement attachments');
+    expect(fixture.nativeElement.textContent).toContain('Attach file');
+  });
+
+  it('opens receipt attachments read-only for Back Officer pairing', () => {
+    workflowService.getBackOfficeReceipts.mockReturnValue(of({
+      items: [{
+        idBankReceipt: 44,
+        bankAccountId: 3,
+        counterpartyId: 7,
+        counterpartyName: 'Cedent',
+        receptionDate: '2026-09-11',
+        operationDate: '2026-09-11',
+        amountReceived: 1000,
+        currencyId: 1,
+        currencyCode: 'USD',
+        appliedExchangeRate: null,
+        availableAmount: 1000,
+        allocatedAmount: 0,
+        pairingStatus: 'Unpaired',
+        settlementMethod: 'BANK_TRANSFER',
+        collectionType: 'PREMIUM',
+        bankReference: 'BR-44',
+        settlementLabel: 'Premium'
+      }],
+      pageNumber: 1,
+      pageSize: 25,
+      totalCount: 1,
+      totalPages: 1
+    }));
+    routeData.next({ role: 'back-office', page: 'receipts' });
+    createComponent();
+
+    getButtonsByText('Pair Encaissement')[0].click();
+    fixture.detectChanges();
+    getButtonsByText('Documents').at(-1)?.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selectedReceiptDocumentContext()).toEqual({ scope: 'receipt', receiptId: 44 });
+    expect(documentsService.getDocuments).toHaveBeenCalledWith({ scope: 'receipt', receiptId: 44 });
+    expect(fixture.nativeElement.textContent).toContain('Encaissement attachments');
+    expect(fixture.nativeElement.textContent).not.toContain('Attach file');
+    expect(fixture.nativeElement.textContent).not.toContain('Archive');
   });
 
   it('does not call the Back Officer invoices endpoint for the Finance dashboard', () => {
@@ -197,7 +377,7 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(workflowService.getInvoices).toHaveBeenCalledTimes(1);
   });
 
-  it('loads invoices from the paged items envelope and defaults null pairing status to Unpaired', () => {
+  it('loads invoices from the paged items envelope and defaults null payment status to Unsettled', () => {
     workflowService.getInvoices.mockReturnValueOnce(of({
       items: [{
         idInvoice: 14,
@@ -226,7 +406,7 @@ describe('FinancialWorkspacePageComponent', () => {
     createComponent();
 
     expect(fixture.componentInstance.invoices()).toHaveLength(1);
-    expect(fixture.componentInstance.invoices()[0].recoveryStatus).toBe('Unpaired');
+    expect(fixture.componentInstance.invoices()[0].recoveryStatus).toBe('Unsettled');
     expect(fixture.nativeElement.textContent).toContain('INV-2026-000014');
     expect(fixture.nativeElement.textContent).toContain('Cedent');
     expect(fixture.nativeElement.textContent).not.toContain('No invoices found');
@@ -631,7 +811,8 @@ describe('FinancialWorkspacePageComponent', () => {
           alreadyPairedAmount: 0,
           outstandingAmount: 50000,
           currencyCode: 'TND',
-          recoveryStatus: 'Unpaired'
+          paymentStatus: 'Unsettled',
+          recoveryStatus: 'Unsettled'
         }
       ]
     }));
@@ -739,7 +920,8 @@ describe('FinancialWorkspacePageComponent', () => {
             alreadyPairedAmount: 0,
             outstandingAmount: 50000,
             currencyCode: 'TND',
-            recoveryStatus: 'Unpaired'
+            paymentStatus: 'Unsettled',
+            recoveryStatus: 'Unsettled'
           }
         ]
       }));
@@ -835,7 +1017,8 @@ describe('FinancialWorkspacePageComponent', () => {
           alreadyPairedAmount: 0,
           outstandingAmount: 15000,
           currencyCode: 'TND',
-          recoveryStatus: 'Unpaired'
+          paymentStatus: 'Unsettled',
+          recoveryStatus: 'Unsettled'
         }
       ]
     }));
@@ -908,7 +1091,8 @@ describe('FinancialWorkspacePageComponent', () => {
           alreadyPairedAmount: 0,
           outstandingAmount: 15000,
           currencyCode: 'TND',
-          recoveryStatus: 'Unpaired'
+          paymentStatus: 'Unsettled',
+          recoveryStatus: 'Unsettled'
         } as never
       ]
     }));
@@ -942,8 +1126,8 @@ describe('FinancialWorkspacePageComponent', () => {
   });
 
   it('confirms a Back Officer remittance without opening the invoice form or sending invoice fields', () => {
-    workflowService.getBackOfficeRemittances.mockReturnValue(of([
-      {
+    workflowService.getBackOfficeRemittances.mockReturnValue(of({
+      items: [{
         remittanceRef: 77,
         receiptAllocationId: 10,
         disbursementId: null,
@@ -956,8 +1140,12 @@ describe('FinancialWorkspacePageComponent', () => {
         currencyCode: 'TND',
         status: 'ReadyForDisbursement',
         description: 'Ready remittance'
-      }
-    ]));
+      }],
+      pageNumber: 1,
+      pageSize: 20,
+      totalCount: 1,
+      totalPages: 1
+    }));
     workflowService.confirmRemittance.mockReturnValue(of({
       remittanceRef: 77,
       receiptAllocationId: 10,

@@ -22,8 +22,8 @@ export class DocumentsService {
     return this.httpClient.post<DocumentListItem>(this.getContextDocumentsUrl(context), request);
   }
 
-  downloadDocument(idDocument: number): Observable<DocumentDownload> {
-    return this.httpClient.get(`${this.baseUrl}/documents/${idDocument}/download`, {
+  downloadDocument(idDocument: number, context?: DocumentContext): Observable<DocumentDownload> {
+    return this.httpClient.get(this.getDocumentDownloadUrl(idDocument, context), {
       observe: 'response',
       responseType: 'blob'
     }).pipe(
@@ -34,16 +34,36 @@ export class DocumentsService {
     );
   }
 
-  archiveDocument(documentId: number): Observable<void> {
-    return this.httpClient.delete<void>(`${this.baseUrl}/documents/${documentId}`);
+  archiveDocument(documentId: number, context?: DocumentContext): Observable<void> {
+    return this.httpClient.delete<void>(this.getDocumentArchiveUrl(documentId, context));
   }
 
   private getContextDocumentsUrl(context: DocumentContext): string {
+    if (context.scope === 'receipt') {
+      return `${this.baseUrl}/bank-receipts/${context.receiptId}/attachments`;
+    }
+
     if (context.scope === 'placement') {
       return `${this.baseUrl}/contracts/${context.contractId}/panels/${context.panelId}/documents`;
     }
 
     return `${this.baseUrl}/contracts/${context.contractId}/documents`;
+  }
+
+  private getDocumentDownloadUrl(documentId: number, context?: DocumentContext): string {
+    if (context?.scope === 'receipt') {
+      return `${this.baseUrl}/bank-receipts/${context.receiptId}/attachments/${documentId}/download`;
+    }
+
+    return `${this.baseUrl}/documents/${documentId}/download`;
+  }
+
+  private getDocumentArchiveUrl(documentId: number, context?: DocumentContext): string {
+    if (context?.scope === 'receipt') {
+      return `${this.baseUrl}/bank-receipts/${context.receiptId}/attachments/${documentId}`;
+    }
+
+    return `${this.baseUrl}/documents/${documentId}`;
   }
 
   private getFilenameFromContentDisposition(contentDisposition: string | null): string | null {

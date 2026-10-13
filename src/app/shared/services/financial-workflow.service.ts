@@ -11,6 +11,7 @@ import {
   CedentClosingResponse,
   DisbursementCommandResponse,
   DisbursementContext,
+  ClosingDisbursementContext,
   DisbursementQueueItem,
   DisbursementRequest,
   DisbursementResponse,
@@ -27,6 +28,7 @@ import {
   InvoiceRequest,
   InvoiceResponse,
   NotificationItem,
+  OutgoingClosingRequest,
   PairEncaissementBatchRequest,
   PairInvoiceAllocationBatchRequest,
   PremiumDebitNoteAllocation,
@@ -37,6 +39,7 @@ import {
   PairInvoiceAllocationRequest,
   PagedResponse,
   RemittanceResponse,
+  RemittanceQuery,
   StartDisbursementResponse
 } from '../models/financial-workflow.model';
 
@@ -196,12 +199,51 @@ export class FinancialWorkflowService {
     );
   }
 
-  getBackOfficeRemittances(): Observable<RemittanceResponse[]> {
-    return this.httpClient.get<RemittanceResponse[]>(`${this.baseUrl}/back-office/remittances`);
+  getBackOfficeRemittances(query: RemittanceQuery = {}): Observable<PagedResponse<RemittanceResponse>> {
+    let params = new HttpParams();
+    params = this.setText(params, 'search', query.search);
+    params = this.setText(params, 'reinsurer', query.reinsurer);
+    params = this.setNumber(params, 'reinsurerId', query.reinsurerId);
+    params = this.setText(params, 'contract', query.contract);
+    params = this.setText(params, 'umr', query.umr);
+    params = this.setNumber(params, 'contractId', query.contractId);
+    params = this.setText(params, 'status', query.status);
+    params = this.setText(params, 'currency', query.currency);
+    params = this.setNumber(params, 'currencyId', query.currencyId);
+    params = this.setText(params, 'dateFrom', query.dateFrom);
+    params = this.setText(params, 'dateTo', query.dateTo);
+    params = this.setNumber(params, 'pageNumber', query.pageNumber ?? 1);
+    params = this.setNumber(params, 'pageSize', query.pageSize ?? 20);
+    params = this.setText(params, 'sortBy', query.sortBy);
+    params = this.setText(params, 'sortDirection', query.sortDirection);
+
+    return this.httpClient.get<PagedResponse<unknown>>(`${this.baseUrl}/back-office/remittances`, { params }).pipe(
+      map(response => ({
+        items: Array.isArray(response?.items) ? response.items.map(item => this.normalizeRemittance(item)) : [],
+        pageNumber: response?.pageNumber ?? response?.page ?? 1,
+        pageSize: response?.pageSize ?? 20,
+        totalCount: response?.totalCount ?? 0,
+        totalPages: response?.totalPages ?? Math.ceil((response?.totalCount ?? 0) / (response?.pageSize ?? 20))
+      }))
+    );
   }
 
   confirmRemittance(remittanceRef: number): Observable<RemittanceResponse> {
     return this.httpClient.post<RemittanceResponse>(`${this.baseUrl}/back-office/remittances/${remittanceRef}/confirm`, {});
+  }
+
+  createOutgoingClosing(request: OutgoingClosingRequest): Observable<BackendFileDownload> {
+    return this.httpClient.post(`${this.baseUrl}/back-office/remittances/closings`, request, {
+      observe: 'response',
+      responseType: 'blob'
+    }).pipe(map(response => this.mapFileDownload(response)));
+  }
+
+  downloadOutgoingClosing(closingId: number): Observable<BackendFileDownload> {
+    return this.httpClient.get(`${this.baseUrl}/back-office/remittances/closings/${closingId}/document`, {
+      observe: 'response',
+      responseType: 'blob'
+    }).pipe(map(response => this.mapFileDownload(response)));
   }
 
   getDisbursementQueue(): Observable<DisbursementQueueItem[]> {
@@ -214,6 +256,24 @@ export class FinancialWorkflowService {
     return this.httpClient.get<unknown>(`${this.baseUrl}/finance/remittances/${remittanceRef}/disbursement-context`).pipe(
       map(response => this.normalizeDisbursementContext(response, remittanceRef))
     );
+  }
+
+  getClosingDisbursementContext(closingId: number): Observable<ClosingDisbursementContext> {
+    return this.httpClient.get<ClosingDisbursementContext>(`${this.baseUrl}/finance/closings/${closingId}/disbursement-context`);
+  }
+
+  startClosingDisbursement(closingId: number): Observable<ClosingDisbursementContext> {
+    return this.httpClient.post<ClosingDisbursementContext>(`${this.baseUrl}/finance/closings/${closingId}/start-disbursement`, {});
+  }
+
+  confirmClosingTransfer(closingId: number): Observable<ClosingDisbursementContext> {
+    return this.httpClient.post<ClosingDisbursementContext>(`${this.baseUrl}/finance/closings/${closingId}/confirm-transfer`, {});
+  }
+
+  downloadFinanceClosing(closingId: number): Observable<BackendFileDownload> {
+    return this.httpClient.get(`${this.baseUrl}/finance/closings/${closingId}/pdf`, {
+      observe: 'response', responseType: 'blob'
+    }).pipe(map(response => this.mapFileDownload(response)));
   }
 
   createDisbursement(request: DisbursementRequest): Observable<DisbursementResponse> {
@@ -265,7 +325,7 @@ export class FinancialWorkflowService {
     params = this.setNumber(params, 'panelId', query.panelId);
     params = this.setText(params, 'invoiceType', query.invoiceType);
     params = this.setText(params, 'status', query.status);
-    params = this.setText(params, 'pairingStatus', query.pairingStatus ?? query.recoveryStatus);
+    params = this.setText(params, 'paymentStatus', query.paymentStatus ?? query.recoveryStatus ?? query.pairingStatus);
     params = this.setNumber(params, 'currencyId', typeof query.currencyId === 'number' ? query.currencyId : null);
     params = this.setText(params, 'dateFrom', query.dateFrom ?? query.from);
     params = this.setText(params, 'dateTo', query.dateTo ?? query.to);
@@ -513,14 +573,19 @@ export class FinancialWorkflowService {
       receiptAllocationId: this.toNullableNumber(record['receiptAllocationId'] ?? record['ReceiptAllocationId']),
       disbursementId: this.toNullableNumber(record['disbursementId'] ?? record['DisbursementId']),
       invoiceId: this.toNullableNumber(record['invoiceId'] ?? record['InvoiceId']),
+      invoiceNumber: this.toNullableText(record['invoiceNumber'] ?? record['InvoiceNumber']),
       invoiceDownloadUrl: this.toNullableText(record['invoiceDownloadUrl'] ?? record['InvoiceDownloadUrl'] ?? record['downloadUrl'] ?? record['DownloadUrl']),
       panelId: this.toNullableNumber(record['panelId'] ?? record['PanelId']),
+      panelName: this.toNullableText(record['panelName'] ?? record['PanelName']),
       contractId: this.toNullableNumber(record['contractId'] ?? record['ContractId']),
       contractName: this.toNullableText(record['contractName'] ?? record['ContractName']),
       umr: this.toNullableText(record['umr'] ?? record['Umr']),
       cedentName: this.toNullableText(record['cedentName'] ?? record['CedentName']),
       counterpartyId: this.toRequiredNumber(record['counterpartyId'] ?? record['CounterpartyId'] ?? record['reinsurerId'] ?? record['ReinsurerId']),
       counterpartyName,
+      reinsurerId: this.toNullableNumber(record['reinsurerId'] ?? record['ReinsurerId'] ?? record['counterpartyId'] ?? record['CounterpartyId']),
+      reinsurerName: this.toNullableText(record['reinsurerName'] ?? record['ReinsurerName'] ?? record['counterpartyName'] ?? record['CounterpartyName']),
+      receiptReference: this.toNullableText(record['receiptReference'] ?? record['ReceiptReference']),
       grossPremium: this.toNullableNumber(record['grossPremium'] ?? record['GrossPremium']),
       otherDeductions: this.toNullableNumber(record['otherDeductions'] ?? record['OtherDeductions']),
       netPremiumDue: this.toNullableNumber(record['netPremiumDue'] ?? record['NetPremiumDue']),
@@ -531,6 +596,12 @@ export class FinancialWorkflowService {
       description: this.toAnyText(record['description'] ?? record['Description']),
       confirmedAt: this.toNullableText(record['confirmedAt'] ?? record['ConfirmedAt']),
       confirmedBy: this.toNullableText(record['confirmedBy'] ?? record['ConfirmedBy']),
+      createdAt: this.toNullableText(record['createdAt'] ?? record['CreatedAt']),
+      closingIssuedDate: this.toNullableText(record['closingIssuedDate'] ?? record['ClosingIssuedDate']),
+      closingId: this.toNullableNumber(record['closingId'] ?? record['ClosingId']),
+      closingReference: this.toNullableText(record['closingReference'] ?? record['ClosingReference']),
+      closingEligible: typeof record['closingEligible'] === 'boolean' ? record['closingEligible'] as boolean : null,
+      remainingPayableAmount: this.toNullableNumber(record['remainingPayableAmount'] ?? record['RemainingPayableAmount']),
       transferCompletedAt: this.toNullableText(record['transferCompletedAt'] ?? record['TransferCompletedAt'] ?? record['closedAt'] ?? record['ClosedAt']),
       hasActiveBankAccount: typeof record['hasActiveBankAccount'] === 'boolean' ? record['hasActiveBankAccount'] as boolean : null
     };
@@ -598,11 +669,15 @@ export class FinancialWorkflowService {
       counterpartyName: this.toNullableText(record['counterpartyName'] ?? record['CounterpartyName'] ?? record['reinsurerName'] ?? record['ReinsurerName']),
       invoiceType: this.toNullableText(record['invoiceType'] ?? record['InvoiceType']),
       invoiceDate: this.toNullableText(record['invoiceDate'] ?? record['InvoiceDate']),
-      grossAmount: this.toNumber(record['grossAmount'] ?? record['GrossAmount'] ?? record['actualAmount'] ?? record['ActualAmount'] ?? record['amount'] ?? record['Amount']) ?? 0,
-      alreadyPairedAmount: this.toNumber(record['alreadyPairedAmount'] ?? record['AlreadyPairedAmount'] ?? record['pairedAmount'] ?? record['PairedAmount']) ?? 0,
+      invoiceAmount: this.toNullableNumber(record['invoiceAmount'] ?? record['InvoiceAmount'] ?? record['grossAmount'] ?? record['GrossAmount'] ?? record['actualAmount'] ?? record['ActualAmount'] ?? record['amount'] ?? record['Amount']),
+      settledAmount: this.toNullableNumber(record['settledAmount'] ?? record['SettledAmount'] ?? record['alreadyPairedAmount'] ?? record['AlreadyPairedAmount'] ?? record['pairedAmount'] ?? record['PairedAmount']),
+      remainingAmount: this.toNullableNumber(record['remainingAmount'] ?? record['RemainingAmount'] ?? record['outstandingAmount'] ?? record['OutstandingAmount']),
+      paymentStatus: this.toNullableText(record['paymentStatus'] ?? record['PaymentStatus'] ?? record['recoveryStatus'] ?? record['RecoveryStatus']),
+      grossAmount: this.toNumber(record['grossAmount'] ?? record['GrossAmount'] ?? record['invoiceAmount'] ?? record['InvoiceAmount'] ?? record['actualAmount'] ?? record['ActualAmount'] ?? record['amount'] ?? record['Amount']) ?? 0,
+      alreadyPairedAmount: this.toNumber(record['alreadyPairedAmount'] ?? record['AlreadyPairedAmount'] ?? record['settledAmount'] ?? record['SettledAmount'] ?? record['pairedAmount'] ?? record['PairedAmount']) ?? 0,
       outstandingAmount: this.toNumber(record['outstandingAmount'] ?? record['OutstandingAmount'] ?? record['remainingAmount'] ?? record['RemainingAmount']) ?? 0,
       currencyCode: this.toAnyText(record['currencyCode'] ?? record['CurrencyCode'] ?? record['currency'] ?? record['Currency']),
-      recoveryStatus: this.toNullableText(record['recoveryStatus'] ?? record['RecoveryStatus'])
+      recoveryStatus: this.toNullableText(record['recoveryStatus'] ?? record['RecoveryStatus'] ?? record['paymentStatus'] ?? record['PaymentStatus'])
     };
   }
 
@@ -622,7 +697,11 @@ export class FinancialWorkflowService {
       invoiceNumber: this.toAnyText(record['invoiceNumber'] ?? record['InvoiceNumber']) || `INV-${idInvoice}`,
       invoiceType: this.toAnyText(record['invoiceType'] ?? record['InvoiceType']),
       invoiceDate: this.toAnyText(record['invoiceDate'] ?? record['InvoiceDate']),
-      grossAmount: this.toNullableNumber(record['grossAmount'] ?? record['GrossAmount']),
+      invoiceAmount: this.toNullableNumber(record['invoiceAmount'] ?? record['InvoiceAmount'] ?? record['grossAmount'] ?? record['GrossAmount']),
+      settledAmount: this.toNullableNumber(record['settledAmount'] ?? record['SettledAmount'] ?? record['pairedAmount'] ?? record['PairedAmount']),
+      remainingAmount: this.toNullableNumber(record['remainingAmount'] ?? record['RemainingAmount'] ?? record['outstandingAmount'] ?? record['OutstandingAmount']),
+      paymentStatus: this.toNullableText(record['paymentStatus'] ?? record['PaymentStatus'] ?? record['recoveryStatus'] ?? record['RecoveryStatus']),
+      grossAmount: this.toNullableNumber(record['grossAmount'] ?? record['GrossAmount'] ?? record['invoiceAmount'] ?? record['InvoiceAmount']),
       actualAmount: this.toNullableNumber(record['actualAmount'] ?? record['ActualAmount']),
       amount: this.toNullableNumber(record['amount'] ?? record['Amount']),
       netPremium: this.toNullableNumber(record['netPremium'] ?? record['NetPremium'] ?? record['netAmount'] ?? record['NetAmount']),
@@ -636,7 +715,7 @@ export class FinancialWorkflowService {
       cedentName: this.toNullableText(record['cedentName'] ?? record['CedentName']),
       counterpartyName: this.toNullableText(record['counterpartyName'] ?? record['CounterpartyName']),
       reinsurerName: this.toNullableText(record['reinsurerName'] ?? record['ReinsurerName']),
-      recoveryStatus: this.toNullableText(record['recoveryStatus'] ?? record['RecoveryStatus']),
+      recoveryStatus: this.toNullableText(record['recoveryStatus'] ?? record['RecoveryStatus'] ?? record['paymentStatus'] ?? record['PaymentStatus']),
       status: this.toAnyText(record['status'] ?? record['Status']),
       label: this.toAnyText(record['label'] ?? record['Label'])
     };
@@ -746,6 +825,8 @@ export class FinancialWorkflowService {
       totalNetAmount: this.toNumber(record['totalNetAmount'] ?? record['TotalNetAmount'] ?? record['netPremium'] ?? record['NetPremium']) ?? 0,
       currencyCode: this.toText(record['currencyCode'] ?? record['CurrencyCode']),
       status: this.toText(record['status'] ?? record['Status']),
+      paymentStatus: this.toNullableText(record['paymentStatus'] ?? record['PaymentStatus'] ?? record['recoveryStatus'] ?? record['RecoveryStatus']),
+      recoveryStatus: this.toNullableText(record['recoveryStatus'] ?? record['RecoveryStatus'] ?? record['paymentStatus'] ?? record['PaymentStatus']),
       label: this.toText(record['label'] ?? record['Label'])
     };
   }

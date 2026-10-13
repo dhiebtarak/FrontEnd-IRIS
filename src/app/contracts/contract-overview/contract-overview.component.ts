@@ -27,6 +27,7 @@ import {
   PremiumDebitNotePreview,
   PremiumDebitNoteResponse
 } from '../../shared/models/financial-workflow.model';
+import { getInvoicePaymentStatusClasses, getInvoicePaymentStatusDisplay } from '../../shared/models/payment-status.util';
 import { Auth } from '../../shared/services/auth';
 import { FinancialWorkflowService } from '../../shared/services/financial-workflow.service';
 
@@ -998,7 +999,7 @@ export class ContractOverviewComponent implements OnInit {
     return panel.status || 'Not provided';
   }
 
-  formatMoney(value: number | null): string {
+  formatMoney(value: number | null, currencyCode?: string): string {
     if (value == null) {
       return 'Not provided';
     }
@@ -1010,7 +1011,7 @@ export class ContractOverviewComponent implements OnInit {
       maximumFractionDigits: decimalPlaces
     }).format(value);
 
-    return `${contract?.currencyCode ?? ''} ${number}`.trim();
+    return `${currencyCode ?? contract?.currencyCode ?? ''} ${number}`.trim();
   }
 
   formatCoverage(option: CoverageOption | null | undefined): string {
@@ -1049,7 +1050,7 @@ export class ContractOverviewComponent implements OnInit {
   private calculateFinancialSummary(contract: FacultativeContractResponse): ContractFinancialSummary {
     const grossPremium = this.calculateGrossPremium(contract.sumInsured, contract.premiumRate, contract.grossPremium);
     const cedentCommission = this.calculateCommissionAmount(grossPremium, contract.cedentCommission, contract.cedentCommissionPct);
-    const netPremium = this.resolveContractNetPremium(contract, grossPremium, cedentCommission);
+    const netPremium = this.resolveContractNetPremium(grossPremium, cedentCommission);
 
     return {
       grossPremium,
@@ -1081,26 +1082,42 @@ export class ContractOverviewComponent implements OnInit {
     return this.toFiniteNumber(amount);
   }
 
-  private resolveContractNetPremium(contract: FacultativeContractResponse, grossPremium: number | null, cedentCommission: number | null): number | null {
-    const calculatedNetPremium = this.calculateNetPremium(grossPremium, cedentCommission);
-    if (calculatedNetPremium != null) {
-      return calculatedNetPremium;
+  getInvoiceAmount(invoice: PremiumDebitNoteResponse): number | null {
+    const grossAmount = this.toFiniteNumber(invoice.grossAmount);
+    if (grossAmount == null) {
+      return null;
     }
 
-    const persistedNetPremium = this.toFiniteNumber(contract.netPremiumCedent);
-    if (persistedNetPremium != null) {
-      return persistedNetPremium;
+    // Saved allocation commissions reflect the invoice's original calculation.
+    const commissions = invoice.allocations.map(allocation => this.toFiniteNumber(allocation.cedentCommissionAmount));
+    if (commissions.length > 0 && commissions.every(amount => amount != null)) {
+      return grossAmount - commissions.reduce<number>((total, amount) => total + (amount ?? 0), 0);
     }
 
-    const legacyNetPremium = this.toFiniteNumber(contract.netPremium);
-    if (legacyNetPremium != null) {
-      return legacyNetPremium;
-    }
-
-    return null;
+    const cedentCommissionPct = this.toFiniteNumber(this.contract()?.cedentCommissionPct);
+    return cedentCommissionPct == null ? null : grossAmount - grossAmount * cedentCommissionPct / 100;
   }
 
-  private calculateNetPremium(grossPremium: number | null, cedentCommission: number | null): number | null {
+  getInvoicePaymentStatus(invoice: PremiumDebitNoteResponse): string {
+    const rawStatus = invoice.paymentStatus?.trim() || invoice.recoveryStatus?.trim();
+    const displayStatus = getInvoicePaymentStatusDisplay(rawStatus);
+    if (displayStatus) {
+      return displayStatus;
+    }
+
+    console.debug('Contract overview invoice history response is missing paymentStatus.', {
+      invoiceId: invoice.invoiceId,
+      invoiceNumber: invoice.invoiceNumber,
+      fields: ['paymentStatus', 'recoveryStatus']
+    });
+    return 'Missing paymentStatus';
+  }
+
+  getInvoicePaymentStatusClasses(invoice: PremiumDebitNoteResponse): string {
+    return getInvoicePaymentStatusClasses(invoice.paymentStatus ?? invoice.recoveryStatus);
+  }
+
+  private resolveContractNetPremium(grossPremium: number | null, cedentCommission: number | null): number | null {
     const safeGrossPremium = this.toFiniteNumber(grossPremium);
     const safeCedentCommission = this.toFiniteNumber(cedentCommission);
 

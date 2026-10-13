@@ -43,6 +43,7 @@ describe('DocumentAttachmentsComponent', () => {
     toastr = { success: vi.fn(), error: vi.fn() };
     vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:document');
     vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    vi.spyOn(window, 'open').mockReturnValue({} as Window);
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 
     await TestBed.configureTestingModule({
@@ -90,6 +91,7 @@ describe('DocumentAttachmentsComponent', () => {
   it('displays Download and Archive actions for every active file', () => {
     openDocuments();
 
+    expect(getButtonsByText('Preview')).toHaveLength(2);
     expect(getButtonsByText('Download')).toHaveLength(2);
     expect(getArchiveButtons()).toHaveLength(2);
     expect(getButtonsByText('Archive')).toHaveLength(2);
@@ -144,10 +146,13 @@ describe('DocumentAttachmentsComponent', () => {
     archiveButtons[archiveButtons.length - 1].click();
 
     expect(documentsService.archiveDocument).toHaveBeenCalledTimes(1);
-    expect(documentsService.archiveDocument).toHaveBeenCalledWith(7);
+    expect(documentsService.archiveDocument).toHaveBeenCalledWith(7, { scope: 'placement', contractId: 123, panelId: 45 });
   });
 
-  it('removes only the archived file after success and keeps Mister Clippy open', () => {
+  it('refreshes the list after archive success and keeps Mister Clippy open', () => {
+    vi.mocked(documentsService.getDocuments)
+      .mockReturnValueOnce(of(documents))
+      .mockReturnValueOnce(of([documents[1]]));
     openDocuments();
     getArchiveButtons()[0].click();
     fixture.detectChanges();
@@ -157,6 +162,7 @@ describe('DocumentAttachmentsComponent', () => {
 
     expect(component.documents().map(document => document.idDocument)).toEqual([8]);
     expect(component.isOpen()).toBe(true);
+    expect(documentsService.getDocuments).toHaveBeenCalledTimes(2);
     expect(fixture.nativeElement.textContent).not.toContain('signed-slip.pdf');
     expect(fixture.nativeElement.textContent).toContain('placement-note.pdf');
     expect(toastr.success).toHaveBeenCalledWith('File archived successfully', 'Success');
@@ -206,7 +212,7 @@ describe('DocumentAttachmentsComponent', () => {
     getButtonsByText('Archive').at(-1)?.click();
 
     expect(documentsService.getDocuments).toHaveBeenCalledWith({ scope: 'contract', contractId: 123 });
-    expect(documentsService.archiveDocument).toHaveBeenCalledWith(8);
+    expect(documentsService.archiveDocument).toHaveBeenCalledWith(8, { scope: 'contract', contractId: 123 });
   });
 
   it('continues to download active documents', () => {
@@ -214,8 +220,34 @@ describe('DocumentAttachmentsComponent', () => {
 
     getButtonsByText('Download')[0].click();
 
-    expect(documentsService.downloadDocument).toHaveBeenCalledWith(7);
+    expect(documentsService.downloadDocument).toHaveBeenCalledWith(7, { scope: 'placement', contractId: 123, panelId: 45 });
     expect(documentsService.archiveDocument).not.toHaveBeenCalled();
+  });
+
+  it('previews active documents with the same context-scoped download API', () => {
+    openDocuments();
+
+    getButtonsByText('Preview')[0].click();
+
+    expect(documentsService.downloadDocument).toHaveBeenCalledWith(7, { scope: 'placement', contractId: 123, panelId: 45 });
+    expect(window.open).toHaveBeenCalledWith('blob:document', '_blank', 'noopener');
+  });
+
+  it('hides upload and archive controls in read-only mode but keeps preview and download', () => {
+    component.readOnly = true;
+    openDocuments();
+
+    expect(getButtonsByText('Attach file')).toHaveLength(0);
+    expect(getButtonsByText('Upload')).toHaveLength(0);
+    expect(getArchiveButtons()).toHaveLength(0);
+    expect(getButtonsByText('Preview')).toHaveLength(2);
+    expect(getButtonsByText('Download')).toHaveLength(2);
+
+    component.openArchiveConfirmation(documents[0], new Event('click'));
+    component.upload();
+
+    expect(documentsService.archiveDocument).not.toHaveBeenCalled();
+    expect(documentsService.uploadDocument).not.toHaveBeenCalled();
   });
 
   it('supports Escape cancellation and traps keyboard focus inside the archive confirmation', async () => {

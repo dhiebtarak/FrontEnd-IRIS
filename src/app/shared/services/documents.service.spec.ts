@@ -41,6 +41,21 @@ describe('DocumentsService', () => {
     httpRequest.flush([]);
   });
 
+  it('uses the receipt attachment route with the selected receipt ID', () => {
+    const request = {
+      fileName: 'receipt-proof.pdf',
+      mimeType: 'application/pdf',
+      contentBase64: 'JVBERi0xLjQK'
+    };
+
+    service.uploadDocument({ scope: 'receipt', receiptId: 99 }, request).subscribe();
+    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/bank-receipts/99/attachments');
+
+    expect(httpRequest.request.method).toBe('POST');
+    expect(httpRequest.request.body).toEqual(request);
+    httpRequest.flush({ idDocument: 17, ...request, fileSize: 10, documentType: 'BankReceiptAttachment', createdAt: '', createdByName: null });
+  });
+
   it('requests document downloads as Blobs and reads the server filename', () => {
     let result: { blob: Blob; fileName: string | null } | undefined;
     service.downloadDocument(7).subscribe(value => result = value);
@@ -55,9 +70,26 @@ describe('DocumentsService', () => {
     expect(result?.blob.type).toBe('application/pdf');
   });
 
+  it('passes the receipt ID when downloading a receipt attachment', () => {
+    service.downloadDocument(7, { scope: 'receipt', receiptId: 99 }).subscribe();
+    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/bank-receipts/99/attachments/7/download');
+
+    expect(httpRequest.request.responseType).toBe('blob');
+    httpRequest.flush(new Blob(['file'], { type: 'application/pdf' }));
+  });
+
   it('archives a document through the document-owned route', () => {
     service.archiveDocument(7).subscribe();
     const httpRequest = httpTesting.expectOne('http://localhost:5151/api/documents/7');
+
+    expect(httpRequest.request.method).toBe('DELETE');
+    expect(httpRequest.request.body).toBeNull();
+    httpRequest.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('passes the receipt ID when archiving a receipt attachment', () => {
+    service.archiveDocument(7, { scope: 'receipt', receiptId: 99 }).subscribe();
+    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/bank-receipts/99/attachments/7');
 
     expect(httpRequest.request.method).toBe('DELETE');
     expect(httpRequest.request.body).toBeNull();

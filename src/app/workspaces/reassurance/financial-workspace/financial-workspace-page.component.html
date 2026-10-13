@@ -97,11 +97,14 @@
                 <td class="px-4 py-4">{{ receipt.bankReference }}</td>
                 <td class="px-4 py-4"><span class="rounded-full border px-3 py-1.5 text-xs font-bold" [ngClass]="getStatusClasses(receipt.pairingStatus)">{{ receipt.pairingStatus }}</span></td>
                 <td class="px-4 py-4">
+                  <div class="flex flex-wrap items-center gap-2">
                   @if (role() === 'back-office' && normalizeStatus(receipt.collectionType).includes('premium') && normalizeStatus(receipt.pairingStatus) !== 'paired') {
                     <button type="button" (click)="openPairingModal(receipt)" class="font-bold text-iris-teal hover:text-iris-navy">Pair Encaissement</button>
-                  } @else {
-                    <span class="text-iris-slate">View details</span>
                   }
+                  @if (receiptDocumentContext(receipt); as documentContext) {
+                    <app-document-attachments [context]="documentContext" [readOnly]="role() === 'back-office'" title="Encaissement attachments" />
+                  }
+                  </div>
                 </td>
               </tr>
             }
@@ -137,7 +140,7 @@
     </section>
   }
 
-  @if (page() === 'disbursements' || page() === 'remittances') {
+  @if (page() === 'disbursements') {
     <section class="mt-7 overflow-hidden rounded-[26px] border border-iris-border bg-white shadow-[0_18px_45px_rgba(13,47,79,0.07)]">
       <div class="overflow-x-auto">
         <table class="w-full min-w-[1100px] text-left text-sm">
@@ -182,6 +185,149 @@
     </section>
   }
 
+  @if (page() === 'remittances') {
+    <section class="mt-7 rounded-[26px] border border-iris-border bg-white p-5 shadow-[0_18px_45px_rgba(13,47,79,0.07)]">
+      <form [formGroup]="remittanceFilters" class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <label class="space-y-1 md:col-span-2 xl:col-span-6">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Search</span>
+          <input type="search" formControlName="search" placeholder="Search remittance, reinsurer, contract, UMR, invoice or encaissement" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        </label>
+        <label class="space-y-1 xl:col-span-2">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Reinsurer</span>
+          <input type="search" formControlName="reinsurerSearch" list="remittance-reinsurer-options" (input)="onRemittanceReinsurerFilterInput()" placeholder="Reinsurer name" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+          <datalist id="remittance-reinsurer-options">
+            @for (option of remittanceReinsurerOptions(); track option.reinsurerId) {
+              <option [value]="option.label"></option>
+            }
+          </datalist>
+        </label>
+        <label class="space-y-1 xl:col-span-2">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Contract / UMR</span>
+          <input type="search" formControlName="contractSearch" list="remittance-contract-options" (input)="onRemittanceContractFilterInput()" placeholder="UMR - Contract Name" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+          <datalist id="remittance-contract-options">
+            @for (option of remittanceContractOptions(); track option.contractId) {
+              <option [value]="option.label"></option>
+            }
+          </datalist>
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Status</span>
+          <select formControlName="status" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm outline-none focus:border-iris-teal">
+            <option value="">All statuses</option>
+            <option value="Draft">Draft</option>
+            <option value="ReadyForDisbursement">Ready for disbursement</option>
+            <option value="AwaitingFinanceDisbursement">Awaiting Finance disbursement</option>
+            <option value="PaymentInProgress">Payment in progress</option>
+            <option value="Closed">Closed</option>
+          </select>
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Currency</span>
+          <select formControlName="currencyId" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm outline-none focus:border-iris-teal">
+            <option [ngValue]="null">All currencies</option>
+            @for (currency of currencies(); track currency.id) {
+              <option [ngValue]="currency.id">{{ currency.code }}</option>
+            }
+          </select>
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Date from</span>
+          <input type="date" formControlName="from" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        </label>
+        <label class="space-y-1">
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Date to</span>
+          <input type="date" formControlName="to" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm outline-none focus:border-iris-teal" />
+        </label>
+        <div class="flex items-end">
+          <button type="button" (click)="clearRemittanceFilters()" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm font-bold text-iris-navy hover:border-iris-teal">Clear filters</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="mt-5 space-y-4">
+      @if (selectedRemittanceIds().size) {
+        <div class="flex flex-col gap-3 rounded-2xl border border-iris-border bg-white p-4 md:flex-row md:items-center md:justify-between">
+          <p class="text-sm font-semibold text-iris-slate">
+            Selected total:
+            <strong class="text-iris-navy">{{ formatMoney(selectedRemittanceTotal(), selectedRemittanceCurrency()) }}</strong>
+          </p>
+          <button type="button" (click)="printSelectedClosing()" [disabled]="isGeneratingClosing()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white hover:bg-iris-teal-light disabled:opacity-50">
+            {{ isGeneratingClosing() ? 'Generating...' : 'Print Closing (' + selectedRemittanceIds().size + ')' }}
+          </button>
+        </div>
+      }
+
+      @if (isLoading()) {
+        <p class="rounded-xl border border-iris-border bg-white p-5 text-center text-sm font-semibold text-iris-slate">Loading remittances...</p>
+      } @else if (remittanceError()) {
+        <div class="rounded-xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-900" role="alert">
+          <p class="font-semibold">{{ remittanceError() }}</p>
+          <button type="button" (click)="loadRemittances()" class="mt-3 rounded-lg border border-rose-300 bg-white px-4 py-2 font-bold hover:bg-rose-100">Retry</button>
+        </div>
+      } @else if (!remittances().length) {
+        <p class="rounded-xl border border-iris-border bg-white p-5 text-center text-sm font-semibold text-iris-slate">
+          {{ hasRemittanceFilters() ? 'No remittances match the selected filters' : 'No outgoing remittances found' }}
+        </p>
+      } @else {
+        <div class="overflow-x-auto rounded-2xl border border-iris-border bg-white">
+          <table class="w-full min-w-[1500px] text-left text-sm">
+            <thead class="bg-iris-bg text-[11px] font-bold uppercase tracking-[0.12em] text-iris-slate">
+              <tr>
+                <th class="px-3 py-3">Select</th>
+                <th class="px-3 py-3">Remittance reference</th>
+                <th class="px-3 py-3">Encaissement reference</th>
+                <th class="px-3 py-3">Invoice number</th>
+                <th class="px-3 py-3">Contract name / UMR</th>
+                <th class="px-3 py-3">Reinsurer</th>
+                <th class="px-3 py-3">Panel</th>
+                <th class="px-3 py-3 text-right">Net payable amount</th>
+                <th class="px-3 py-3">Currency</th>
+                <th class="px-3 py-3">Status</th>
+                <th class="px-3 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-iris-divider">
+              @for (remittance of remittances(); track getRemittanceId(remittance)) {
+                <tr class="align-top hover:bg-iris-bg/60">
+                  <td class="px-3 py-3">
+                    <input type="checkbox" class="h-4 w-4" [checked]="isRemittanceSelected(remittance)" [disabled]="!canSelectRemittance(remittance)" [title]="getRemittanceSelectionDisabledReason(remittance)" (change)="toggleRemittanceSelection(remittance, $any($event.target).checked)" [attr.aria-label]="'Select ' + getRemittanceReference(remittance)" />
+                  </td>
+                  <td class="px-3 py-3 font-bold text-iris-teal">{{ getRemittanceReference(remittance) }}</td>
+                  <td class="px-3 py-3">{{ getRemittanceReceiptDisplay(remittance) }}</td>
+                  <td class="px-3 py-3">{{ getRemittanceInvoiceDisplay(remittance) }}</td>
+                  <td class="px-3 py-3 font-semibold text-iris-navy">{{ getRemittanceContractDisplay(remittance) }}</td>
+                  <td class="px-3 py-3">{{ getRemittanceReinsurerName(remittance) }}</td>
+                  <td class="px-3 py-3">{{ getRemittancePanelDisplay(remittance) }}</td>
+                  <td class="px-3 py-3 text-right font-bold text-iris-navy">{{ formatMoney(remittance.netPayableAmount, remittance.currencyCode) }}</td>
+                  <td class="px-3 py-3">{{ remittance.currencyCode }}</td>
+                  <td class="px-3 py-3"><span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getStatusClasses(remittance.status)">{{ getRemittanceStatusLabel(remittance.status) }}</span></td>
+                  <td class="px-3 py-3">
+                    @if (remittance.closingId) {
+                      <button type="button" (click)="downloadClosing(remittance)" [disabled]="isDownloadingClosing()" class="font-bold text-iris-teal hover:text-iris-navy disabled:opacity-50">Download Closing</button>
+                    } @else if (canConfirmRemittance(remittance)) {
+                      <button type="button" (click)="confirmRemittance(remittance)" [disabled]="isSubmitting()" class="font-bold text-iris-teal hover:text-iris-navy disabled:opacity-50">Confirm</button>
+                    } @else {
+                      <span class="text-iris-slate">No action</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (remittanceTotalPages() > 1) {
+          <nav class="flex items-center justify-between gap-3 border-t border-iris-divider pt-4" aria-label="Remittance pages">
+            <span class="text-sm text-iris-slate">Page {{ remittancePageNumber() }} of {{ remittanceTotalPages() }} · {{ remittanceTotalCount() }} remittances</span>
+            <div class="flex gap-2">
+              <button type="button" (click)="goToRemittancePage(remittancePageNumber() - 1)" [disabled]="remittancePageNumber() <= 1 || isLoading()" class="rounded-lg border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy disabled:opacity-50">Previous</button>
+              <button type="button" (click)="goToRemittancePage(remittancePageNumber() + 1)" [disabled]="remittancePageNumber() >= remittanceTotalPages() || isLoading()" class="rounded-lg border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy disabled:opacity-50">Next</button>
+            </div>
+          </nav>
+        }
+      }
+    </section>
+  }
+
   @if (page() === 'invoices') {
     <section class="mt-7 rounded-[26px] border border-iris-border bg-white p-5 shadow-[0_18px_45px_rgba(13,47,79,0.07)]">
       <form [formGroup]="invoiceFilters" class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -216,11 +362,12 @@
           </select>
         </label>
         <label class="space-y-1">
-          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Pairing status</span>
+          <span class="text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">Payment status</span>
           <select formControlName="recoveryStatus" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm outline-none focus:border-iris-teal">
             <option value="">All statuses</option>
-            <option value="Paired">Paired</option>
-            <option value="Unpaired">Unpaired</option>
+            <option value="Unsettled">Unsettled</option>
+            <option value="PartiallySettled">Partially Settled</option>
+            <option value="Settled">Settled</option>
           </select>
         </label>
         <label class="space-y-1">
@@ -259,7 +406,7 @@
         </p>
       } @else {
       <div class="hidden overflow-x-auto rounded-2xl border border-iris-border bg-white md:block">
-        <table class="w-full min-w-[1080px] text-left text-sm">
+        <table class="w-full min-w-[1280px] text-left text-sm">
           <thead class="bg-iris-bg text-[11px] font-bold uppercase tracking-[0.12em] text-iris-slate">
             <tr>
               <th class="px-3 py-2">Invoice number</th>
@@ -268,9 +415,11 @@
               <th class="px-3 py-2">Counterparty</th>
               <th class="px-3 py-2">Type</th>
               <th class="px-3 py-2">Date</th>
-              <th class="px-3 py-2 text-right">Amount</th>
+              <th class="px-3 py-2 text-right">Invoice amount</th>
+              <th class="px-3 py-2 text-right">Settled amount</th>
+              <th class="px-3 py-2 text-right">Remaining amount</th>
               <th class="px-3 py-2">Currency</th>
-              <th class="px-3 py-2">Pairing</th>
+              <th class="px-3 py-2">Payment</th>
               <th class="px-3 py-2">Actions</th>
             </tr>
           </thead>
@@ -284,9 +433,11 @@
                 <td class="px-3 py-2">{{ getInvoiceTypeLabel(invoice.invoiceType) }}</td>
                 <td class="px-3 py-2">{{ invoice.invoiceDate | date:'mediumDate' }}</td>
                 <td class="px-3 py-2 text-right font-bold text-iris-navy">{{ formatMoney(getInvoicePrimaryAmount(invoice), invoice.currencyCode) }}</td>
+                <td class="px-3 py-2 text-right">{{ formatMoney(invoice.settledAmount ?? invoice.pairedAmount ?? 0, invoice.currencyCode) }}</td>
+                <td class="px-3 py-2 text-right">{{ formatMoney(invoice.remainingAmount ?? invoice.outstandingAmount ?? 0, invoice.currencyCode) }}</td>
                 <td class="px-3 py-2">{{ invoice.currencyCode || 'N/A' }}</td>
-                <td class="px-3 py-2"><span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.recoveryStatus)">{{ getInvoiceRecoveryStatus(invoice) }}</span></td>
-                <td class="px-3 py-2"><span class="text-iris-slate">View</span></td>
+                <td class="px-3 py-2"><span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.paymentStatus ?? invoice.recoveryStatus)">{{ getInvoiceRecoveryStatus(invoice) }}</span></td>
+                <td class="px-3 py-2"><button type="button" (click)="downloadListedInvoice(invoice)" [disabled]="downloadingInvoiceIds().has(invoice.idInvoice)" class="font-bold text-iris-teal hover:text-iris-navy disabled:opacity-50">{{ downloadingInvoiceIds().has(invoice.idInvoice) ? 'Downloading...' : 'Download Invoice' }}</button></td>
               </tr>
             }
           </tbody>
@@ -300,13 +451,15 @@
                 <h2 class="font-bold text-iris-navy">{{ invoice.invoiceNumber || ('INV-' + invoice.idInvoice) }}</h2>
                 <p class="text-sm font-semibold text-iris-slate">{{ getInvoiceLabel(invoice) }}</p>
               </div>
-              <span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.recoveryStatus)">{{ getInvoiceRecoveryStatus(invoice) }}</span>
+              <span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.paymentStatus ?? invoice.recoveryStatus)">{{ getInvoiceRecoveryStatus(invoice) }}</span>
             </div>
             <dl class="mt-3 grid grid-cols-2 gap-2 text-xs text-iris-slate">
               <div><dt class="font-bold uppercase tracking-[0.12em]">Contract</dt><dd class="font-semibold text-iris-navy">{{ getInvoiceContractDisplay(invoice) }}</dd></div>
               <div><dt class="font-bold uppercase tracking-[0.12em]">Counterparty</dt><dd>{{ getInvoiceCounterpartyName(invoice) }}</dd></div>
               <div><dt class="font-bold uppercase tracking-[0.12em]">Type</dt><dd>{{ getInvoiceTypeLabel(invoice.invoiceType) }}</dd></div>
-              <div><dt class="font-bold uppercase tracking-[0.12em]">Amount</dt><dd class="font-bold text-iris-navy">{{ formatMoney(getInvoicePrimaryAmount(invoice), invoice.currencyCode) }}</dd></div>
+              <div><dt class="font-bold uppercase tracking-[0.12em]">Invoice amount</dt><dd class="font-bold text-iris-navy">{{ formatMoney(getInvoicePrimaryAmount(invoice), invoice.currencyCode) }}</dd></div>
+              <div><dt class="font-bold uppercase tracking-[0.12em]">Settled amount</dt><dd>{{ formatMoney(invoice.settledAmount ?? invoice.pairedAmount ?? 0, invoice.currencyCode) }}</dd></div>
+              <div><dt class="font-bold uppercase tracking-[0.12em]">Remaining amount</dt><dd>{{ formatMoney(invoice.remainingAmount ?? invoice.outstandingAmount ?? 0, invoice.currencyCode) }}</dd></div>
             </dl>
           </article>
         }
@@ -611,6 +764,11 @@
                 <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Allocated</span><strong class="text-iris-navy">{{ formatMoney(receipt.allocatedAmount, receipt.currencyCode) }}</strong></p>
                 <p><span class="block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Remaining</span><strong class="text-iris-navy">{{ formatMoney(receipt.availableAmount, receipt.currencyCode) }}</strong></p>
               </div>
+              @if (selectedReceiptDocumentContext(); as documentContext) {
+                <div class="pt-1">
+                  <app-document-attachments [context]="documentContext" [readOnly]="role() === 'back-office'" title="Encaissement attachments" />
+                </div>
+              }
             </section>
             <section class="space-y-3">
               <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-iris-teal">Pair Encaissement with Invoices</h3>
@@ -633,7 +791,7 @@
                 <p class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">No eligible invoices found.</p>
               } @else {
                 <div class="overflow-x-auto rounded-2xl border border-iris-border">
-                  <table class="w-full min-w-[1180px] text-left text-sm">
+                  <table class="w-full min-w-[1280px] text-left text-sm">
                     <thead class="bg-iris-bg text-xs font-bold uppercase tracking-[0.1em] text-iris-slate">
                       <tr>
                         <th class="px-4 py-3">Select</th>
@@ -641,9 +799,10 @@
                         <th class="px-4 py-3">Label</th>
                         <th class="px-4 py-3">Contract</th>
                         <th class="px-4 py-3">Cedent</th>
-                        <th class="px-4 py-3 text-right">Gross amount</th>
-                        <th class="px-4 py-3 text-right">Already paired</th>
-                        <th class="px-4 py-3 text-right">Outstanding</th>
+                        <th class="px-4 py-3 text-right">Invoice amount</th>
+                        <th class="px-4 py-3 text-right">Settled amount</th>
+                        <th class="px-4 py-3 text-right">Remaining amount</th>
+                        <th class="px-4 py-3">Payment</th>
                         <th class="px-4 py-3">Currency</th>
                         <th class="px-4 py-3">Allocated amount</th>
                       </tr>
@@ -658,13 +817,14 @@
                           <td class="px-4 py-3">{{ invoice.label || 'No label' }}</td>
                           <td class="px-4 py-3 font-semibold text-iris-navy">{{ getEligibleInvoiceContractDisplay(invoice) }}</td>
                           <td class="px-4 py-3">{{ invoice.cedentName }}</td>
-                          <td class="px-4 py-3 text-right font-bold text-iris-navy">{{ formatMoney(invoice.grossAmount, invoice.currencyCode) }}</td>
-                          <td class="px-4 py-3 text-right">{{ formatMoney(invoice.alreadyPairedAmount, invoice.currencyCode) }}</td>
-                          <td class="px-4 py-3 text-right">{{ formatMoney(invoice.outstandingAmount, invoice.currencyCode) }}</td>
+                          <td class="px-4 py-3 text-right font-bold text-iris-navy">{{ formatMoney(invoice.invoiceAmount ?? invoice.grossAmount, invoice.currencyCode) }}</td>
+                          <td class="px-4 py-3 text-right">{{ formatMoney(invoice.settledAmount ?? invoice.alreadyPairedAmount, invoice.currencyCode) }}</td>
+                          <td class="px-4 py-3 text-right">{{ formatMoney(invoice.remainingAmount ?? invoice.outstandingAmount, invoice.currencyCode) }}</td>
+                          <td class="px-4 py-3"><span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.paymentStatus ?? invoice.recoveryStatus)">{{ invoice.paymentStatus || invoice.recoveryStatus || 'Unsettled' }}</span></td>
                           <td class="px-4 py-3">{{ invoice.currencyCode }}</td>
                           <td class="px-4 py-3">
                             @if (isInvoiceChecked(invoice)) {
-                              <input type="number" min="0.0001" [max]="invoice.outstandingAmount" step="0.0001" [value]="getProposedAllocationAmount(invoice)" (input)="updateInvoiceAllocation(invoice, $event)" class="w-40 rounded-xl border border-iris-border px-3 py-2 text-sm outline-none focus:border-iris-teal" />
+                              <input type="number" min="0.0001" [max]="getEligibleInvoiceOutstandingAmount(invoice)" step="0.0001" [value]="getProposedAllocationAmount(invoice)" (input)="updateInvoiceAllocation(invoice, $event)" class="w-40 rounded-xl border border-iris-border px-3 py-2 text-sm outline-none focus:border-iris-teal" />
                             } @else {
                               <span class="text-iris-slate">Not selected</span>
                             }
@@ -722,6 +882,54 @@
 
       @if (modal() === 'disbursement') {
         <section class="mt-5 space-y-4">
+          @if (selectedClosingId()) {
+            @if (isLoadingContext()) {
+              <p class="text-sm text-iris-slate">Loading closing...</p>
+            } @else if (disbursementLoadError()) {
+              <p class="text-sm text-rose-800" role="alert">{{ disbursementLoadError() }}</p>
+            } @else if (closingContext(); as closing) {
+              <div class="grid gap-3 text-sm md:grid-cols-3">
+                <p><span class="block text-iris-slate">Closing</span><strong>{{ closing.closingReference }}</strong></p>
+                <p><span class="block text-iris-slate">Issue date</span>{{ closing.closingDate | date:'mediumDate' }}</p>
+                <p><span class="block text-iris-slate">Status</span>{{ getRemittanceStatusLabel(closing.status) }}</p>
+                <p><span class="block text-iris-slate">Reinsurer</span><strong>{{ closing.reinsurerName }}</strong></p>
+                <p class="md:col-span-2"><span class="block text-iris-slate">Address</span>{{ closing.reinsurerAddress }} {{ closing.reinsurerCity }} {{ closing.reinsurerCountry }}</p>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead class="border-b border-iris-border text-iris-slate"><tr><th class="p-2">Remittance / Panel</th><th class="p-2">Contract / UMR</th><th class="p-2">Invoice / Encaissement</th><th class="p-2 text-right">Payable</th></tr></thead>
+                  <tbody>
+                    @for (line of closing.lines; track line.remittanceRef) {
+                      <tr class="border-b border-iris-border">
+                        <td class="p-2">{{ line.remittanceReference }}<span class="block">{{ line.panelName }}</span></td>
+                        <td class="p-2">{{ line.contractName }}<span class="block">{{ line.umr }}</span></td>
+                        <td class="p-2">{{ line.invoiceNumber }}<span class="block">{{ line.receiptReference }}</span></td>
+                        <td class="p-2 text-right whitespace-nowrap">{{ formatMoney(line.netPayableAmount, closing.currencyCode) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              <p class="text-right font-bold">Total: {{ formatMoney(closing.totalClosingAmount, closing.currencyCode) }}</p>
+              @if (closing.selectedBankAccount; as account) {
+                <dl class="grid gap-2 text-sm md:grid-cols-2">
+                  <div><dt class="text-iris-slate">Bank</dt><dd>{{ account.bankName }} / {{ account.bankCountry }}</dd></div>
+                  <div><dt class="text-iris-slate">IBAN</dt><dd class="break-all">{{ account.iban }}</dd></div>
+                  <div><dt class="text-iris-slate">SWIFT/BIC</dt><dd>{{ account.swiftBic }}</dd></div>
+                </dl>
+              }
+              @if (closing.validationMessage) { <p class="text-sm text-rose-800">{{ closing.validationMessage }}</p> }
+              <div class="flex flex-wrap gap-3 border-t border-iris-divider pt-4">
+                <button type="button" (click)="downloadFinanceClosing()" [disabled]="!closing.canDownloadPdf || isDownloadingClosing()" class="rounded-lg border border-iris-border px-4 py-2 text-sm font-bold disabled:opacity-50">Download Closing PDF</button>
+                @if (closing.status === 'AwaitingFinanceDisbursement') {
+                  <button type="button" (click)="startClosingPayment()" [disabled]="!closing.canStartPayment || isSubmitting()" class="rounded-lg bg-iris-teal px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Start Payment</button>
+                }
+                @if (closing.status === 'PaymentInProgress') {
+                  <button type="button" (click)="confirmClosingPayment()" [disabled]="!closing.canConfirmTransfer || isSubmitting()" class="rounded-lg bg-iris-teal px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Confirm Amount Transferred</button>
+                }
+              </div>
+            }
+          }
           @if (selectedRemittance(); as remittance) {
             <section class="grid gap-3 rounded-2xl border border-iris-border bg-iris-bg p-4 text-sm md:grid-cols-3">
               @for (row of getDisbursementContextRows(remittance); track row.label) {

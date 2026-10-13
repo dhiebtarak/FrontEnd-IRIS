@@ -23,6 +23,45 @@ describe('FinancialWorkflowService', () => {
     localStorage.removeItem('iris_auth_token');
   });
 
+  it('retrieves the closing context using the closing ID', () => {
+    service.getClosingDisbursementContext(1).subscribe(result => expect(result.closingId).toBe(1));
+    const request = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/disbursement-context');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer finance-token');
+    request.flush({ closingId: 1, lines: [{ remittanceRef: 6 }], totalClosingAmount: 21.25 });
+  });
+
+  it('starts and confirms the batch using the closing ID', () => {
+    service.startClosingDisbursement(1).subscribe();
+    const started = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/start-disbursement');
+    expect(started.request.method).toBe('POST');
+    started.flush({ closingId: 1, status: 'PaymentInProgress' });
+    service.confirmClosingTransfer(1).subscribe();
+    const confirmed = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/confirm-transfer');
+    expect(confirmed.request.method).toBe('POST');
+    confirmed.flush({ closingId: 1, status: 'Closed' });
+  });
+
+  it('downloads the selected invoice PDF as a Blob with its backend filename', () => {
+    const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+    service.downloadPremiumDebitNote(91).subscribe(file => {
+      expect(file.blob).toBe(blob);
+      expect(file.fileName).toBe('Invoice-91.pdf');
+    });
+    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/invoices/91/debit-note');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Invoice-91.pdf"' } });
+  });
+
+  it('downloads the persisted closing PDF with the server filename', () => {
+    service.downloadFinanceClosing(1).subscribe(result => expect(result.fileName).toBe('IRIS-CL-1.pdf'));
+    const request = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/pdf');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), {
+      headers: { 'Content-Disposition': 'attachment; filename=IRIS-CL-1.pdf' }
+    });
+  });
+
   it('loads Finance Officer incoming remittances from the finance receipt endpoint', () => {
     service.getFinanceReceipts({
       pageNumber: 1,
@@ -110,11 +149,15 @@ describe('FinancialWorkflowService', () => {
           counterpartyName: 'ami',
           invoiceType: 'CEDENT_PREMIUM_INVOICE',
           invoiceDate: '2026-09-11',
+          invoiceAmount: 500,
+          settledAmount: 100,
+          remainingAmount: 400,
+          paymentStatus: 'Unsettled',
           grossAmount: 500,
           alreadyPairedAmount: 100,
           outstandingAmount: 400,
           currencyCode: 'TND',
-          recoveryStatus: 'Unpaired'
+          recoveryStatus: 'Unsettled'
         }
       ]);
     });
@@ -139,7 +182,8 @@ describe('FinancialWorkflowService', () => {
           alreadyPairedAmount: 100,
           outstandingAmount: 400,
           currencyCode: 'TND',
-          recoveryStatus: 'Unpaired'
+          paymentStatus: 'Unsettled',
+          recoveryStatus: 'Unsettled'
         }
       ],
       pageNumber: 1,
@@ -169,7 +213,7 @@ describe('FinancialWorkflowService', () => {
   it('uses the implemented Back Officer remittance and invoice routes', () => {
     service.getBackOfficeRemittances().subscribe();
     service.confirmRemittance(77).subscribe();
-    service.getInvoices({ contractId: 12, recoveryStatus: 'Unpaired', search: 'cedent' }).subscribe();
+    service.getInvoices({ contractId: 12, paymentStatus: 'Unsettled', search: 'cedent' }).subscribe();
     service.createInvoice({
       contractId: 12,
       counterpartyId: 22,
@@ -182,20 +226,22 @@ describe('FinancialWorkflowService', () => {
       settlementMethod: 'BANK_TRANSFER'
     }).subscribe();
 
-    const remittancesRequest = httpTesting.expectOne('http://localhost:5151/api/back-office/remittances');
+    const remittancesRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/remittances' && req.method === 'GET');
     expect(remittancesRequest.request.method).toBe('GET');
+    expect(remittancesRequest.request.params.get('pageNumber')).toBe('1');
+    expect(remittancesRequest.request.params.get('pageSize')).toBe('20');
     const confirmRequest = httpTesting.expectOne('http://localhost:5151/api/back-office/remittances/77/confirm');
     expect(confirmRequest.request.method).toBe('POST');
     const invoiceListRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/invoices' && req.method === 'GET');
     expect(invoiceListRequest.request.method).toBe('GET');
     expect(invoiceListRequest.request.params.get('contractId')).toBe('12');
-    expect(invoiceListRequest.request.params.get('pairingStatus')).toBe('Unpaired');
+    expect(invoiceListRequest.request.params.get('paymentStatus')).toBe('Unsettled');
     expect(invoiceListRequest.request.params.get('search')).toBe('cedent');
     const createInvoiceRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/invoices' && req.method === 'POST');
     expect(createInvoiceRequest.request.method).toBe('POST');
     expect(createInvoiceRequest.request.body.remittanceRef).toBe(77);
 
-    remittancesRequest.flush([]);
+    remittancesRequest.flush({ items: [], pageNumber: 1, pageSize: 20, totalCount: 0, totalPages: 0 });
     confirmRequest.flush({});
     invoiceListRequest.flush({ items: [], pageNumber: 1, pageSize: 20, totalCount: 0, totalPages: 0 });
     createInvoiceRequest.flush({});
@@ -204,7 +250,7 @@ describe('FinancialWorkflowService', () => {
   it('omits placeholder invoice filters and maps the paged response envelope', () => {
     service.getInvoices({
       invoiceType: 'All types',
-      pairingStatus: 'All statuses',
+      paymentStatus: 'All statuses',
       currencyId: 'All currencies'
     }).subscribe(response => {
       expect(response.items[0].invoiceId).toBe(41);
@@ -214,7 +260,7 @@ describe('FinancialWorkflowService', () => {
 
     const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/invoices');
     expect(request.request.params.has('invoiceType')).toBe(false);
-    expect(request.request.params.has('pairingStatus')).toBe(false);
+    expect(request.request.params.has('paymentStatus')).toBe(false);
     expect(request.request.params.has('currencyId')).toBe(false);
     expect(request.request.params.get('pageNumber')).toBe('1');
     expect(request.request.params.get('pageSize')).toBe('20');
@@ -233,7 +279,8 @@ describe('FinancialWorkflowService', () => {
         grossAmount: 100,
         netAmount: 90,
         netPremium: 90,
-        recoveryStatus: 'Unpaired',
+        paymentStatus: 'Unsettled',
+        recoveryStatus: 'Unsettled',
         status: 'Draft',
         label: 'Premium'
       }],
@@ -542,5 +589,31 @@ describe('FinancialWorkflowService', () => {
     expect(mappingError).toBeTruthy();
     const capturedError = mappingError as unknown as Error;
     expect(capturedError.message).toContain('missing cedentCommissionPct');
+  });
+
+  it('maps premium debit note payment status for contract invoice history', () => {
+    service.getContractPremiumDebitNotes(12).subscribe(invoices => {
+      expect(invoices[0].status).toBe('Draft');
+      expect(invoices[0].paymentStatus).toBe('PartiallySettled');
+      expect(invoices[0].recoveryStatus).toBe('PartiallySettled');
+    });
+
+    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/contracts/12/invoices');
+    expect(request.request.method).toBe('GET');
+    request.flush([{
+      invoiceId: 41,
+      contractId: 12,
+      invoiceNumber: 'INV-2026-000041',
+      sequence: 1,
+      invoiceType: 'CEDENT_PREMIUM_INVOICE',
+      invoiceDate: '2026-10-06',
+      grossAmount: 100,
+      remainingAmount: 20,
+      totalNetAmount: 90,
+      currencyCode: 'TND',
+      paymentStatus: 'PartiallySettled',
+      status: 'Draft',
+      label: ''
+    }]);
   });
 });

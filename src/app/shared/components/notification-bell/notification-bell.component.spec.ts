@@ -128,6 +128,20 @@ describe('NotificationBellComponent', () => {
     );
   });
 
+  it('uses explicit closingId instead of notification or remittance IDs', () => {
+    router.url = '/workspace/reassurance/finance-officer';
+    const notification = { idNotification: 23, notificationType: 'CLOSING_DISBURSEMENT_REQUIRED',
+      title: 'Closing issued', message: 'Closing CL-1', entityType: 'OUTGOING_CLOSING',
+      entityId: 6, closingId: 1, isRead: false, createdAt: '2026-10-12T08:00:00Z' };
+    service.markNotificationRead.mockReturnValue(of({ ...notification, isRead: true }));
+    expect(fixture.componentInstance.getNotificationAction(notification)).toBe('Open Closing');
+    fixture.componentInstance.markRead(notification);
+    expect(router.navigate).toHaveBeenCalledWith(
+      ['/workspace/reassurance/finance-officer/disbursement-queue'],
+      { queryParams: { closingId: 1, notificationId: 23 } }
+    );
+  });
+
   it('shows ContractReadyForDebitNote actions and downloads the contract debit note', () => {
     const notification = {
       idNotification: 12,

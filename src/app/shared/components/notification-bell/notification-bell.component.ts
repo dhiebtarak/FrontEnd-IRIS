@@ -149,6 +149,7 @@ export class NotificationBellComponent implements OnInit {
 
   getNotificationAction(notification: NotificationItem): string | null {
     const type = `${notification.notificationType} ${notification.entityType}`.toLowerCase();
+    if (notification.closingId != null || type.includes('outgoing_closing')) return 'Open Closing';
     if (type.includes('contractreadyforinvoice') || type.includes('contractreadyfordebitnote')) {
       return 'Open Contract';
     }
@@ -175,6 +176,14 @@ export class NotificationBellComponent implements OnInit {
     const workspace = this.router.url.includes('/finance-officer')
       ? '/workspace/reassurance/finance-officer'
       : '/workspace/reassurance/back-officer';
+
+    if (notification.closingId != null || type.includes('outgoing_closing')) {
+      const closingId = notification.closingId ?? notification.entityId;
+      return closingId && closingId > 0 ? {
+        commands: ['/workspace/reassurance/finance-officer/disbursement-queue'],
+        queryParams: { closingId, notificationId: notification.idNotification }
+      } : null;
+    }
 
     if (type.includes('contractreadyforinvoice') || type.includes('contractreadyfordebitnote')) {
       return id

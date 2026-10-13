@@ -482,10 +482,9 @@
                 <th class="px-4 py-3">Invoice type</th>
                 <th class="px-4 py-3">Sequence</th>
                 <th class="px-4 py-3">Invoice date</th>
-                <th class="px-4 py-3">Gross amount</th>
-                <th class="px-4 py-3">Net amount</th>
+                <th class="px-4 py-3">Amount</th>
                 <th class="px-4 py-3">Currency</th>
-                <th class="px-4 py-3">Status</th>
+                <th class="px-4 py-3">Payment Status</th>
                 <th class="px-4 py-3">Remaining</th>
                 <th class="px-4 py-3">Actions</th>
               </tr>
@@ -497,10 +496,11 @@
                   <td class="px-4 py-3">{{ invoice.invoiceType || 'Not provided' }}</td>
                   <td class="px-4 py-3">{{ invoice.sequence ?? 'Not provided' }}</td>
                   <td class="px-4 py-3">{{ formatDate(invoice.invoiceDate) }}</td>
-                  <td class="px-4 py-3">{{ formatMoney(invoice.grossAmount) }}</td>
-                  <td class="px-4 py-3">{{ formatMoney(invoice.totalNetAmount) }}</td>
+                  <td class="px-4 py-3">{{ formatMoney(getInvoiceAmount(invoice), invoice.currencyCode) }}</td>
                   <td class="px-4 py-3">{{ invoice.currencyCode || 'Not provided' }}</td>
-                  <td class="px-4 py-3">{{ invoice.status || 'Not provided' }}</td>
+                  <td class="px-4 py-3">
+                    <span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getInvoicePaymentStatusClasses(invoice)">{{ getInvoicePaymentStatus(invoice) }}</span>
+                  </td>
                   <td class="px-4 py-3">{{ formatMoney(invoice.remainingAmount) }}</td>
                   <td class="px-4 py-3">
                     <div class="flex flex-wrap gap-2">

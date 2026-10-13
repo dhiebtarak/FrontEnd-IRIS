@@ -7,6 +7,10 @@ export type DocumentContext =
       scope: 'placement';
       contractId: number;
       panelId: number;
+    }
+  | {
+      scope: 'receipt';
+      receiptId: number;
     };
 
 export interface DocumentListItem {
@@ -17,6 +21,7 @@ export interface DocumentListItem {
   documentType: string;
   createdAt: string;
   createdByName: string | null;
+  downloadUrl?: string | null;
 }
 
 export interface DocumentUploadRequest {

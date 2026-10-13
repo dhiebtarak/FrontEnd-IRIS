@@ -18,6 +18,7 @@ const allowedDocumentExtensions = new Set(['.pdf', '.png', '.jpg', '.jpeg']);
 export class DocumentAttachmentsComponent implements OnDestroy {
   @Input({ required: true }) context!: DocumentContext;
   @Input() title = 'Contract documents';
+  @Input() readOnly = false;
   @ViewChild('dialog') private dialog?: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') private confirmDialog?: ElementRef<HTMLElement>;
   @ViewChild('fileInput') private fileInput?: ElementRef<HTMLInputElement>;
@@ -30,6 +31,7 @@ export class DocumentAttachmentsComponent implements OnDestroy {
   readonly selectedFileName = signal('');
   readonly selectedFileError = signal('');
   readonly downloadingIds = signal<Set<number>>(new Set());
+  readonly previewingIds = signal<Set<number>>(new Set());
   private readonly documentToArchiveSignal = signal<DocumentListItem | null>(null);
   private readonly archivingDocumentIdSignal = signal<number | null>(null);
   readonly archiveErrorMessage = signal('');
@@ -78,10 +80,19 @@ export class DocumentAttachmentsComponent implements OnDestroy {
   }
 
   openFilePicker(): void {
+    if (this.readOnly) {
+      return;
+    }
+
     this.fileInput?.nativeElement.click();
   }
 
   onFileSelected(event: Event): void {
+    if (this.readOnly) {
+      this.clearSelection();
+      return;
+    }
+
     const input = event.target as HTMLInputElement | null;
     const file = input?.files?.item(0) ?? null;
     this.selectedFileError.set('');
@@ -108,7 +119,7 @@ export class DocumentAttachmentsComponent implements OnDestroy {
   }
 
   upload(): void {
-    if (this.isUploading() || !this.selectedFile) {
+    if (this.readOnly || this.isUploading() || !this.selectedFile) {
       return;
     }
 
@@ -146,13 +157,31 @@ export class DocumentAttachmentsComponent implements OnDestroy {
     this.loadDocuments();
   }
 
+  preview(document: DocumentListItem): void {
+    if (this.previewingIds().has(document.idDocument)) {
+      return;
+    }
+
+    this.previewingIds.update(ids => new Set(ids).add(document.idDocument));
+    this.documentsService.downloadDocument(document.idDocument, this.context).pipe(
+      finalize(() => this.previewingIds.update(ids => {
+        const next = new Set(ids);
+        next.delete(document.idDocument);
+        return next;
+      }))
+    ).subscribe({
+      next: result => this.openBlobPreview(result.blob),
+      error: (error: HttpErrorResponse) => this.errorMessage.set(this.getErrorMessage(error))
+    });
+  }
+
   download(document: DocumentListItem): void {
     if (this.downloadingIds().has(document.idDocument)) {
       return;
     }
 
     this.downloadingIds.update(ids => new Set(ids).add(document.idDocument));
-    this.documentsService.downloadDocument(document.idDocument).pipe(
+    this.documentsService.downloadDocument(document.idDocument, this.context).pipe(
       finalize(() => this.downloadingIds.update(ids => {
         const next = new Set(ids);
         next.delete(document.idDocument);
@@ -168,7 +197,7 @@ export class DocumentAttachmentsComponent implements OnDestroy {
     event.preventDefault();
     event.stopPropagation();
 
-    if (this.archivingDocumentId === document.idDocument) {
+    if (this.readOnly || this.archivingDocumentId === document.idDocument) {
       return;
     }
 
@@ -186,20 +215,20 @@ export class DocumentAttachmentsComponent implements OnDestroy {
 
   confirmArchive(): void {
     const document = this.documentToArchive;
-    if (!document || this.archivingDocumentId === document.idDocument) {
+    if (this.readOnly || !document || this.archivingDocumentId === document.idDocument) {
       return;
     }
 
     this.archivingDocumentId = document.idDocument;
     this.archiveErrorMessage.set('');
-    this.documentsService.archiveDocument(document.idDocument).pipe(
+    this.documentsService.archiveDocument(document.idDocument, this.context).pipe(
       finalize(() => this.archivingDocumentId = null)
     ).subscribe({
       next: () => {
-        this.documents.update(documents => documents.filter(item => item.idDocument !== document.idDocument));
         this.documentToArchive = null;
         this.archiveErrorMessage.set('');
         this.toastr?.success('File archived successfully', 'Success');
+        this.loadDocuments();
         queueMicrotask(() => this.dialog?.nativeElement.focus());
       },
       error: (error: HttpErrorResponse) => {
@@ -227,6 +256,10 @@ export class DocumentAttachmentsComponent implements OnDestroy {
 
   isDownloading(idDocument: number): boolean {
     return this.downloadingIds().has(idDocument);
+  }
+
+  isPreviewing(idDocument: number): boolean {
+    return this.previewingIds().has(idDocument);
   }
 
   @HostListener('document:keydown.escape')
@@ -314,6 +347,18 @@ export class DocumentAttachmentsComponent implements OnDestroy {
     link.download = fileName;
     link.click();
     window.URL.revokeObjectURL(url);
+  }
+
+  private openBlobPreview(blob: Blob): void {
+    const url = window.URL.createObjectURL(blob);
+    const previewWindow = window.open(url, '_blank', 'noopener');
+    if (!previewWindow) {
+      window.URL.revokeObjectURL(url);
+      this.errorMessage.set('The document preview could not be opened. Please allow pop-ups or use Download.');
+      return;
+    }
+
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
   }
 
   private getErrorMessage(error: HttpErrorResponse): string {
