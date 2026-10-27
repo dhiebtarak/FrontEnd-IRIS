@@ -43,16 +43,7 @@
               <div>
                 <span class="block font-semibold text-iris-navy">{{ getNotificationTitle(notification) }}</span>
                 <span class="mt-1 block text-sm text-iris-slate">{{ getNotificationMessage(notification) }}</span>
-                @if (showDebitNoteActions(notification)) {
-                  <span class="mt-2 flex flex-wrap gap-2">
-                    <button type="button" (click)="markRead(notification, $event)" class="inline-flex rounded-full border border-iris-border bg-iris-bg px-3 py-1 text-xs font-bold text-iris-navy transition hover:bg-white">
-                      Open Contract
-                    </button>
-                    <button type="button" (click)="downloadNotificationDebitNote(notification, $event)" [disabled]="downloadingDebitNoteNotificationId() === notification.idNotification" class="inline-flex rounded-full border border-iris-teal bg-white px-3 py-1 text-xs font-bold text-iris-teal transition hover:bg-sky-50 disabled:cursor-wait disabled:opacity-70">
-                      {{ downloadingDebitNoteNotificationId() === notification.idNotification ? 'Generating...' : 'Download Debit Note' }}
-                    </button>
-                  </span>
-                } @else if (getNotificationAction(notification); as action) {
+                @if (getNotificationAction(notification); as action) {
                   <button type="button" (click)="markRead(notification, $event)" class="mt-2 inline-flex rounded-full border border-iris-border bg-iris-bg px-3 py-1 text-xs font-bold text-iris-navy transition hover:bg-white">{{ action }}</button>
                 }
                 <span class="mt-2 block text-xs text-iris-slate">{{ notification.createdAt | date:'medium' }}</span>

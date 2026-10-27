@@ -10,7 +10,6 @@ describe('NotificationBellComponent', () => {
     getNotifications: ReturnType<typeof vi.fn>;
     markNotificationRead: ReturnType<typeof vi.fn>;
     markAllNotificationsRead: ReturnType<typeof vi.fn>;
-    downloadContractDebitNote: ReturnType<typeof vi.fn>;
   };
   let router: {
     url: string;
@@ -42,7 +41,6 @@ describe('NotificationBellComponent', () => {
         createdAt: '2026-09-15T08:00:00Z'
       })),
       markAllNotificationsRead: vi.fn().mockReturnValue(of(null)),
-      downloadContractDebitNote: vi.fn().mockReturnValue(of({ blob: new Blob(['pdf'], { type: 'application/pdf' }), fileName: 'DebitNote-123.pdf', contentType: 'application/pdf' }))
     };
     router = {
       url: '/workspace/reassurance/back-officer',
@@ -92,7 +90,7 @@ describe('NotificationBellComponent', () => {
       title: 'Remittance ready for disbursement',
       message: 'Reinsurer AMI - Contract IT26-F-PD-0001 - TND 1620.000',
       entityType: 'REMITTANCE_REF',
-      entityId: 77,
+      entityId: 8,
       isRead: false,
       createdAt: '2026-09-23T10:30:00Z'
     };
@@ -108,7 +106,7 @@ describe('NotificationBellComponent', () => {
         title: 'Remittance ready for disbursement',
         message: 'Reinsurer AMI - Contract IT26-F-PD-0001 - TND 1620.000',
         entityType: 'REMITTANCE_REF',
-        entityId: 77,
+        entityId: 8,
         isRead: false,
         createdAt: '2026-09-23T10:30:00Z'
       }
@@ -124,7 +122,7 @@ describe('NotificationBellComponent', () => {
     expect(service.markNotificationRead).toHaveBeenCalledWith(9);
     expect(router.navigate).toHaveBeenCalledWith(
       ['/workspace/reassurance/finance-officer/disbursement-queue'],
-      { queryParams: { remittanceRef: 77, notificationId: 9 } }
+      { queryParams: { remittanceReference: 8, notificationId: 9 } }
     );
   });
 
@@ -142,7 +140,7 @@ describe('NotificationBellComponent', () => {
     );
   });
 
-  it('shows ContractReadyForDebitNote actions and downloads the contract debit note', () => {
+  it('routes ContractReadyForDebitNote to the contract overview for invoice selection', () => {
     const notification = {
       idNotification: 12,
       notificationType: 'ContractReadyForDebitNote',
@@ -163,12 +161,11 @@ describe('NotificationBellComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Contract IT26-F-PD-0003 - Facultative contract Star is bound and ready for debit note.');
     expect(fixture.nativeElement.textContent).toContain('Open Contract');
-    expect(fixture.nativeElement.textContent).toContain('Download Debit Note');
-
-    fixture.componentInstance.downloadNotificationDebitNote(notification);
-
-    expect(service.downloadContractDebitNote).toHaveBeenCalledWith(123);
-    expect(service.downloadContractDebitNote).toHaveBeenCalledTimes(1);
-    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).not.toContain('Download Debit Note');
+    fixture.componentInstance.markRead(notification);
+    expect(router.navigate).toHaveBeenCalledWith(
+      ['/workspace/reassurance/back-officer/contracts', '123', 'overview'],
+      { queryParams: { notificationId: 12 } }
+    );
   });
 });

@@ -9,6 +9,22 @@ export function getContractStatusDisplay(status: string | null | undefined): str
     return 'Ready for placement';
   }
 
+  if (normalizedStatus === 'draft') {
+    return 'Draft';
+  }
+
+  if (normalizedStatus === 'bound') {
+    return 'Bound';
+  }
+
+  if (normalizedStatus === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  if (normalizedStatus === 'expired') {
+    return 'Expired';
+  }
+
   return status?.trim() || 'Not provided';
 }
 

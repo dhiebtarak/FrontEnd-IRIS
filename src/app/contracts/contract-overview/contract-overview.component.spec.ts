@@ -89,6 +89,10 @@ describe('ContractOverviewComponent', () => {
     alreadyInvoicedAmount: 250,
     remainingInvoiceableAmount: 1250,
     invoiceableGrossPremium: 1500,
+    cedentCommissionPct: 0,
+    cedentCommissionAmount: 0,
+    invoiceableNetPremium: 1500,
+    currencyDecimalPlaces: 3,
     previousInvoices: [],
     receiptAllocations: [{
       receiptAllocationId: 15,
@@ -127,6 +131,7 @@ describe('ContractOverviewComponent', () => {
 
   beforeEach(async () => {
     localStorage.clear();
+    localStorage.setItem('iris_auth_workspace', JSON.stringify({ position: 'FrontOfficer' }));
     snackBar = { open: vi.fn() };
     paramMapSubject = new BehaviorSubject(convertToParamMap({}));
     queryParamMapSubject = new BehaviorSubject(convertToParamMap({ contractId: '123' }));
@@ -185,7 +190,11 @@ describe('ContractOverviewComponent', () => {
   }
 
   function normalizedMoney(value: string | undefined): string {
-    return (value ?? '').replace(/\u202f/g, '').replace(/\s/g, '').replace(',', '.');
+    return (value ?? '').replace(/\u202f/g, '').replace(/\s/g, '').replace(/,/g, '.');
+  }
+
+  function flushPreviewDebounce(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 260));
   }
 
   function enableBackOfficeMode(): void {
@@ -224,6 +233,96 @@ describe('ContractOverviewComponent', () => {
     expect(text).not.toContain('Step 1');
     expect(text).not.toContain('Save Draft');
     expect(text).not.toContain('Start Placement');
+  });
+
+  it('marks a Draft contract Ready for Placement once and refreshes from the backend response', () => {
+    flushContract(123, { ...contractResponse, status: ' DRAFT ', isFronting: null }, []);
+
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Documents');
+    expect(text).toContain('Modify Contract');
+    expect(text).toContain('Mark as Ready for Placement');
+    expect(text).toContain('Cancel Contract');
+    expect(text).not.toContain('Start Binding Phase');
+    expect(text).not.toContain('Add Reinsurer');
+
+    component.markReadyForPlacement();
+    component.markReadyForPlacement();
+    const completeRequest = httpMock.expectOne('http://localhost:5151/api/contracts/123/complete');
+    expect(completeRequest.request.method).toBe('POST');
+    expect(completeRequest.request.body).toEqual({});
+    expect(component.isMarkingReady()).toBe(true);
+    completeRequest.flush({ ...contractResponse, status: 'READY_FOR_PLACEMENT' });
+
+    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush({
+      ...contractResponse,
+      status: 'READY_FOR_PLACEMENT'
+    });
+    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([]);
+    fixture.detectChanges();
+
+    expect(component.contract()?.status).toBe('READY_FOR_PLACEMENT');
+    expect(component.isMarkingReady()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Reinsurers');
+    expect(fixture.nativeElement.textContent).toContain('Add Reinsurer');
+    expect(fixture.nativeElement.textContent).toContain('Start Binding Phase');
+    expect(fixture.nativeElement.textContent).not.toContain('Mark as Ready for Placement');
+  });
+
+  it('does not show an isFronting readiness error or offer a link to edit it', () => {
+    flushContract(123, { ...contractResponse, status: 'DRAFT', isFronting: null }, []);
+
+    component.markReadyForPlacement();
+    httpMock.expectOne('http://localhost:5151/api/contracts/123/complete').flush({
+      message: 'Contract validation failed.',
+      errors: { isFronting: ['Select whether this contract is fronting before placement.'] }
+    }, { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+
+    expect(component.contract()?.status).toBe('DRAFT');
+    expect(component.statusTransitionErrors()).toEqual([]);
+    expect(fixture.nativeElement.textContent).not.toContain('Select whether this contract is fronting');
+    expect(Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .some(button => button.textContent?.includes('Edit this field'))).toBe(false);
+  });
+
+  it('keeps an incomplete Draft on the overview and links readiness errors to the editor', () => {
+    flushContract(123, { ...contractResponse, status: 'DRAFT', name: null, currencyId: null }, []);
+
+    component.markReadyForPlacement();
+    httpMock.expectOne('http://localhost:5151/api/contracts/123/complete').flush({
+      message: 'Contract validation failed.',
+      errors: {
+        name: ['Contract name is required before placement.'],
+        currencyId: ['Currency is required before placement.']
+      }
+    }, { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+
+    expect(component.contract()?.status).toBe('DRAFT');
+    expect(fixture.nativeElement.textContent).toContain('Contract name is required before placement.');
+    expect(fixture.nativeElement.textContent).toContain('Currency is required before placement.');
+
+    const editButton = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find(button => button.textContent?.includes('Edit this field'))!;
+    editButton.click();
+    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/front-officer/contracts/new/facultative'], {
+      queryParams: { contractId: 123, focusField: 'name' }
+    });
+  });
+
+  it('keeps Front Officer workflow actions visible and displays backend authorization errors', () => {
+    flushContract(123, { ...contractResponse, status: 'Draft' }, []);
+
+    component.markReadyForPlacement();
+    httpMock.expectOne('http://localhost:5151/api/contracts/123/complete').flush(
+      { message: 'Front Officer permission is required.' },
+      { status: 403, statusText: 'Forbidden' }
+    );
+    fixture.detectChanges();
+
+    expect(component.canMarkReadyForPlacement()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Front Officer permission is required.');
   });
 
   it('calculates the contract net premium from gross premium minus cedent commission and ignores reinsurer panel net premium', () => {
@@ -383,14 +482,14 @@ describe('ContractOverviewComponent', () => {
       && req.params.get('pageSize') === '20'
     );
     reinsurerLookup.flush({
-      items: [{ id: 9, name: 'Global Re', types: ['Reinsurer'], email: null, status: 'Active', isActive: true, legacyClientId: null, legacyCompanyCode: null }],
+      items: [{ id: 10, name: 'Global Re', types: ['Reinsurer'], email: null, status: 'Active', isActive: true, legacyClientId: null, legacyCompanyCode: null }],
       pageNumber: 1,
       pageSize: 20,
       totalCount: 1,
       totalPages: 1
     });
 
-    component.selectReinsurer({ id: 9, name: 'Global Re', types: ['Reinsurer'], email: null, status: 'Active', isActive: true, legacyClientId: null, legacyCompanyCode: null });
+    component.selectReinsurer({ id: 10, name: 'Global Re', types: ['Reinsurer'], email: null, status: 'Active', isActive: true, legacyClientId: null, legacyCompanyCode: null });
     component.panelForm.patchValue({
       writtenSharePct: 40,
       signedSharePct: 35,
@@ -400,7 +499,7 @@ describe('ContractOverviewComponent', () => {
       premiumRate: 1.2,
       grossPremium: 48000,
       brokerageIrisPct: 2,
-      otherDeductions: 300,
+      otherDeductionsPercentage: 7.14285714,
       reinsurancePremiumReference: 'RE-PREM-2'
     });
 
@@ -408,7 +507,7 @@ describe('ContractOverviewComponent', () => {
     const createPanel = httpMock.expectOne('http://localhost:5151/api/contracts/123/panels');
     expect(createPanel.request.method).toBe('POST');
     expect(createPanel.request.body).toEqual({
-      idCounterparty: 9,
+      idCounterparty: 10,
       writtenSharePct: 40,
       signedSharePct: 35,
       tsi: 400000,
@@ -417,7 +516,7 @@ describe('ContractOverviewComponent', () => {
       premiumRatePct: 1.2,
       grossPremium: 4200,
       brokeragePct: 2,
-      otherDeductions: 300,
+      otherDeductionsPercentage: 7.14285714,
       premiumReference: 'RE-PREM-2'
     });
     createPanel.flush({
@@ -435,7 +534,9 @@ describe('ContractOverviewComponent', () => {
     fixture.detectChanges();
 
     expect(component.isReinsurerFormOpen()).toBe(false);
-    expect(component.activePanelId()).toBe(45);
+    expect(component.activePanelId()).toBe(null);
+    expect(component.isReinsurersTabActive()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Reinsurers');
   });
 
   it('prefills Add Reinsurer financials, shows available share and recalculates read-only amounts', () => {
@@ -483,7 +584,8 @@ describe('ContractOverviewComponent', () => {
     expect(component.panelForm.controls.deductible.value).toBe(1.25);
     expect(component.panelForm.controls.netPremium.value).toBe(21.25);
 
-    component.panelForm.controls.otherDeductions.setValue(7);
+    component.panelForm.controls.otherDeductionsPercentage.setValue(28);
+    expect(component.panelForm.controls.otherDeductionsAmount.value).toBe(7);
     expect(component.panelForm.controls.netPremium.value).toBe(14.25);
 
     component.panelForm.controls.signedSharePct.setValue(11);
@@ -492,7 +594,7 @@ describe('ContractOverviewComponent', () => {
 
     component.panelForm.patchValue({
       signedSharePct: 10,
-      otherDeductions: 43
+      otherDeductionsPercentage: 100
     });
     expect(component.panelForm.controls.netPremium.hasError('deductionsExceedGrossPremium')).toBe(true);
     expect(component.panelForm.invalid).toBe(true);
@@ -784,7 +886,7 @@ describe('ContractOverviewComponent', () => {
     expect(component.slipMessage()).toBe('Unable to check or download slips for this contract right now.');
   });
 
-  it('creates a premium invoice with backend preview and refreshes invoice history', () => {
+  it('creates a premium invoice with backend preview and refreshes invoice history', async () => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
     component.invoiceContext.set(invoiceContextResponse as any);
@@ -793,8 +895,20 @@ describe('ContractOverviewComponent', () => {
     flushInvoiceContextAndHistory();
     fixture.detectChanges();
 
+    component.invoiceForm.controls.invoiceType.setValue('INVOICE');
+    const invoicePreview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    expect(invoicePreview.request.body).not.toHaveProperty('processingMode');
+    invoicePreview.flush({
+      contractId: 123,
+      invoiceableGrossPremium: 1500,
+      alreadyInvoicedAmount: 250,
+      grossAmount: 1250,
+      remainingAmount: 0,
+      allocations: []
+    });
     expect(component.invoiceForm.controls.amount.value).toBe(1250);
     component.invoiceForm.controls.amount.setValue(500);
+    await flushPreviewDebounce();
     httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceableGrossPremium: 1500,
@@ -807,23 +921,33 @@ describe('ContractOverviewComponent', () => {
         reinsurerName: 'Global Re',
         signedSharePct: 45,
         allocationRatio: 1,
-        grossPremium: 500,
+        allocationRatioPercentage: 100,
+        grossPremium: 555.556,
+        allocatedGrossPremium: 555.556,
+        allocatedNetPremium: 500,
+        allocationAmount: 500,
         cedentCommissionPct: 10,
-        cedentCommissionAmount: 50,
+        cedentCommissionPercentage: 10,
+        cedentCommissionAmount: 55.556,
         brokeragePct: 2,
+        irisBrokeragePercentage: 2,
         brokerageAmount: 10,
+        irisBrokerageAmount: 10,
         otherDeductions: 0,
-        netAmount: 440,
+        otherDeductionsAmount: 0,
+        netAmount: 490,
+        netPayableAmount: 490,
         currencyCode: 'TND'
       }]
     });
     component.createInvoice();
     expect(component.invoicePreviewAllocations()[0].cedentCommissionPct).toBe(10);
-    expect(component.invoicePreviewAllocations()[0].cedentCommissionAmount).toBe(50);
+    expect(component.invoicePreviewAllocations()[0].cedentCommissionAmount).toBe(55.556);
 
     const createInvoiceRequest = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices');
     expect(createInvoiceRequest.request.method).toBe('POST');
     expect(createInvoiceRequest.request.body).toEqual(expect.objectContaining({
+      invoiceType: 'INVOICE',
       grossAmount: 500,
       invoiceDate: component.invoiceForm.controls.invoiceDate.value,
       label: null
@@ -841,7 +965,7 @@ describe('ContractOverviewComponent', () => {
       contractId: 123,
       invoiceNumber: 'INV-2026-000001',
       sequence: 1,
-      invoiceType: 'CEDENT_PREMIUM_DEBIT_NOTE',
+      invoiceType: 'INVOICE',
       invoiceDate: '2026-09-23',
       invoiceableGrossPremium: 1500,
       grossAmount: 500,
@@ -862,7 +986,7 @@ describe('ContractOverviewComponent', () => {
         contractId: 123,
         invoiceNumber: 'INV-2026-000001',
         sequence: 1,
-        invoiceType: 'CEDENT_PREMIUM_DEBIT_NOTE',
+        invoiceType: 'INVOICE',
         invoiceDate: '2026-09-23',
         invoiceableGrossPremium: 1500,
         grossAmount: 500,
@@ -889,10 +1013,142 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('INV-2026-000001');
     expect(fixture.nativeElement.textContent).toContain('View Allocation');
     expect(fixture.nativeElement.textContent).not.toContain('Create an invoice to generate its debit note.');
-    httpMock.expectNone('http://localhost:5151/api/back-office/invoices/91/debit-note');
+    httpMock.expectNone('http://localhost:5151/api/back-office/invoices/91/document');
   });
 
-  it('uses invoice-context gross values directly and defaults to the remaining amount', () => {
+  it('renders gross, cedent commission, net and brokerage from backend allocation fields', () => {
+    flushContract(123, { ...contractResponse, status: 'Bound' }, []);
+    component.invoiceContext.set({ ...invoiceContextResponse, currencyDecimalPlaces: 3 } as any);
+    component.isInvoiceModalOpen.set(true);
+    const allocation = (panelId: number, reinsurerCode: string, reinsurerName: string, brokeragePct: number, brokerageAmount: number, netPayable: number) => ({
+      panelId,
+      reinsurerCode,
+      reinsurerName,
+      signedSharePct: 5,
+      allocationRatio: 0.5,
+      allocationRatioPercentage: 50,
+      grossPremium: 25,
+      allocatedGrossPremium: 25,
+      allocatedNetPremium: 22.5,
+      allocationAmount: 22.5,
+      cedentCommissionPct: 10,
+      cedentCommissionPercentage: 10,
+      cedentCommissionAmount: 2.5,
+      brokeragePct,
+      irisBrokeragePercentage: brokeragePct,
+      brokerageAmount,
+      irisBrokerageAmount: brokerageAmount,
+      otherDeductions: 0,
+      otherDeductionsAmount: 0,
+      netAmount: netPayable,
+      netPayableAmount: netPayable,
+      currencyCode: 'TND'
+    });
+    component.invoicePreview.set({
+      contractId: 123,
+      invoiceableGrossPremium: 45,
+      alreadyInvoicedAmount: 0,
+      grossAmount: 45,
+      remainingAmount: 0,
+      allocations: [
+        allocation(44, 'AMI', 'AMI', 10, 2.5, 20),
+        allocation(45, 'STAR', 'STAR Assurances', 20, 5, 17.5)
+      ]
+    });
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent;
+    for (const heading of [
+      'Reinsurer code', 'Reinsurer name', 'Signed share %', 'Allocation ratio %',
+      'Allocated gross premium', 'Cedent commission %', 'Cedent commission amount',
+      'Allocated net premium', 'IRIS brokerage %', 'IRIS brokerage amount',
+      'Other deductions', 'Signed net-payable amount'
+    ]) {
+      expect(text).toContain(heading);
+    }
+    const formattedText = normalizedMoney(text);
+    expect(formattedText).toContain('TND25.000');
+    expect(formattedText).toContain('TND2.500');
+    expect(formattedText).toContain('TND22.500');
+    expect(formattedText).toContain('TND2.500');
+    expect(formattedText).toContain('TND5.000');
+    expect(formattedText).toContain('TND50.000');
+    expect(formattedText).toContain('TND5.000');
+    expect(formattedText).toContain('TND45.000');
+  });
+
+  it('uses backend gross-based IRIS brokerage consistently in preview and saved allocation details', () => {
+    flushContract(123, { ...contractResponse, status: 'Bound' }, []);
+    component.invoiceContext.set({ ...invoiceContextResponse, currencyDecimalPlaces: 3 } as any);
+    component.isInvoiceModalOpen.set(true);
+    const allocation = {
+      panelId: 84,
+      reinsurerCode: 'R-1',
+      reinsurerName: 'Reinsurer',
+      signedSharePct: 100,
+      allocationRatio: 1,
+      allocationRatioPercentage: 100,
+      grossPremium: 44.445,
+      allocatedGrossPremium: 44.445,
+      allocatedNetPremium: 40,
+      allocationAmount: 40,
+      cedentCommissionPct: 0,
+      cedentCommissionPercentage: 0,
+      cedentCommissionAmount: 0,
+      brokeragePct: 10,
+      irisBrokeragePercentage: 10,
+      brokerageAmount: 4,
+      irisBrokerageAmount: 4.445,
+      otherDeductions: 0,
+      otherDeductionsAmount: 0,
+      netAmount: 40,
+      netPayableAmount: 35.555,
+      signedNetPayableAmount: 35.555,
+      currencyCode: 'TND'
+    };
+    component.invoicePreview.set({
+      contractId: 123,
+      invoiceableGrossPremium: 44.445,
+      alreadyInvoicedAmount: 0,
+      grossAmount: 40,
+      remainingAmount: 0,
+      isReconciled: true,
+      reconciliationDifference: 0,
+      currencyCode: 'TND',
+      allocations: [allocation]
+    } as any);
+    fixture.detectChanges();
+    const previewText = normalizedMoney(fixture.nativeElement.textContent);
+    expect(previewText).toContain('TND4.445');
+    expect(previewText).not.toContain('TND4.000');
+
+    component.viewInvoiceAllocation({ allocations: [allocation] } as any);
+    fixture.detectChanges();
+    const historyText = normalizedMoney(fixture.nativeElement.textContent);
+    expect(historyText).toContain('TND4.445');
+    expect(historyText).not.toContain('TND4.000');
+  });
+
+  it('blocks invoice creation and shows backend allocation reconciliation differences', () => {
+    flushContract(123, { ...contractResponse, status: 'Bound' }, []);
+    component.invoicePreview.set({
+      contractId: 123,
+      invoiceableGrossPremium: 100,
+      alreadyInvoicedAmount: 0,
+      grossAmount: 20,
+      remainingAmount: 80,
+      isReconciled: false,
+      reconciliationDifference: 0.001,
+      currencyCode: 'TND',
+      allocations: []
+    } as any);
+
+    expect(component.hasInvoiceAllocationReconciliationError()).toBe(true);
+    expect(component.invoiceAllocationReconciliationMessage()).toContain('0,001');
+    expect(component.isInvoiceSubmitDisabled()).toBe(true);
+  });
+
+  it('uses invoice-context net values directly and defaults to the remaining amount', () => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound', grossPremium: 5000 }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
     component.openInvoiceModal();
@@ -900,6 +1156,9 @@ describe('ContractOverviewComponent', () => {
       ...invoiceContextResponse,
       contractGrossPremium: 50,
       invoiceableGrossPremium: 50,
+      cedentCommissionPct: 0,
+      cedentCommissionAmount: 0,
+      invoiceableNetPremium: 50,
       alreadyInvoicedAmount: 0,
       remainingInvoiceableAmount: 50,
       canCreateInvoice: true
@@ -908,12 +1167,284 @@ describe('ContractOverviewComponent', () => {
 
     expect(component.invoiceForm.controls.amount.value).toBe(50);
     expect(component.invoiceContextRows().find(row => row.label === 'Contract gross premium')?.value).toContain('50');
-    expect(component.invoiceContextRows().find(row => row.label === 'Invoiceable gross premium')?.value).toContain('50');
+    expect(component.invoiceContextRows().find(row => row.label === 'Invoiceable net premium')?.value).toContain('50');
     expect(component.invoiceContextRows().find(row => row.label === 'Already invoiced amount')?.value).toContain('0');
     expect(component.invoiceContextRows().find(row => row.label === 'Remaining invoiceable amount')?.value).toContain('50');
   });
 
-  it('keeps invoice history visible, filters other contracts, and does not show invoice debit-note actions', () => {
+  it('uses the backend full-contract invoiceable amount without applying signed share', () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound', grossPremium: 2000, cedentCommissionPct: 10, signedSharePct: 20, currencyDecimalPlaces: 3 },
+      [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
+    component.openInvoiceModal();
+    flushInvoiceContextAndHistory({
+      ...invoiceContextResponse,
+      contractGrossPremium: 2000,
+      cedentCommissionPercentage: 10,
+      cedentCommissionAmount: 200,
+      contractSignedSharePercentage: 20,
+      invoiceableNetPremium: 1800,
+      alreadyInvoicedAmount: 0,
+      remainingInvoiceableAmount: 1800,
+      currencyCode: 'TND',
+      currencyDecimalPlaces: 3,
+      canCreateInvoice: true
+    });
+    fixture.detectChanges();
+
+    expect(component.invoiceForm.controls.amount.value).toBe(1800);
+    expect(component.invoiceCreationAvailableAmount()).toBe(1800);
+    const formattedAmount = (value: number) => component.formatMoney(value, 'TND');
+    const rows = component.invoiceContextRows();
+    expect(rows.find(row => row.label === 'Contract gross premium')?.value).toBe(formattedAmount(2000));
+    expect(component.invoiceContextRows().find(row => row.label === 'Cedent commission')?.value).toContain('10');
+    expect(rows.find(row => row.label === 'Cedent commission amount')?.value).toBe(formattedAmount(200));
+    expect(component.invoiceContextRows().find(row => row.label === 'Contract signed share')?.value).toContain('20');
+    expect(rows.find(row => row.label === 'Invoiceable net premium')?.value).toBe(formattedAmount(1800));
+    expect(rows.find(row => row.label === 'Remaining invoiceable amount')?.value).toBe(formattedAmount(1800));
+    expect(rows.some(row => row.label === 'Signed gross premium' || row.label === 'Signed cedent commission')).toBe(false);
+    expect(component.invoiceAmountLimitMessage()).toContain(formattedAmount(1800));
+
+    component.invoiceForm.controls.amount.setValue(1200);
+    expect(component.invoiceUnaffectedAmount()).toBe(600);
+  });
+
+  it('requires a selected invoice type before creating an invoice', () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
+    component.openInvoiceModal();
+    flushInvoiceContextAndHistory();
+    fixture.detectChanges();
+
+    component.invoiceForm.controls.amount.setValue(100);
+    component.createInvoice();
+    fixture.detectChanges();
+
+    expect(component.invoiceForm.controls.invoiceType.hasError('required')).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Invoice type is required.');
+    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+  });
+
+  it('allows an Avoir when fully invoiced and uses the backend credit balance', async () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' });
+    component.openInvoiceModal();
+    flushInvoiceContextAndHistory({
+      ...invoiceContextResponse,
+      contractGrossPremium: 50,
+      cedentCommissionPct: 10,
+      alreadyInvoicedAmount: 50,
+      remainingInvoiceableAmount: 0,
+      availableCreditBalance: 45,
+      blockingReason: 'FULLY_INVOICED'
+    }, []);
+    fixture.detectChanges();
+
+    component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('How should this Avoir be processed?');
+    expect(fixture.nativeElement.textContent).toContain('Pair with an encaissement');
+    expect(fixture.nativeElement.textContent).toContain('Generate reinsurer remittances without pairing');
+    expect(component.isInvoiceSubmitDisabled()).toBe(true);
+    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    component.setAvoirProcessingMode('PAIR_WITH_ENCAISSEMENT');
+    fixture.detectChanges();
+    expect(component.invoiceForm.controls.amount.value).toBe(45);
+    expect(fixture.nativeElement.textContent).toContain('Create Avoir for Pairing');
+    expect(fixture.nativeElement.textContent).toContain('No outgoing remittances will be generated until it is paired.');
+    expect(component.availableAvoirAmount()).toBe(45);
+    expect(component.invoiceUnaffectedAmount()).toBe(0);
+    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+      contractId: 123,
+      invoiceType: 'AVOIR',
+      grossAmount: 45,
+      signedAmount: -45,
+      allocations: [
+        { panelId: 44, reinsurerName: 'AMI', signedSharePct: 60, allocationRatio: 0.6, grossPremium: 27, allocatedGrossPremium: 27, allocatedNetPremium: 27, cedentCommissionPct: 10, cedentCommissionAmount: 2.7, brokeragePct: 10, brokerageAmount: 2.7, otherDeductions: 0, netAmount: 21.6, netPayableAmount: 21.6, signedNetPayableAmount: -21.6, currencyCode: 'TND' },
+        { panelId: 45, reinsurerName: 'STAR Assurances', signedSharePct: 40, allocationRatio: 0.4, grossPremium: 18, allocatedGrossPremium: 18, allocatedNetPremium: 18, cedentCommissionPct: 10, cedentCommissionAmount: 1.8, brokeragePct: 20, brokerageAmount: 3.6, otherDeductions: 0, netAmount: 12.6, netPayableAmount: 12.6, signedNetPayableAmount: -12.6, currencyCode: 'TND' }
+      ]
+    });
+    component.invoiceForm.controls.amount.setValue(10);
+    await flushPreviewDebounce();
+    const amountPreview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    component.invoiceForm.controls.invoiceDate.setValue('2026-10-19');
+    component.invoiceForm.controls.label.setValue('retour sur contrat');
+    await flushPreviewDebounce();
+    expect(amountPreview.cancelled).toBe(true);
+    const updatedPreviewRequest = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    expect(updatedPreviewRequest.request.body).toEqual(expect.objectContaining({
+      invoiceType: 'AVOIR',
+      processingMode: 'PAIR_WITH_ENCAISSEMENT',
+      grossAmount: 10,
+      invoiceDate: '2026-10-19',
+      label: 'retour sur contrat'
+    }));
+    updatedPreviewRequest.flush({
+      contractId: 123,
+      invoiceType: 'AVOIR',
+      grossAmount: 10,
+      signedAmount: -10,
+      allocations: [
+        { panelId: 44, reinsurerName: 'AMI', signedSharePct: 60, allocationRatio: 0.6, grossPremium: 6, allocatedGrossPremium: 6, allocatedNetPremium: 6, cedentCommissionPct: 10, cedentCommissionAmount: 0.6, brokeragePct: 10, brokerageAmount: 0.6, otherDeductions: 0, netAmount: 4.8, netPayableAmount: 4.8, signedNetPayableAmount: -4.8, currencyCode: 'TND' },
+        { panelId: 45, reinsurerName: 'STAR Assurances', signedSharePct: 40, allocationRatio: 0.4, grossPremium: 4, allocatedGrossPremium: 4, allocatedNetPremium: 4, cedentCommissionPct: 10, cedentCommissionAmount: 0.4, brokeragePct: 20, brokerageAmount: 0.8, otherDeductions: 0, netAmount: 2.8, netPayableAmount: 2.8, signedNetPayableAmount: -2.8, currencyCode: 'TND' }
+      ]
+    });
+    fixture.detectChanges();
+    expect(component.invoiceUnaffectedAmount()).toBe(35);
+    expect(component.isInvoiceSubmitDisabled()).toBe(false);
+    expect(component.isInvoiceAllocationValid()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('TND 6,000');
+    expect(fixture.nativeElement.textContent).toContain('TND 4,000');
+    expect(fixture.nativeElement.textContent).toContain('TND -4,800');
+    expect(fixture.nativeElement.textContent).toContain('TND -2,800');
+    const submitButton = fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(false);
+    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+
+    submitButton.click();
+    fixture.detectChanges();
+    const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices');
+    component.createInvoice();
+    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+    expect(request.request.body).toEqual(expect.objectContaining({
+      invoiceType: 'AVOIR',
+      processingMode: 'PAIR_WITH_ENCAISSEMENT',
+      grossAmount: 10,
+      invoiceDate: '2026-10-19',
+      label: 'retour sur contrat'
+    }));
+    expect(request.request.body).not.toHaveProperty('allocations');
+    expect(request.request.body.grossAmount).toBeGreaterThan(0);
+    expect(request.request.body.invoiceType).not.toBe('CREDIT_NOTE');
+    const avoir = {
+      invoiceId: 92,
+      contractId: 123,
+      invoiceNumber: 'AV-2026-000001',
+      documentNumber: 'AV-2026-000001',
+      sequence: 1,
+      invoiceType: 'AVOIR',
+      invoiceDate: '2026-10-19',
+      grossAmount: 10,
+      amount: 10,
+      signedAmount: -10,
+      remainingAmount: 0,
+      totalNetAmount: 12,
+      currencyCode: 'TND',
+      status: 'Draft',
+      paymentStatus: 'Unsettled',
+      label: 'Credit adjustment',
+      allocations: []
+    };
+    request.flush(avoir);
+    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 35, alreadyInvoicedAmount: 50, remainingInvoiceableAmount: 0 }, [avoir]);
+    fixture.detectChanges();
+
+    expect(component.invoiceHistory()).toEqual([]);
+    expect(component.avoirHistory().map(item => item.invoiceId)).toEqual([92]);
+    expect(component.getInvoiceAmount(component.avoirHistory()[0])).toBe(-10);
+    expect(fixture.nativeElement.textContent).toContain('Avoir History');
+    expect(fixture.nativeElement.textContent).toContain('AV-2026-000001');
+    expect(router.navigate).not.toHaveBeenCalledWith(['/workspace/reassurance/back-officer/outgoing-remittances']);
+  });
+
+  it('creates direct Avoir remittances only from the backend response and navigates to the existing draft list', async () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
+    component.openInvoiceModal();
+    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 45 }, []);
+    component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    component.setAvoirProcessingMode('DIRECT_TO_REMITTANCES');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('No encaissement will be required.');
+    const preview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    expect(preview.request.body.processingMode).toBe('DIRECT_TO_REMITTANCES');
+    expect(preview.request.body.idempotencyKey).toEqual(expect.any(String));
+    preview.flush({
+      contractId: 123,
+      invoiceType: 'AVOIR',
+      grossAmount: 45,
+      signedAmount: -45,
+      allocations: [
+        { panelId: 44, reinsurerId: 9, reinsurerName: 'AMI', signedSharePct: 60, allocationRatio: 0.6, grossPremium: 27, allocatedGrossPremium: 27, allocatedNetPremium: 27, cedentCommissionPct: 10, cedentCommissionAmount: 2.7, brokeragePct: 10, brokerageAmount: 2.7, otherDeductions: 0, netAmount: 21.6, netPayableAmount: 18.9, currencyCode: 'TND' },
+        { panelId: 45, reinsurerId: 10, reinsurerName: 'STAR Assurances', signedSharePct: 40, allocationRatio: 0.4, grossPremium: 18, allocatedGrossPremium: 18, allocatedNetPremium: 18, cedentCommissionPct: 10, cedentCommissionAmount: 1.8, brokeragePct: 20, brokerageAmount: 3.6, otherDeductions: 0, netAmount: 12.6, netPayableAmount: 9, currencyCode: 'TND' }
+      ]
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('negative net-payable rows shown above will be created immediately');
+    expect(component.isInvoiceSubmitDisabled()).toBe(false);
+
+    component.createInvoice();
+    const create = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices');
+    expect(component.invoiceForm.controls.processingMode.enabled).toBe(true);
+    expect(component.invoiceForm.controls.amount.disabled).toBe(true);
+    expect(create.request.body.processingMode).toBe('DIRECT_TO_REMITTANCES');
+    expect(create.request.body).not.toHaveProperty('bankReceiptId');
+    expect(create.request.body).not.toHaveProperty('receiptId');
+    expect(create.request.body).not.toHaveProperty('allocations');
+    expect(create.request.body.idempotencyKey).toEqual(preview.request.body.idempotencyKey);
+    component.createInvoice();
+    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+    const remittance = {
+      remittanceId: 81,
+      remittanceRef: 81,
+      remittanceReference: 'REM-81',
+      sourceType: 'AVOIR',
+      invoiceId: 96,
+      invoiceNumber: 'AV-2026-000004',
+      panelId: 44,
+      counterpartyId: 9,
+      counterpartyName: 'AMI',
+      beneficiaryType: 'Reinsurer',
+      netPayableAmount: 18.9,
+      signedNetPayableAmount: -18.9,
+      currencyId: 1,
+      currencyCode: 'TND',
+      status: 'Draft',
+      description: 'Avoir allocation'
+    };
+    create.flush({
+      invoiceId: 96,
+      contractId: 123,
+      invoiceNumber: 'AV-2026-000004',
+      documentNumber: 'AV-2026-000004',
+      invoiceType: 'AVOIR',
+      processingMode: 'DIRECT_TO_REMITTANCES',
+      pairingRequired: false,
+      createdRemittances: [remittance],
+      invoiceDate: '2026-10-21',
+      grossAmount: 45,
+      amount: 45,
+      signedAmount: -45,
+      remainingAmount: 0,
+      totalNetAmount: 45,
+      currencyCode: 'TND',
+      status: 'Draft',
+      label: 'Direct Avoir',
+      allocations: []
+    });
+    expect(component.isInvoiceModalOpen()).toBe(false);
+    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/back-officer/outgoing-remittances']);
+    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 0 }, []);
+  });
+
+  it('blocks Avoir creation when the backend reports no net invoiced balance available to credit', () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' });
+    component.openInvoiceModal();
+    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 0, alreadyInvoicedAmount: 0 }, []);
+    component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    fixture.detectChanges();
+
+    expect(component.availableAvoirAmount()).toBe(0);
+    expect(fixture.nativeElement.textContent).toContain('Available credit balance');
+    expect(component.isInvoiceSubmitDisabled()).toBe(true);
+    component.invoiceForm.controls.amount.setValue(10);
+    component.createInvoice();
+    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+  });
+
+  it('keeps invoice history visible, filters other contracts, and offers invoice debit-note actions', () => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
     flushInvoiceContextAndHistory(invoiceContextResponse, [
@@ -922,7 +1453,7 @@ describe('ContractOverviewComponent', () => {
         contractId: 123,
         invoiceNumber: 'INV-2026-000001',
         sequence: 1,
-        invoiceType: 'PARTIAL_PREMIUM_INVOICE',
+        invoiceType: 'INVOICE',
         invoiceDate: '2026-09-23',
         invoiceableGrossPremium: 1500,
         grossAmount: 50,
@@ -940,7 +1471,7 @@ describe('ContractOverviewComponent', () => {
         contractId: 4,
         invoiceNumber: 'INV-2026-000002',
         sequence: 2,
-        invoiceType: 'PARTIAL_PREMIUM_INVOICE',
+        invoiceType: 'INVOICE',
         invoiceDate: '2026-09-24',
         invoiceableGrossPremium: 1500,
         grossAmount: 60,
@@ -978,7 +1509,22 @@ describe('ContractOverviewComponent', () => {
     const rowButtons = Array.from(fixture.nativeElement.querySelectorAll('td button') as NodeListOf<HTMLButtonElement>)
       .map(button => button.textContent?.trim());
     expect(rowButtons).toContain('View Allocation');
-    expect(rowButtons).not.toContain('Download Debit Note');
+    expect(rowButtons).toContain('Download Invoice PDF');
+  });
+
+  it('labels invoice and Avoir history downloads with their document type', () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
+    flushInvoiceContextAndHistory(invoiceContextResponse, [
+      { ...invoiceResponse, invoiceId: 91, contractId: 123, invoiceType: 'INVOICE' },
+      { ...invoiceResponse, invoiceId: 92, contractId: 123, invoiceType: 'AVOIR', invoiceNumber: 'AV-2026-000001' }
+    ]);
+    fixture.detectChanges();
+
+    const rowButtons = Array.from(fixture.nativeElement.querySelectorAll('td button') as NodeListOf<HTMLButtonElement>)
+      .map(button => button.textContent?.trim());
+    expect(rowButtons).toContain('Download Invoice PDF');
+    expect(rowButtons).toContain('Download Avoir');
   });
 
   it('formats invoice payment status values in invoice history', () => {
@@ -990,7 +1536,7 @@ describe('ContractOverviewComponent', () => {
         contractId: 123,
         invoiceNumber: 'INV-2026-000001',
         sequence: 1,
-        invoiceType: 'CEDENT_PREMIUM_INVOICE',
+        invoiceType: 'INVOICE',
         invoiceDate: '2026-09-23',
         invoiceableGrossPremium: 1500,
         grossAmount: 50,
@@ -1022,7 +1568,7 @@ describe('ContractOverviewComponent', () => {
         contractId: 123,
         invoiceNumber: 'INV-2026-000001',
         sequence: 1,
-        invoiceType: 'CEDENT_PREMIUM_INVOICE',
+        invoiceType: 'INVOICE',
         invoiceDate: '2026-09-23',
         invoiceableGrossPremium: 1500,
         grossAmount: 50,
@@ -1046,19 +1592,29 @@ describe('ContractOverviewComponent', () => {
     });
   });
 
-  it('keeps created invoices visible and offers retry when invoice-history reload fails', () => {
+  it('keeps created invoices visible and offers retry when invoice-history reload fails', async () => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
     flushInvoiceContextAndHistory();
     component.invoiceContext.set(invoiceContextResponse as any);
+    component.invoiceForm.controls.invoiceType.setValue('INVOICE');
+    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+      contractId: 123,
+      invoiceableGrossPremium: 1500,
+      alreadyInvoicedAmount: 250,
+      grossAmount: 1250,
+      remainingAmount: 0,
+      allocations: []
+    });
     component.invoiceForm.controls.amount.setValue(50);
+    await flushPreviewDebounce();
     httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceableGrossPremium: 1500,
       alreadyInvoicedAmount: 250,
       grossAmount: 50,
       remainingAmount: 1200,
-      allocations: []
+      allocations: [{ panelId: 44, grossPremium: 55.556, allocatedGrossPremium: 55.556, allocatedNetPremium: 50, allocationRatio: 1, cedentCommissionPct: 10, cedentCommissionAmount: 5.556, netAmount: 45, currencyCode: 'TND' }]
     });
 
     component.createInvoice();
@@ -1067,7 +1623,7 @@ describe('ContractOverviewComponent', () => {
       contractId: 123,
       invoiceNumber: 'INV-2026-000003',
       sequence: 3,
-      invoiceType: 'PARTIAL_PREMIUM_INVOICE',
+      invoiceType: 'INVOICE',
       invoiceDate: '2026-09-25',
       invoiceableGrossPremium: 1500,
       grossAmount: 50,
@@ -1122,7 +1678,7 @@ describe('ContractOverviewComponent', () => {
 
     expect(component.shouldShowInvoiceAction()).toBe(true);
     expect(headerButtons).toContain('Create Invoice');
-    expect(headerButtons).toContain('Download Debit Note');
+    expect(headerButtons).toContain('Create an invoice first');
 
     component.invoiceContext.set({
       ...invoiceContextResponse,
@@ -1131,47 +1687,139 @@ describe('ContractOverviewComponent', () => {
     } as any);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Download Debit Note');
+    expect(fixture.nativeElement.textContent).toContain('Create an invoice first');
   });
 
-  it('downloads the contract debit note directly without checking invoices', () => {
+  it('downloads the contract Credit Note using the contract ID, independent of invoice history', () => {
+    enableBackOfficeMode();
+    flushContract(123, {
+      ...contractResponse,
+      status: 'Bound',
+      hasAvoir: true,
+      contractDocumentType: 'CREDIT_NOTE',
+      contractDocumentDownloadUrl: '/api/back-office/contracts/123/financial-note/pdf'
+    });
+    flushInvoiceContextAndHistory(invoiceContextResponse, []);
+    expect(component.contractDocumentActionLabel()).toBe('Download Credit Note');
+    component.downloadContractFinancialNote();
+    const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/financial-note/pdf');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), { headers: {
+      'Content-Disposition': 'attachment; filename="CreditNote_CN-IT26-F-PD-0001.pdf"',
+      'Content-Type': 'application/pdf', 'X-Financial-Note-Type': 'CREDIT_NOTE',
+      'X-Financial-Note-Reference': 'CN-IT26-F-PD-0001'
+    } });
+  });
+
+  it('downloads a contract Debit Note without reading or selecting Invoice History', () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound', hasAvoir: false, contractDocumentType: 'DEBIT_NOTE' });
+    flushInvoiceContextAndHistory(invoiceContextResponse, [
+      { ...invoiceResponse, invoiceId: 91, invoiceType: 'INVOICE' },
+      { ...invoiceResponse, invoiceId: 92, invoiceType: 'INVOICE_FEES' }
+    ]);
+    expect(component.contractDocumentActionLabel()).toBe('Download Debit Note');
+    component.downloadContractFinancialNote();
+    component.downloadContractFinancialNote();
+    const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/financial-note/pdf');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), { headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename="DebitNote_DN-IT26-F-PD-0001.pdf"',
+      'X-Financial-Note-Type': 'DEBIT_NOTE'
+    }
+    });
+  });
+
+  it('keeps the Bound contract note action available when there are no invoices', () => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
     flushInvoiceContextAndHistory(invoiceContextResponse, []);
 
-    component.openDebitNoteAction();
-    const debitNoteRequest = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/debit-note');
-    expect(debitNoteRequest.request.method).toBe('GET');
-    expect(debitNoteRequest.request.responseType).toBe('blob');
-    debitNoteRequest.flush(new Blob(['pdf'], { type: 'application/pdf' }), {
-      headers: { 'Content-Disposition': 'attachment; filename="DebitNote-IT26-F-PD-0001.pdf"', 'Content-Type': 'application/pdf' }
-    });
     fixture.detectChanges();
 
-    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
-    httpMock.expectNone('http://localhost:5151/api/back-office/invoices/91/debit-note');
+    expect(fixture.nativeElement.textContent).toContain('Download Debit Note');
+    expect(fixture.nativeElement.textContent).not.toContain('Select an invoice');
+    httpMock.expectNone(request => request.url.includes('/financial-note/pdf'));
   });
 
-  it('keeps the debit note button visible and shows Retry when contract debit-note generation fails', () => {
-    enableBackOfficeMode();
-    flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
-    flushInvoiceContextAndHistory(invoiceContextResponse, []);
+  it('downloads an invoice debit note once using the invoice ID and backend filename', async () => {
+    flushContract();
+    const downloadBlob = vi.spyOn(
+      component as unknown as { downloadBlob: (blob: Blob, filename: string) => void },
+      'downloadBlob'
+    );
+    const invoice = { ...invoiceResponse, invoiceId: 91, invoiceType: 'INVOICE' };
+    component.downloadInvoiceDocument(invoice);
+    component.downloadInvoiceDocument(invoice);
 
-    component.openDebitNoteAction();
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/debit-note').flush(new Blob(['Debit note PDF is not ready.'], { type: 'text/plain' }), {
+    const request = httpMock.expectOne('http://localhost:5151/api/back-office/invoices/91/pdf');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('blob');
+    expect(component.downloadingDebitNoteInvoiceId()).toBe(91);
+    const pdf = new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+    request.flush(pdf, {
+      headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Invoice-INV-2026-000001.pdf"' }
+    });
+
+    await vi.waitFor(() => expect(downloadBlob).toHaveBeenCalledWith(pdf, 'Invoice-INV-2026-000001.pdf'));
+    expect(component.downloadingDebitNoteInvoiceId()).toBeNull();
+  });
+
+  it('uses the Avoir ID for its credit note and rejects a non-PDF response with trace details', async () => {
+    flushContract();
+    const downloadBlob = vi.spyOn(
+      component as unknown as { downloadBlob: (blob: Blob, filename: string) => void },
+      'downloadBlob'
+    );
+    const avoir = { ...invoiceResponse, invoiceId: 92, invoiceType: 'AVOIR', invoiceNumber: 'AV-2026-000001' };
+    component.downloadInvoiceDocument(avoir);
+
+    const request = httpMock.expectOne('http://localhost:5151/api/back-office/avoirs/92/pdf');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(new Blob([JSON.stringify({ message: 'Credit note is unavailable.', traceId: 'trace-avoir-92' })], { type: 'application/problem+json' }), {
       status: 500,
       statusText: 'Server Error'
     });
+
+    await vi.waitFor(() => expect(component.invoiceRowDownloadErrors()[92]).toContain('Credit note is unavailable.'));
+    expect(component.invoiceRowDownloadErrors()[92]).toContain('trace-avoir-92');
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('does not download a successful HTML response as a PDF', async () => {
+    flushContract();
+    const downloadBlob = vi.spyOn(
+      component as unknown as { downloadBlob: (blob: Blob, filename: string) => void },
+      'downloadBlob'
+    );
+    component.downloadInvoiceDocument({ ...invoiceResponse, invoiceId: 93, invoiceType: 'INVOICE' });
+    const request = httpMock.expectOne('http://localhost:5151/api/back-office/invoices/93/pdf');
+    request.flush(new Blob(['<html>not a PDF</html>'], { type: 'text/html' }), {
+      headers: { 'Content-Type': 'text/html' }
+    });
+
+    await vi.waitFor(() => expect(component.invoiceRowDownloadErrors()[93]).toContain('not a valid PDF'));
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('enables the contract note action independently of Invoice History', () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
+    flushInvoiceContextAndHistory(invoiceContextResponse, []);
+
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Debit note could not be downloaded. HTTP 500 Server Error');
-    expect(fixture.nativeElement.textContent).toContain('Retry');
-    expect(fixture.nativeElement.textContent).toContain('Download Debit Note');
-
-    component.retryContractDebitNoteDownload();
-    const retryRequest = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/debit-note');
-    expect(retryRequest.request.responseType).toBe('blob');
-    retryRequest.flush(new Blob(['pdf'], { type: 'application/pdf' }));
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find(item => item.textContent?.trim() === 'Download Debit Note');
+    expect(button?.disabled).toBe(false);
+    component.downloadContractFinancialNote();
+    const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/financial-note/pdf');
+    request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), { headers: {
+      'Content-Type': 'application/pdf', 'X-Financial-Note-Type': 'DEBIT_NOTE',
+      'Content-Disposition': 'attachment; filename="DebitNote_DN-IT26-F-PD-0001.pdf"'
+    } });
   });
 
   it('shows a retry action in the modal when invoice context fails', () => {
@@ -1211,21 +1859,31 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Fully Invoiced');
   });
 
-  it('shows backend invoice validation responses', () => {
+  it('shows backend invoice validation responses', async () => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
     component.invoiceContext.set(invoiceContextResponse as any);
 
     component.openInvoiceModal();
     flushInvoiceContextAndHistory();
+    component.invoiceForm.controls.invoiceType.setValue('INVOICE');
+    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+      contractId: 123,
+      invoiceableGrossPremium: 1500,
+      alreadyInvoicedAmount: 250,
+      grossAmount: 1250,
+      remainingAmount: 0,
+      allocations: []
+    });
     component.invoiceForm.controls.amount.setValue(1000);
+    await flushPreviewDebounce();
     httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceableGrossPremium: 1500,
       alreadyInvoicedAmount: 250,
       grossAmount: 1000,
       remainingAmount: 250,
-      allocations: []
+      allocations: [{ panelId: 44, grossPremium: 1111.111, allocatedGrossPremium: 1111.111, allocatedNetPremium: 1000, allocationRatio: 1, cedentCommissionPct: 10, cedentCommissionAmount: 111.111, netAmount: 900, currencyCode: 'TND' }]
     });
 
     component.createInvoice();
@@ -1237,5 +1895,88 @@ describe('ContractOverviewComponent', () => {
     });
 
     expect(component.invoiceError()).toBe('Gross invoice amount exceeds the remaining invoiceable premium.');
+  });
+
+  it('clears stale Avoir allocations on preview 400 and blocks creation while preserving form values', async () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' });
+    component.openInvoiceModal();
+    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 45 }, []);
+    component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    component.setAvoirProcessingMode('DIRECT_TO_REMITTANCES');
+
+    const firstPreview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    firstPreview.flush({
+      contractId: 123,
+      invoiceType: 'AVOIR',
+      grossAmount: 45,
+      allocations: [{ panelId: 44, reinsurerName: 'AMI', allocatedGrossPremium: 45, allocatedNetPremium: 45, cedentCommissionPct: 0, cedentCommissionAmount: 0, signedNetPayableAmount: -45, currencyCode: 'TND' }]
+    });
+    component.invoiceForm.controls.amount.setValue(10);
+    await flushPreviewDebounce();
+
+    const failedPreview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    expect(failedPreview.request.body).toEqual(expect.objectContaining({
+      invoiceType: 'AVOIR',
+      processingMode: 'DIRECT_TO_REMITTANCES',
+      grossAmount: 10
+    }));
+    failedPreview.flush({
+      message: 'Avoir allocation validation failed.',
+      detail: 'The Avoir allocation for reinsurer AMI exceeds its available invoiced allocation.',
+      errors: { allocations: ['The Avoir allocation for reinsurer AMI exceeds its available invoiced allocation.'] },
+      traceId: 'preview-trace-123'
+    }, { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+
+    expect(component.invoicePreview()).toBeNull();
+    expect(component.invoicePreviewAllocations()).toEqual([]);
+    expect(component.invoiceForm.controls.amount.value).toBe(10);
+    expect(component.isInvoiceSubmitDisabled()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Avoir allocation validation failed.');
+    expect(fixture.nativeElement.textContent).toContain('HTTP 400');
+    expect(fixture.nativeElement.textContent).toContain('The Avoir allocation for reinsurer AMI exceeds its available invoiced allocation.');
+    expect(fixture.nativeElement.textContent).toContain('allocations: The Avoir allocation for reinsurer AMI exceeds its available invoiced allocation.');
+    expect(fixture.nativeElement.textContent).toContain('preview-trace-123');
+
+    component.createInvoice();
+    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+  });
+
+  it('shows HTTP status, backend exception detail and trace ID for direct Avoir creation errors', () => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' });
+    component.openInvoiceModal();
+    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 45 }, []);
+    component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    component.setAvoirProcessingMode('DIRECT_TO_REMITTANCES');
+    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+      contractId: 123,
+      invoiceType: 'AVOIR',
+      grossAmount: 45,
+      allocations: [{ panelId: 44, reinsurerName: 'AMI', allocatedGrossPremium: 45, allocatedNetPremium: 45, cedentCommissionPct: 0, cedentCommissionAmount: 0, signedNetPayableAmount: -45, currencyCode: 'TND' }]
+    });
+    expect(component.invoicePreviewAllocations()).toHaveLength(1);
+    expect(component.isInvoiceAllocationValid()).toBe(true);
+
+    component.createInvoice();
+    const create = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices');
+    expect(create.request.body.invoiceType).toBe('AVOIR');
+    expect(create.request.body.processingMode).toBe('DIRECT_TO_REMITTANCES');
+    expect(create.request.body).not.toHaveProperty('receiptId');
+    expect(create.request.body).not.toHaveProperty('bankReceiptId');
+    expect(create.request.body).not.toHaveProperty('encaissementId');
+    create.flush({
+      title: 'Server error',
+      detail: 'System.NullReferenceException: object reference was null.',
+      traceId: 'create-trace-456'
+    }, { status: 500, statusText: 'Internal Server Error' });
+    fixture.detectChanges();
+
+    expect(component.invoiceError()).toContain('HTTP 500');
+    expect(component.invoiceError()).not.toContain('NullReferenceException');
+    expect(fixture.nativeElement.textContent).toContain('HTTP 500');
+    expect(fixture.nativeElement.textContent).toContain('System.NullReferenceException: object reference was null.');
+    expect(fixture.nativeElement.textContent).toContain('create-trace-456');
   });
 });

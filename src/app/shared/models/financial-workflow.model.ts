@@ -41,7 +41,6 @@ export interface BankReceiptRequest {
   receiptMonth: string;
   amountReceived: number;
   settlementMethod: string;
-  collectionType: string;
 }
 
 export interface FinancialReceiptQuery {
@@ -49,7 +48,6 @@ export interface FinancialReceiptQuery {
   counterpartyId?: number | null;
   currencyId?: number | null;
   pairingStatus?: string | null;
-  collectionType?: string | null;
   operationFrom?: string | null;
   operationTo?: string | null;
   pageNumber: number;
@@ -90,12 +88,14 @@ export interface BankReceiptResponse {
   availableAmount: number;
   allocatedAmount: number;
   pairingStatus: string;
+  hasEligibleAvoirRefund?: boolean;
+  receiptReference?: string | null;
   settlementMethod: string;
-  collectionType: string;
   bankReference: string;
   settlementLabel: string;
   remittances?: RemittanceResponse[];
   generatedRemittances?: RemittanceResponse[];
+  createdRemittances?: RemittanceResponse[];
 }
 
 export interface PairEncaissementRequest {
@@ -138,6 +138,7 @@ export interface EligibleInvoice {
   invoiceId: number;
   idInvoice?: number | string;
   invoiceNumber: string;
+  documentNumber?: string | null;
   label: string | null;
   contractId: number | null;
   umr: string | null;
@@ -148,6 +149,9 @@ export interface EligibleInvoice {
   invoiceType?: string | null;
   invoiceDate?: string | null;
   invoiceAmount?: number | null;
+  amount?: number | null;
+  signedAmount?: number | null;
+  isAvoir?: boolean | null;
   settledAmount?: number | null;
   remainingAmount?: number | null;
   paymentStatus?: string | null;
@@ -155,6 +159,7 @@ export interface EligibleInvoice {
   alreadyPairedAmount: number;
   outstandingAmount: number;
   currencyCode: string;
+  currency?: string | null;
   recoveryStatus?: string | null;
 }
 
@@ -171,7 +176,16 @@ export interface RemittanceResponse {
   receiptAllocationId: number | null;
   disbursementId: number | null;
   invoiceId?: number | null;
+  sourceDocumentId?: number | null;
   invoiceNumber?: string | null;
+  invoiceLabel?: string | null;
+  invoiceAvoirNumber?: string | null;
+  label?: string | null;
+  sourceType?: string | null;
+  beneficiaryType?: 'Cedent' | 'Reinsurer' | string | null;
+  beneficiaryCounterpartyId?: number | null;
+  sourceInvoiceId?: number | null;
+  sourceInvoiceNumber?: string | null;
   panelId: number | null;
   panelName?: string | null;
   contractId?: number | null;
@@ -179,6 +193,7 @@ export interface RemittanceResponse {
   umr?: string | null;
   cedentName?: string | null;
   counterpartyId: number;
+  beneficiaryId?: number | null;
   counterpartyName: string;
   reinsurerId?: number | null;
   reinsurerName?: string | null;
@@ -189,6 +204,7 @@ export interface RemittanceResponse {
   otherDeductions?: number | null;
   netPremiumDue: number | null;
   netPayableAmount: number | null;
+  signedNetPayableAmount?: number | null;
   currencyId: number;
   currencyCode: string;
   status: string;
@@ -206,6 +222,62 @@ export interface RemittanceResponse {
   invoiceDownloadUrl?: string | null;
   documentDownloadUrl?: string | null;
   documentId?: number | null;
+}
+
+export interface RemittanceBatchConfirmationResponse {
+  items: Array<{ remittanceId: number; status: string; confirmationDate?: string | null; financeNotificationCreated?: boolean }>;
+  signedPremiumTotal?: number | null;
+  signedAvoirTotal?: number | null;
+  netBalance?: number | null;
+  settlementMode?: string | null;
+  amountToDisburse?: number | null;
+  remainingAvoirCredit?: number | null;
+}
+
+export interface EligibleAvoirRefundReceipt {
+  bankReceiptId: number;
+  receiptReference: string;
+  receiptAmount: number;
+  allocatedAmount: number;
+  remainingAmount: number;
+  pairingStatus: string;
+  currencyCode: string;
+  contractId: number;
+  contractName: string;
+  cedentId: number;
+  cedentName: string;
+  avoirInvoiceId: number;
+  avoirNumber: string;
+  availableAvoirAmount: number;
+  refundAmount: number;
+  isEligibleForRefund: boolean;
+  eligibilityFailureReason: string | null;
+}
+
+export interface AvoirRefundRequest {
+  avoirInvoiceId: number;
+  amount: number;
+  idempotencyKey: string;
+}
+
+export interface AvoirRefundResponse {
+  pairingMode: 'CEDENT_REFUND' | string;
+  receiptId: number;
+  receiptReference: string;
+  pairingStatus: string;
+  signedPairingTotal: number;
+  avoirInvoiceId: number;
+  avoirNumber: string;
+  avoirOriginalAmount: number;
+  avoirAppliedAmount: number;
+  avoirRemainingAmount: number;
+  beneficiaryId: number;
+  beneficiaryName: string;
+  beneficiaryType: string;
+  remittanceId: number;
+  remittanceReference: string;
+  remittanceStatus: string;
+  currencyCode: string;
 }
 
 export interface DisbursementQueueItem extends RemittanceResponse {
@@ -244,6 +316,7 @@ export interface InvoiceQuery {
   pairingStatus?: string | null;
   currencyId?: number | string | null;
   currencyCode?: string | null;
+  currency?: string | null;
   from?: string | null;
   to?: string | null;
   dateFrom?: string | null;
@@ -264,10 +337,14 @@ export interface InvoiceResponse {
   receiptAllocationId?: number | null;
   currencyId?: number | null;
   currencyCode?: string | null;
+  currency?: string | null;
   invoiceNumber: string;
+  documentNumber?: string | null;
   invoiceType: string;
   invoiceDate: string;
   invoiceAmount?: number | null;
+  signedAmount?: number | null;
+  isAvoir?: boolean | null;
   settledAmount?: number | null;
   remainingAmount?: number | null;
   paymentStatus?: string | null;
@@ -298,6 +375,7 @@ export interface InvoiceReceiptAllocation {
   alreadyInvoicedAmount: number;
   availableAmount: number;
   currencyCode: string;
+  currency?: string | null;
 }
 
 export interface InvoicePanelOption {
@@ -311,12 +389,21 @@ export interface InvoicePanelOption {
 export interface InvoiceContext {
   contractId: number;
   currency: string;
+  currencyCode?: string;
   status?: string;
   contractGrossPremium: number;
   cedentCommissionPct: number | null;
+  cedentCommissionPercentage?: number | null;
+  cedentCommissionAmount?: number | null;
+  contractSignedSharePercentage?: number | null;
+  invoiceableNetPremium?: number | null;
+  currencyDecimalPlaces?: number | null;
   pairedAmount: number;
   alreadyInvoicedAmount: number;
   remainingInvoiceableAmount: number;
+  availableCreditBalance?: number | null;
+  availableAvoirAmount?: number | null;
+  netInvoicedBalance?: number | null;
   invoiceableGrossPremium?: number;
   canCreateInvoice?: boolean;
   blockingReason?: string | null;
@@ -326,10 +413,13 @@ export interface InvoiceContext {
 }
 
 export interface PremiumDebitNoteRequest {
+  invoiceType: 'INVOICE' | 'INVOICE_FEES' | 'AVOIR';
+  processingMode?: 'PAIR_WITH_ENCAISSEMENT' | 'DIRECT_TO_REMITTANCES';
   grossAmount: number;
   invoiceDate: string;
   label: string | null;
   idempotencyKey?: string | null;
+  allocations?: PremiumDebitNoteAllocation[];
 }
 
 export interface PremiumDebitNoteAllocation {
@@ -338,13 +428,25 @@ export interface PremiumDebitNoteAllocation {
   reinsurerName: string;
   signedSharePct: number | null;
   allocationRatio: number;
+  allocationRatioPercentage?: number | null;
   grossPremium: number;
+  allocatedGrossPremium?: number | null;
+  allocatedNetPremium?: number | null;
+  allocationAmount?: number | null;
   cedentCommissionPct: number | null;
+  cedentCommissionPercentage?: number | null;
   cedentCommissionAmount: number;
   brokeragePct: number;
+  irisBrokerageRate?: number | null;
+  irisBrokeragePercentage?: number | null;
   brokerageAmount: number;
+  irisBrokerageAmount?: number | null;
   otherDeductions: number;
+  otherDeductionsAmount?: number | null;
+  otherDeductionsPercentage?: number | null;
   netAmount: number;
+  netPayableAmount?: number | null;
+  signedNetPayableAmount?: number | null;
   currencyCode: string;
 }
 
@@ -354,16 +456,27 @@ export interface PremiumDebitNotePreview {
   alreadyInvoicedAmount: number;
   grossAmount: number;
   remainingAmount: number;
+  isReconciled?: boolean | null;
+  reconciliationDifference?: number | null;
+  currencyCode?: string | null;
   allocations: PremiumDebitNoteAllocation[];
 }
 
 export interface PremiumDebitNoteResponse extends PremiumDebitNotePreview {
   invoiceId: number;
   invoiceNumber: string;
+  documentNumber?: string | null;
   sequence: number | null;
   invoiceType: string;
+  processingMode?: 'PAIR_WITH_ENCAISSEMENT' | 'DIRECT_TO_REMITTANCES' | null;
+  pairingRequired?: boolean;
+  createdRemittances?: RemittanceResponse[];
   invoiceDate: string;
   totalNetAmount: number;
+  currency?: string | null;
+  amount?: number | null;
+  signedAmount?: number | null;
+  isAvoir?: boolean | null;
   currencyCode: string;
   status: string;
   paymentStatus?: string | null;
@@ -426,6 +539,19 @@ export interface BankAccountSnapshot {
 export interface DisbursementContext {
   closingId?: number | null;
   remittanceId: number;
+  remittanceReference?: string | null;
+  sourceType?: string | null;
+  beneficiaryType?: string | null;
+  beneficiaryId?: number | null;
+  beneficiaryName?: string | null;
+  avoirId?: number | null;
+  avoirNumber?: string | null;
+  creditNoteNumber?: string | null;
+  creditNoteDownloadUrl?: string | null;
+  encaissementId?: number | null;
+  encaissementReference?: string | null;
+  grossAmount?: number | null;
+  currency?: string | null;
   contractId?: number | null;
   contractName?: string | null;
   umr?: string | null;
@@ -463,6 +589,10 @@ export interface ClosingDisbursementContext {
   currencyId: number;
   currencyCode: string;
   totalClosingAmount: number;
+  storedTotal?: number;
+  calculatedTotal: number;
+  difference: number;
+  isConsistent: boolean;
   lines: RemittanceResponse[];
   bankAccounts: BankAccountResponse[];
   selectedBankAccount: BankAccountSnapshot | null;
@@ -472,6 +602,19 @@ export interface ClosingDisbursementContext {
   canStartPayment: boolean;
   canConfirmTransfer: boolean;
   validationMessage: string | null;
+}
+
+export interface FinanceClosingQueueItem {
+  closingId: number;
+  closingReference: string;
+  reinsurerName: string;
+  lineCount: number;
+  premiumTotal: number;
+  avoirTotal: number;
+  netPayableAmount: number;
+  currencyCode: string;
+  issueDate: string;
+  status: string;
 }
 
 export interface DisbursementCommandResponse {
@@ -501,6 +644,11 @@ export interface BackendFileDownload {
   blob: Blob;
   fileName: string | null;
   contentType: string | null;
+}
+
+export interface FinancialNoteDownload extends BackendFileDownload {
+  documentType: 'DEBIT_NOTE' | 'CREDIT_NOTE' | null;
+  documentReference: string | null;
 }
 
 export interface FinancialHistory {

@@ -127,6 +127,12 @@ export class ContractsService {
     );
   }
 
+  completeDraft(contractId: number): Observable<FacultativeContractResponse> {
+    return this.httpClient.post<unknown>(`${this.baseUrl}/contracts/${contractId}/complete`, {}).pipe(
+      map(payload => this.mapFacultativeContract(payload))
+    );
+  }
+
   updateFacultativeContract(contractId: number, request: UpsertFacultativeContractRequest): Observable<FacultativeContractResponse> {
     return this.httpClient.put<unknown>(`${this.baseUrl}/contracts/facultative/${contractId}`, request).pipe(
       map(payload => this.mapFacultativeContract(payload))
@@ -269,25 +275,28 @@ export class ContractsService {
     return {
       contractId: this.toNumber(record['contractId'] ?? record['idContract'] ?? record['id']) ?? 0,
       status: this.toText(record['status']) || 'DRAFT',
+      ...(typeof record['hasAvoir'] === 'boolean' ? { hasAvoir: record['hasAvoir'] } : {}),
+      ...(this.toNullableText(record['contractDocumentType']) ? { contractDocumentType: this.toNullableText(record['contractDocumentType']) } : {}),
+      ...(this.toNullableText(record['contractDocumentDownloadUrl']) ? { contractDocumentDownloadUrl: this.toNullableText(record['contractDocumentDownloadUrl']) } : {}),
       allowedActions: this.toStringArray(record['allowedActions']),
       netPremiumCedent: this.toNullableNumber(record['netPremiumCedent']),
-      umr: this.toText(record['umr']),
-      name: this.toText(record['name']),
+      umr: this.toNullableText(record['umr']),
+      name: this.toNullableText(record['name']),
       contractType: this.toNullableText(record['contractType']),
-      counterpartyId: this.toNumber(record['counterpartyId']) ?? 0,
+      counterpartyId: this.toNullableNumber(record['counterpartyId']),
       counterpartyName: this.toNullableText(record['counterpartyName'] ?? record['cedentName'] ?? cedent['name']),
-      currencyId: this.toNumber(record['currencyId']) ?? 0,
+      currencyId: this.toNullableNumber(record['currencyId']),
       currencyCode: this.toNullableText(record['currencyCode'] ?? currency['code']),
       currencySymbol: this.toNullableText(record['currencySymbol'] ?? currency['symbol']),
       currencyDecimalPlaces: this.toNullableNumber(record['currencyDecimalPlaces'] ?? currency['decimalPlaces']),
       coverageSelection: this.mapCoverageSelection(record['coverageSelection']),
       receptionDate: this.toNullableText(record['receptionDate']),
-      inceptionDate: this.toText(record['inceptionDate']),
-      expiryDate: this.toText(record['expiryDate']),
+      inceptionDate: this.toNullableText(record['inceptionDate']),
+      expiryDate: this.toNullableText(record['expiryDate']),
       writtenSharePct: this.toNullableNumber(record['writtenSharePct']),
       signedSharePct: this.toNullableNumber(record['signedSharePct']),
       fees: this.toNullableNumber(record['fees']),
-      isHighPriority: this.toBoolean(record['isHighPriority']),
+      isHighPriority: this.toNullableBoolean(record['isHighPriority']),
       sumInsured: this.toNullableNumber(record['sumInsured']),
       limitOfLiability: this.toNullableNumber(record['limitOfLiability']),
       deductible: this.toNullableNumber(record['deductible']),
@@ -297,7 +306,7 @@ export class ContractsService {
       cedentCommission: this.toNullableNumber(record['cedentCommissionAmount'] ?? record['cedentCommission']),
       netPremium: this.toNullableNumber(record['netPremium']),
       cedentPremiumReference: this.toNullableText(record['cedentPremiumReference']),
-      isFronting: this.toBoolean(record['isFronting']),
+      isFronting: this.toNullableBoolean(record['isFronting']),
       frontingReference: this.toNullableText(record['frontingReference']),
       memoText: this.toNullableText(record['memoText']),
       createdBy: this.toNullableText(record['createdBy'] ?? record['createdByName']),
@@ -382,7 +391,9 @@ export class ContractsService {
       premiumRatePct: this.toNullableNumber(record['premiumRatePct'] ?? record['premiumRate']),
       grossPremium: this.toNullableNumber(record['grossPremium']),
       brokeragePct: this.toNullableNumber(record['brokeragePct'] ?? record['brokerageIrisPct'] ?? record['brokerageIRISPct']),
-      otherDeductions: this.toNullableNumber(record['otherDeductions']),
+      otherDeductionsPercentage: this.toNullableNumber(record['otherDeductionsPercentage']),
+      otherDeductionsAmount: this.toNullableNumber(record['otherDeductionsAmount'] ?? record['otherDeductions']),
+      otherDeductions: this.toNullableNumber(record['otherDeductionsAmount'] ?? record['otherDeductions']),
       netPremium: this.toNullableNumber(record['netPremium'] ?? record['netPremiumReinsurer']),
       premiumReference: this.toNullableText(record['premiumReference'] ?? record['reinsurancePremiumReference']),
       status: this.toText(record['status']) || 'Draft'
@@ -505,5 +516,9 @@ export class ContractsService {
 
   private toBoolean(value: unknown): boolean {
     return value === true || value === 'true';
+  }
+
+  private toNullableBoolean(value: unknown): boolean | null {
+    return typeof value === 'boolean' ? value : value === 'true' ? true : value === 'false' ? false : null;
   }
 }

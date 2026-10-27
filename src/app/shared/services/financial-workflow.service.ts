@@ -6,12 +6,17 @@ import {
   BankAccountResponse,
   BankReceiptRequest,
   BankReceiptResponse,
+  AvoirRefundRequest,
+  AvoirRefundResponse,
+  EligibleAvoirRefundReceipt,
   BackendFileDownload,
+  FinancialNoteDownload,
   CedentClosingRequest,
   CedentClosingResponse,
   DisbursementCommandResponse,
   DisbursementContext,
   ClosingDisbursementContext,
+  FinanceClosingQueueItem,
   DisbursementQueueItem,
   DisbursementRequest,
   DisbursementResponse,
@@ -39,6 +44,7 @@ import {
   PairInvoiceAllocationRequest,
   PagedResponse,
   RemittanceResponse,
+  RemittanceBatchConfirmationResponse,
   RemittanceQuery,
   StartDisbursementResponse
 } from '../models/financial-workflow.model';
@@ -160,6 +166,32 @@ export class FinancialWorkflowService {
     );
   }
 
+  getEligibleAvoirRefundReceipts(avoirInvoiceId: number): Observable<EligibleAvoirRefundReceipt[]> {
+    return this.httpClient.get<EligibleAvoirRefundReceipt[]>(
+      `${this.baseUrl}/back-office/invoices/${avoirInvoiceId}/eligible-refund-receipts`
+    ).pipe(map(items => Array.isArray(items) ? items.map(item => {
+      const { isEligible: legacyEligibility, ...normalizedItem } = item as EligibleAvoirRefundReceipt & { isEligible?: boolean };
+      return {
+      ...normalizedItem,
+      bankReceiptId: this.toRequiredNumber(item.bankReceiptId),
+      avoirInvoiceId: this.toRequiredNumber(item.avoirInvoiceId),
+      receiptAmount: this.toNumber(item.receiptAmount) ?? 0,
+      allocatedAmount: this.toNumber(item.allocatedAmount) ?? 0,
+      remainingAmount: this.toNumber(item.remainingAmount) ?? 0,
+      pairingStatus: this.toText(item.pairingStatus),
+      availableAvoirAmount: this.toNumber(item.availableAvoirAmount) ?? 0,
+      refundAmount: this.toNumber(item.refundAmount) ?? 0,
+      isEligibleForRefund: item.isEligibleForRefund === true || legacyEligibility === true,
+      eligibilityFailureReason: this.toNullableText(item.eligibilityFailureReason)
+    }; }) : []));
+  }
+
+  refundAvoir(receiptId: number, request: AvoirRefundRequest): Observable<AvoirRefundResponse> {
+    return this.httpClient.post<AvoirRefundResponse>(
+      `${this.baseUrl}/back-office/bank-receipts/${receiptId}/invoice-allocations/avoir-refund`, request
+    );
+  }
+
   allocateReceiptInvoices(receiptId: number, request: PairInvoiceAllocationRequest | PairInvoiceAllocationBatchRequest): Observable<BankReceiptResponse> {
     const url = `${this.baseUrl}/back-office/bank-receipts/${receiptId}/invoice-allocations`;
     const payload: PairInvoiceAllocationRequest | PairInvoiceAllocationBatchRequest = 'allocations' in request
@@ -232,6 +264,10 @@ export class FinancialWorkflowService {
     return this.httpClient.post<RemittanceResponse>(`${this.baseUrl}/back-office/remittances/${remittanceRef}/confirm`, {});
   }
 
+  confirmRemittancesForDisbursement(remittanceIds: number[]): Observable<RemittanceBatchConfirmationResponse> {
+    return this.httpClient.post<RemittanceBatchConfirmationResponse>(`${this.baseUrl}/back-office/remittances/confirm-for-disbursement/batch`, { remittanceIds });
+  }
+
   createOutgoingClosing(request: OutgoingClosingRequest): Observable<BackendFileDownload> {
     return this.httpClient.post(`${this.baseUrl}/back-office/remittances/closings`, request, {
       observe: 'response',
@@ -252,14 +288,52 @@ export class FinancialWorkflowService {
     );
   }
 
-  getDisbursementContext(remittanceRef: number): Observable<DisbursementContext> {
-    return this.httpClient.get<unknown>(`${this.baseUrl}/finance/remittances/${remittanceRef}/disbursement-context`).pipe(
-      map(response => this.normalizeDisbursementContext(response, remittanceRef))
+  getFinanceClosingQueue(): Observable<FinanceClosingQueueItem[]> {
+    return this.httpClient.get<unknown>(`${this.baseUrl}/finance/disbursement-queue`).pipe(
+      map(response => {
+        const envelope = this.toRecord(response);
+        const rows = Array.isArray(response) ? response : this.toArray(envelope['items']);
+        return rows.map(value => {
+          const row = this.toRecord(value);
+          return {
+            closingId: this.toRequiredNumber(row['closingId'] ?? row['ClosingId']),
+            closingReference: this.toAnyText(row['closingReference'] ?? row['ClosingReference']),
+            reinsurerName: this.toAnyText(row['reinsurerName'] ?? row['ReinsurerName']),
+            lineCount: this.toRequiredNumber(row['lineCount'] ?? row['LineCount']),
+            premiumTotal: this.toRequiredNumber(row['premiumTotal'] ?? row['PremiumTotal']),
+            avoirTotal: this.toRequiredNumber(row['avoirTotal'] ?? row['AvoirTotal']),
+            netPayableAmount: this.toRequiredNumber(row['netPayableAmount'] ?? row['NetPayableAmount']),
+            currencyCode: this.toAnyText(row['currencyCode'] ?? row['CurrencyCode']),
+            issueDate: this.toAnyText(row['issueDate'] ?? row['IssueDate']),
+            status: this.toAnyText(row['status'] ?? row['Status'])
+          } satisfies FinanceClosingQueueItem;
+        });
+      })
     );
   }
 
+  getDisbursementContext(remittanceReference: number): Observable<DisbursementContext> {
+    return this.httpClient.get<unknown>(`${this.baseUrl}/finance/remittances/${remittanceReference}/disbursement-context`).pipe(
+      map(response => this.normalizeDisbursementContext(response, remittanceReference))
+    );
+  }
+
+  downloadAvoirRefundCreditNote(remittanceRef: number): Observable<BackendFileDownload> {
+    return this.httpClient.get(`${this.baseUrl}/finance/remittances/${remittanceRef}/credit-note`, {
+      observe: 'response',
+      responseType: 'blob'
+    }).pipe(map(response => this.mapFileDownload(response)));
+  }
+
   getClosingDisbursementContext(closingId: number): Observable<ClosingDisbursementContext> {
-    return this.httpClient.get<ClosingDisbursementContext>(`${this.baseUrl}/finance/closings/${closingId}/disbursement-context`);
+    return this.httpClient.get<Record<string, unknown>>(`${this.baseUrl}/finance/closings/${closingId}/disbursement-context`).pipe(map(record => ({
+      ...record,
+      storedTotal: this.toRequiredNumber(record['storedTotal'] ?? record['StoredTotal'] ?? record['totalClosingAmount'] ?? record['TotalClosingAmount']),
+      calculatedTotal: this.toRequiredNumber(record['calculatedTotal'] ?? record['CalculatedTotal']),
+      difference: this.toRequiredNumber(record['difference'] ?? record['Difference']),
+      isConsistent: (record['isConsistent'] ?? record['IsConsistent']) === true,
+      lines: (Array.isArray(record['lines'] ?? record['Lines']) ? (record['lines'] ?? record['Lines']) as unknown[] : []).map(line => this.normalizeRemittance(line))
+    } as ClosingDisbursementContext)));
   }
 
   startClosingDisbursement(closingId: number): Observable<ClosingDisbursementContext> {
@@ -427,18 +501,37 @@ export class FinancialWorkflowService {
       .pipe(map(payload => this.toArray(payload).map(item => this.mapPremiumDebitNoteResponse(item, contractId))));
   }
 
-  downloadPremiumDebitNote(invoiceId: number): Observable<BackendFileDownload> {
-    return this.httpClient.get(`${this.baseUrl}/back-office/invoices/${invoiceId}/debit-note`, {
+  downloadInvoicePdf(invoiceId: number): Observable<BackendFileDownload> {
+    return this.httpClient.get(`${this.baseUrl}/back-office/invoices/${invoiceId}/pdf`, {
       observe: 'response',
       responseType: 'blob'
     }).pipe(map(response => this.mapFileDownload(response)));
   }
 
-  downloadContractDebitNote(contractId: number): Observable<BackendFileDownload> {
-    return this.httpClient.get(`${this.baseUrl}/back-office/contracts/${contractId}/debit-note`, {
+  downloadPremiumDebitNote(invoiceId: number): Observable<BackendFileDownload> {
+    return this.downloadInvoicePdf(invoiceId);
+  }
+
+  downloadContractFinancialNote(contractId: number): Observable<FinancialNoteDownload> {
+    return this.httpClient.get(`${this.baseUrl}/back-office/contracts/${contractId}/financial-note/pdf`, {
+      observe: 'response',
+      responseType: 'blob'
+    }).pipe(map(response => ({
+      ...this.mapFileDownload(response),
+      documentType: this.normalizeFinancialNoteType(response.headers.get('X-Financial-Note-Type')),
+      documentReference: response.headers.get('X-Financial-Note-Reference')
+    })));
+  }
+
+  downloadAvoirPdf(avoirId: number): Observable<BackendFileDownload> {
+    return this.httpClient.get(`${this.baseUrl}/back-office/avoirs/${avoirId}/pdf`, {
       observe: 'response',
       responseType: 'blob'
     }).pipe(map(response => this.mapFileDownload(response)));
+  }
+
+  downloadAvoirCreditNote(avoirId: number): Observable<BackendFileDownload> {
+    return this.downloadAvoirPdf(avoirId);
   }
 
   createCedentClosing(contractId: number, request: CedentClosingRequest): Observable<CedentClosingResponse> {
@@ -454,7 +547,6 @@ export class FinancialWorkflowService {
     params = this.setNumber(params, 'counterpartyId', query.counterpartyId);
     params = this.setNumber(params, 'currencyId', query.currencyId);
     params = this.setText(params, 'pairingStatus', query.pairingStatus);
-    params = this.setText(params, 'collectionType', query.collectionType);
     params = this.setText(params, 'operationFrom', query.operationFrom);
     params = this.setText(params, 'operationTo', query.operationTo);
     params = this.setText(params, 'sortBy', query.sortBy);
@@ -498,6 +590,11 @@ export class FinancialWorkflowService {
     };
   }
 
+  private normalizeFinancialNoteType(value: string | null): FinancialNoteDownload['documentType'] {
+    const normalized = value?.trim().toUpperCase();
+    return normalized === 'DEBIT_NOTE' || normalized === 'CREDIT_NOTE' ? normalized : null;
+  }
+
   private normalizeStartDisbursementResponse(value: unknown): StartDisbursementResponse {
     const record = this.toRecord(value);
     return {
@@ -514,6 +611,19 @@ export class FinancialWorkflowService {
     return {
       ...(record as unknown as DisbursementContext),
       remittanceId: this.toRequiredNumber(record['remittanceId'] ?? record['RemittanceId'] ?? record['remittanceRef'] ?? record['RemittanceRef'] ?? fallbackRemittanceId),
+      remittanceReference: this.toNullableText(record['remittanceReference'] ?? record['RemittanceReference']) ?? String(fallbackRemittanceId),
+      sourceType: this.toNullableText(record['sourceType'] ?? record['SourceType']),
+      avoirId: this.toNullableNumber(record['avoirId'] ?? record['AvoirId']),
+      avoirNumber: this.toNullableText(record['avoirNumber'] ?? record['AvoirNumber']),
+      creditNoteNumber: this.toNullableText(record['creditNoteNumber'] ?? record['CreditNoteNumber']),
+      creditNoteDownloadUrl: this.toNullableText(record['creditNoteDownloadUrl'] ?? record['CreditNoteDownloadUrl']),
+      encaissementId: this.toNullableNumber(record['encaissementId'] ?? record['EncaissementId']),
+      encaissementReference: this.toNullableText(record['encaissementReference'] ?? record['EncaissementReference']),
+      beneficiaryId: this.toNullableNumber(record['beneficiaryId'] ?? record['BeneficiaryId']),
+      beneficiaryName: this.toNullableText(record['beneficiaryName'] ?? record['BeneficiaryName']),
+      beneficiaryType: this.toNullableText(record['beneficiaryType'] ?? record['BeneficiaryType']),
+      grossAmount: this.toNullableNumber(record['grossAmount'] ?? record['GrossAmount']),
+      currency: this.toNullableText(record['currency'] ?? record['Currency']),
       contractId: this.toNullableNumber(record['contractId'] ?? record['ContractId']),
       contractName: this.toNullableText(record['contractName'] ?? record['ContractName']),
       umr: this.toNullableText(record['umr'] ?? record['Umr']),
@@ -562,8 +672,10 @@ export class FinancialWorkflowService {
 
   private normalizeRemittance(value: unknown): DisbursementQueueItem {
     const record = this.toRecord(value);
-    const remittanceId = this.toRequiredNumber(record['remittanceId'] ?? record['RemittanceId'] ?? record['remittanceRef'] ?? record['RemittanceRef']);
-    const remittanceRef = this.toRequiredNumber(record['remittanceRef'] ?? record['RemittanceRef'] ?? remittanceId);
+    const rawRemittanceRef = this.toNullableNumber(record['remittanceRef'] ?? record['RemittanceRef']);
+    const rawRemittanceId = this.toNullableNumber(record['remittanceId'] ?? record['RemittanceId']);
+    const remittanceRef = rawRemittanceRef != null && rawRemittanceRef > 0 ? rawRemittanceRef : rawRemittanceId ?? 0;
+    const remittanceId = remittanceRef > 0 ? remittanceRef : rawRemittanceId ?? 0;
     const counterpartyName = this.toAnyText(record['counterpartyName'] ?? record['CounterpartyName'] ?? record['reinsurerName'] ?? record['ReinsurerName']);
     return {
       ...(record as unknown as RemittanceResponse),
@@ -573,7 +685,16 @@ export class FinancialWorkflowService {
       receiptAllocationId: this.toNullableNumber(record['receiptAllocationId'] ?? record['ReceiptAllocationId']),
       disbursementId: this.toNullableNumber(record['disbursementId'] ?? record['DisbursementId']),
       invoiceId: this.toNullableNumber(record['invoiceId'] ?? record['InvoiceId']),
+      sourceDocumentId: this.toNullableNumber(record['sourceDocumentId'] ?? record['SourceDocumentId']),
       invoiceNumber: this.toNullableText(record['invoiceNumber'] ?? record['InvoiceNumber']),
+      invoiceLabel: this.toNullableText(record['invoiceLabel'] ?? record['InvoiceLabel']),
+      invoiceAvoirNumber: this.toNullableText(record['invoiceAvoirNumber'] ?? record['InvoiceAvoirNumber']
+        ?? record['sourceDocumentNumber'] ?? record['SourceDocumentNumber']),
+      label: this.toNullableText(record['label'] ?? record['Label'] ?? record['invoiceLabel'] ?? record['InvoiceLabel']),
+      sourceType: this.toNullableText(record['sourceType'] ?? record['SourceType']),
+      beneficiaryType: this.toNullableText(record['beneficiaryType'] ?? record['BeneficiaryType']),
+      sourceInvoiceId: this.toNullableNumber(record['sourceInvoiceId'] ?? record['SourceInvoiceId']),
+      sourceInvoiceNumber: this.toNullableText(record['sourceInvoiceNumber'] ?? record['SourceInvoiceNumber']),
       invoiceDownloadUrl: this.toNullableText(record['invoiceDownloadUrl'] ?? record['InvoiceDownloadUrl'] ?? record['downloadUrl'] ?? record['DownloadUrl']),
       panelId: this.toNullableNumber(record['panelId'] ?? record['PanelId']),
       panelName: this.toNullableText(record['panelName'] ?? record['PanelName']),
@@ -582,6 +703,8 @@ export class FinancialWorkflowService {
       umr: this.toNullableText(record['umr'] ?? record['Umr']),
       cedentName: this.toNullableText(record['cedentName'] ?? record['CedentName']),
       counterpartyId: this.toRequiredNumber(record['counterpartyId'] ?? record['CounterpartyId'] ?? record['reinsurerId'] ?? record['ReinsurerId']),
+      beneficiaryId: this.toNullableNumber(record['beneficiaryId'] ?? record['BeneficiaryId'] ?? record['counterpartyId'] ?? record['CounterpartyId']),
+      beneficiaryCounterpartyId: this.toNullableNumber(record['beneficiaryCounterpartyId'] ?? record['BeneficiaryCounterpartyId'] ?? record['beneficiaryId'] ?? record['BeneficiaryId'] ?? record['counterpartyId'] ?? record['CounterpartyId']),
       counterpartyName,
       reinsurerId: this.toNullableNumber(record['reinsurerId'] ?? record['ReinsurerId'] ?? record['counterpartyId'] ?? record['CounterpartyId']),
       reinsurerName: this.toNullableText(record['reinsurerName'] ?? record['ReinsurerName'] ?? record['counterpartyName'] ?? record['CounterpartyName']),
@@ -590,6 +713,7 @@ export class FinancialWorkflowService {
       otherDeductions: this.toNullableNumber(record['otherDeductions'] ?? record['OtherDeductions']),
       netPremiumDue: this.toNullableNumber(record['netPremiumDue'] ?? record['NetPremiumDue']),
       netPayableAmount: this.toNullableNumber(record['netPayableAmount'] ?? record['NetPayableAmount']),
+      signedNetPayableAmount: this.toNullableNumber(record['signedNetPayableAmount'] ?? record['SignedNetPayableAmount']),
       currencyId: this.toRequiredNumber(record['currencyId'] ?? record['CurrencyId']),
       currencyCode: this.toAnyText(record['currencyCode'] ?? record['CurrencyCode']),
       status: this.toAnyText(record['status'] ?? record['Status']),
@@ -643,6 +767,16 @@ export class FinancialWorkflowService {
     return filenameMatch?.[1] ?? null;
   }
 
+  private resolveApiDownloadUrl(downloadUrl: string, fallbackUrl: string): string {
+    try {
+      const apiOrigin = new URL(this.baseUrl).origin;
+      const resolved = new URL(downloadUrl, apiOrigin);
+      return resolved.origin === apiOrigin ? resolved.toString() : fallbackUrl;
+    } catch {
+      return fallbackUrl;
+    }
+  }
+
   private normalizeEligibleContract(item: EligibleContract): EligibleContract {
     const record = item as EligibleContract & { IdContract?: number | string; counterpartyName?: string };
     return {
@@ -655,11 +789,16 @@ export class FinancialWorkflowService {
   private normalizeEligibleInvoice(item: EligibleInvoice): EligibleInvoice {
     const record = this.toRecord(item);
     const invoiceId = this.toRequiredNumber(record['invoiceId'] ?? record['idInvoice'] ?? record['IdInvoice']);
+    const invoiceType = this.toAnyText(record['invoiceType'] ?? record['InvoiceType'] ?? record['type'] ?? record['Type'] ?? record['documentType'] ?? record['DocumentType']);
+    const isAvoir = record['isAvoir'] === true || invoiceType.trim().toUpperCase() === 'AVOIR';
+    const documentNumber = this.toNullableText(record['documentNumber'] ?? record['DocumentNumber']);
+    const invoiceNumber = this.toNullableText(record['invoiceNumber'] ?? record['InvoiceNumber']);
     return {
       ...(item as EligibleInvoice),
       invoiceId,
       idInvoice: record['idInvoice'] as number | string | undefined ?? invoiceId,
-      invoiceNumber: this.toAnyText(record['invoiceNumber'] ?? record['InvoiceNumber']) || `INV-${invoiceId}`,
+      invoiceNumber: invoiceNumber || documentNumber || `${isAvoir ? 'AV' : 'INV'}-${invoiceId}`,
+      ...(documentNumber ? { documentNumber } : {}),
       label: this.toNullableText(record['label'] ?? record['Label']),
       contractId: this.toNullableNumber(record['contractId'] ?? record['ContractId'] ?? record['idContract'] ?? record['IdContract']),
       umr: this.toNullableText(record['umr'] ?? record['UMR'] ?? record['Umr']),
@@ -667,9 +806,12 @@ export class FinancialWorkflowService {
       cedentId: this.toNullableNumber(record['cedentId'] ?? record['CedentId'] ?? record['counterpartyId'] ?? record['CounterpartyId']),
       cedentName: this.toAnyText(record['cedentName'] ?? record['CedentName'] ?? record['counterpartyName'] ?? record['CounterpartyName']),
       counterpartyName: this.toNullableText(record['counterpartyName'] ?? record['CounterpartyName'] ?? record['reinsurerName'] ?? record['ReinsurerName']),
-      invoiceType: this.toNullableText(record['invoiceType'] ?? record['InvoiceType']),
+      invoiceType: invoiceType || null,
       invoiceDate: this.toNullableText(record['invoiceDate'] ?? record['InvoiceDate']),
       invoiceAmount: this.toNullableNumber(record['invoiceAmount'] ?? record['InvoiceAmount'] ?? record['grossAmount'] ?? record['GrossAmount'] ?? record['actualAmount'] ?? record['ActualAmount'] ?? record['amount'] ?? record['Amount']),
+      ...(this.toNullableNumber(record['amount'] ?? record['Amount']) != null ? { amount: this.toNullableNumber(record['amount'] ?? record['Amount']) } : {}),
+      ...(this.toNullableNumber(record['signedAmount'] ?? record['SignedAmount']) != null ? { signedAmount: this.toNullableNumber(record['signedAmount'] ?? record['SignedAmount']) } : {}),
+      isAvoir,
       settledAmount: this.toNullableNumber(record['settledAmount'] ?? record['SettledAmount'] ?? record['alreadyPairedAmount'] ?? record['AlreadyPairedAmount'] ?? record['pairedAmount'] ?? record['PairedAmount']),
       remainingAmount: this.toNullableNumber(record['remainingAmount'] ?? record['RemainingAmount'] ?? record['outstandingAmount'] ?? record['OutstandingAmount']),
       paymentStatus: this.toNullableText(record['paymentStatus'] ?? record['PaymentStatus'] ?? record['recoveryStatus'] ?? record['RecoveryStatus']),
@@ -677,6 +819,7 @@ export class FinancialWorkflowService {
       alreadyPairedAmount: this.toNumber(record['alreadyPairedAmount'] ?? record['AlreadyPairedAmount'] ?? record['settledAmount'] ?? record['SettledAmount'] ?? record['pairedAmount'] ?? record['PairedAmount']) ?? 0,
       outstandingAmount: this.toNumber(record['outstandingAmount'] ?? record['OutstandingAmount'] ?? record['remainingAmount'] ?? record['RemainingAmount']) ?? 0,
       currencyCode: this.toAnyText(record['currencyCode'] ?? record['CurrencyCode'] ?? record['currency'] ?? record['Currency']),
+      ...(this.toNullableText(record['currency'] ?? record['Currency']) ? { currency: this.toNullableText(record['currency'] ?? record['Currency']) } : {}),
       recoveryStatus: this.toNullableText(record['recoveryStatus'] ?? record['RecoveryStatus'] ?? record['paymentStatus'] ?? record['PaymentStatus'])
     };
   }
@@ -684,6 +827,10 @@ export class FinancialWorkflowService {
   private normalizeInvoiceResponse(item: InvoiceResponse): InvoiceResponse {
     const record = this.toRecord(item);
     const idInvoice = this.toRequiredNumber(record['idInvoice'] ?? record['IdInvoice'] ?? record['invoiceId'] ?? record['InvoiceId']);
+    const invoiceType = this.toAnyText(record['invoiceType'] ?? record['InvoiceType'] ?? record['type'] ?? record['Type'] ?? record['documentType'] ?? record['DocumentType']);
+    const isAvoir = record['isAvoir'] === true || invoiceType.trim().toUpperCase() === 'AVOIR';
+    const documentNumber = this.toNullableText(record['documentNumber'] ?? record['DocumentNumber']);
+    const invoiceNumber = this.toNullableText(record['invoiceNumber'] ?? record['InvoiceNumber']);
     return {
       ...item,
       idInvoice,
@@ -694,10 +841,14 @@ export class FinancialWorkflowService {
       receiptAllocationId: this.toNullableNumber(record['receiptAllocationId'] ?? record['ReceiptAllocationId']),
       currencyId: this.toNullableNumber(record['currencyId'] ?? record['CurrencyId']),
       currencyCode: this.toNullableText(record['currencyCode'] ?? record['CurrencyCode'] ?? record['currency'] ?? record['Currency']),
-      invoiceNumber: this.toAnyText(record['invoiceNumber'] ?? record['InvoiceNumber']) || `INV-${idInvoice}`,
-      invoiceType: this.toAnyText(record['invoiceType'] ?? record['InvoiceType']),
+      ...(this.toNullableText(record['currency'] ?? record['Currency']) ? { currency: this.toNullableText(record['currency'] ?? record['Currency']) } : {}),
+      invoiceNumber: invoiceNumber || documentNumber || `${isAvoir ? 'AV' : 'INV'}-${idInvoice}`,
+      ...(documentNumber ? { documentNumber } : {}),
+      invoiceType,
+      isAvoir,
       invoiceDate: this.toAnyText(record['invoiceDate'] ?? record['InvoiceDate']),
       invoiceAmount: this.toNullableNumber(record['invoiceAmount'] ?? record['InvoiceAmount'] ?? record['grossAmount'] ?? record['GrossAmount']),
+      ...(this.toNullableNumber(record['signedAmount'] ?? record['SignedAmount']) != null ? { signedAmount: this.toNullableNumber(record['signedAmount'] ?? record['SignedAmount']) } : {}),
       settledAmount: this.toNullableNumber(record['settledAmount'] ?? record['SettledAmount'] ?? record['pairedAmount'] ?? record['PairedAmount']),
       remainingAmount: this.toNullableNumber(record['remainingAmount'] ?? record['RemainingAmount'] ?? record['outstandingAmount'] ?? record['OutstandingAmount']),
       paymentStatus: this.toNullableText(record['paymentStatus'] ?? record['PaymentStatus'] ?? record['recoveryStatus'] ?? record['RecoveryStatus']),
@@ -723,15 +874,29 @@ export class FinancialWorkflowService {
 
   private mapInvoiceContext(payload: unknown, fallbackContractId: number): InvoiceContext {
     const record = this.toRecord(payload);
+    const availableCreditBalance = this.toNullableNumber(record['availableCreditBalance'] ?? record['AvailableCreditBalance']);
+    const availableAvoirAmount = this.toNullableNumber(record['availableAvoirAmount'] ?? record['AvailableAvoirAmount'] ?? record['availableCreditAmount'] ?? record['AvailableCreditAmount']);
+    const netInvoicedBalance = this.toNullableNumber(record['netInvoicedBalance'] ?? record['NetInvoicedBalance']);
+    const cedentCommissionPercentage = this.toNullableNumber(record['cedentCommissionPercentage'] ?? record['CedentCommissionPercentage'] ?? record['cedentCommissionPct'] ?? record['CedentCommissionPct']);
+    const currencyCode = this.toText(record['currencyCode'] ?? record['CurrencyCode'] ?? record['currency'] ?? record['Currency']);
     return {
       contractId: this.toRequiredNumber(record['contractId'] ?? record['idContract']) || fallbackContractId,
-      currency: this.toText(record['currency'] ?? record['currencyCode']),
+      currency: currencyCode,
+      currencyCode,
       status: this.toText(record['status'] ?? record['Status']),
       contractGrossPremium: this.toNumber(record['contractGrossPremium'] ?? record['ContractGrossPremium']) ?? 0,
-      cedentCommissionPct: this.toNumber(record['cedentCommissionPct'] ?? record['CedentCommissionPct']),
+      cedentCommissionPct: cedentCommissionPercentage,
+      cedentCommissionPercentage,
+      cedentCommissionAmount: this.toNullableNumber(record['cedentCommissionAmount'] ?? record['CedentCommissionAmount']),
+      contractSignedSharePercentage: this.toNullableNumber(record['contractSignedSharePercentage'] ?? record['ContractSignedSharePercentage']),
+      invoiceableNetPremium: this.toNullableNumber(record['invoiceableNetPremium'] ?? record['InvoiceableNetPremium']),
+      currencyDecimalPlaces: this.toNullableNumber(record['currencyDecimalPlaces'] ?? record['CurrencyDecimalPlaces']),
       pairedAmount: this.toNumber(record['pairedAmount'] ?? record['totalPaired']) ?? 0,
       alreadyInvoicedAmount: this.toNumber(record['alreadyInvoicedAmount'] ?? record['alreadyInvoiced']) ?? 0,
       remainingInvoiceableAmount: this.toNumber(record['remainingInvoiceableAmount'] ?? record['RemainingInvoiceableAmount']) ?? 0,
+      ...(availableCreditBalance != null ? { availableCreditBalance } : {}),
+      ...(availableAvoirAmount != null ? { availableAvoirAmount } : {}),
+      ...(netInvoicedBalance != null ? { netInvoicedBalance } : {}),
       invoiceableGrossPremium: this.toNumber(record['invoiceableGrossPremium'] ?? record['InvoiceableGrossPremium']) ?? 0,
       canCreateInvoice: record['canCreateInvoice'] === true || record['CanCreateInvoice'] === true,
       blockingReason: this.toBlockingReason(record['blockingReason'] ?? record['BlockingReason']),
@@ -808,6 +973,11 @@ export class FinancialWorkflowService {
       alreadyInvoicedAmount: this.toNumber(record['alreadyInvoicedAmount'] ?? record['AlreadyInvoicedAmount']) ?? 0,
       grossAmount: this.toNumber(record['grossAmount'] ?? record['GrossAmount']) ?? 0,
       remainingAmount: this.toNumber(record['remainingAmount'] ?? record['RemainingAmount']) ?? 0,
+      isReconciled: typeof (record['isReconciled'] ?? record['IsReconciled']) === 'boolean'
+        ? (record['isReconciled'] ?? record['IsReconciled']) as boolean
+        : null,
+      reconciliationDifference: this.toNullableNumber(record['reconciliationDifference'] ?? record['ReconciliationDifference']),
+      currencyCode: this.toNullableText(record['currencyCode'] ?? record['CurrencyCode']),
       allocations: this.toArray(record['allocations'] ?? record['Allocations']).map(item => this.mapPremiumDebitNoteAllocation(item))
     };
   }
@@ -815,15 +985,31 @@ export class FinancialWorkflowService {
   private mapPremiumDebitNoteResponse(value: unknown, fallbackContractId: number): PremiumDebitNoteResponse {
     const record = this.toRecord(value);
     const preview = this.mapPremiumDebitNotePreview(value, fallbackContractId);
+    const invoiceType = this.toText(record['invoiceType'] ?? record['InvoiceType'] ?? record['type'] ?? record['Type'] ?? record['documentType'] ?? record['DocumentType']);
+    const processingMode = this.toNullableText(record['processingMode'] ?? record['ProcessingMode']);
+    const isAvoir = record['isAvoir'] === true || invoiceType.trim().toUpperCase() === 'AVOIR';
+    const documentNumber = this.toNullableText(record['documentNumber'] ?? record['DocumentNumber']);
+    const invoiceNumber = this.toNullableText(record['invoiceNumber'] ?? record['InvoiceNumber']);
+    const amount = this.toNullableNumber(record['amount'] ?? record['Amount'] ?? record['grossAmount'] ?? record['GrossAmount']);
+    const signedAmount = this.toNullableNumber(record['signedAmount'] ?? record['SignedAmount']);
     return {
       ...preview,
       invoiceId: this.toRequiredNumber(record['invoiceId'] ?? record['InvoiceId'] ?? record['idInvoice'] ?? record['IdInvoice']),
-      invoiceNumber: this.toText(record['invoiceNumber'] ?? record['InvoiceNumber']),
+      invoiceNumber: invoiceNumber || documentNumber || `${isAvoir ? 'AV' : 'INV'}-${this.toRequiredNumber(record['invoiceId'] ?? record['InvoiceId'] ?? record['idInvoice'] ?? record['IdInvoice'])}`,
+      ...(documentNumber ? { documentNumber } : {}),
       sequence: this.toNumber(record['sequence'] ?? record['Sequence'] ?? record['sequenceNumber'] ?? record['SequenceNumber']),
-      invoiceType: this.toText(record['invoiceType'] ?? record['InvoiceType']),
+      invoiceType,
+      ...(processingMode === 'PAIR_WITH_ENCAISSEMENT' || processingMode === 'DIRECT_TO_REMITTANCES' ? { processingMode } : {}),
+      pairingRequired: record['pairingRequired'] === true || record['PairingRequired'] === true,
+      createdRemittances: this.toArray(record['createdRemittances'] ?? record['CreatedRemittances'])
+        .map(item => this.normalizeRemittance(item)),
       invoiceDate: this.toText(record['invoiceDate'] ?? record['InvoiceDate']),
       totalNetAmount: this.toNumber(record['totalNetAmount'] ?? record['TotalNetAmount'] ?? record['netPremium'] ?? record['NetPremium']) ?? 0,
+      ...(amount != null ? { amount } : {}),
+      ...(signedAmount != null ? { signedAmount } : {}),
+      isAvoir,
       currencyCode: this.toText(record['currencyCode'] ?? record['CurrencyCode']),
+      ...(this.toNullableText(record['currency'] ?? record['Currency']) ? { currency: this.toNullableText(record['currency'] ?? record['Currency']) } : {}),
       status: this.toText(record['status'] ?? record['Status']),
       paymentStatus: this.toNullableText(record['paymentStatus'] ?? record['PaymentStatus'] ?? record['recoveryStatus'] ?? record['RecoveryStatus']),
       recoveryStatus: this.toNullableText(record['recoveryStatus'] ?? record['RecoveryStatus'] ?? record['paymentStatus'] ?? record['PaymentStatus']),
@@ -833,7 +1019,7 @@ export class FinancialWorkflowService {
 
   private mapPremiumDebitNoteAllocation(value: unknown): PremiumDebitNoteAllocation {
     const record = this.toRecord(value);
-    const cedentCommissionPct = this.toNumber(record['cedentCommissionPct'] ?? record['CedentCommissionPct']);
+    const cedentCommissionPct = this.toNumber(record['cedentCommissionPercentage'] ?? record['CedentCommissionPercentage'] ?? record['cedentCommissionPct'] ?? record['CedentCommissionPct']);
     const cedentCommissionAmount = this.toNumber(record['cedentCommissionAmount'] ?? record['CedentCommissionAmount']);
     if (isDevMode() && cedentCommissionPct == null) {
       throw new Error('Invoice calculation data error: response is missing cedentCommissionPct.');
@@ -847,13 +1033,25 @@ export class FinancialWorkflowService {
       reinsurerName: this.toText(record['reinsurerName'] ?? record['ReinsurerName']),
       signedSharePct: this.toNumber(record['signedSharePct'] ?? record['SignedSharePct']),
       allocationRatio: this.toNumber(record['allocationRatio'] ?? record['AllocationRatio']) ?? 0,
+      allocationRatioPercentage: this.toNullableNumber(record['allocationRatioPercentage'] ?? record['AllocationRatioPercentage']),
       grossPremium: this.toNumber(record['grossPremium'] ?? record['GrossPremium']) ?? 0,
+      allocatedGrossPremium: this.toNullableNumber(record['allocatedGrossPremium'] ?? record['AllocatedGrossPremium']),
+      allocatedNetPremium: this.toNullableNumber(record['allocatedNetPremium'] ?? record['AllocatedNetPremium']),
+      allocationAmount: this.toNullableNumber(record['allocationAmount'] ?? record['AllocationAmount']),
       cedentCommissionPct,
+      cedentCommissionPercentage: cedentCommissionPct,
       cedentCommissionAmount: cedentCommissionAmount ?? 0,
-      brokeragePct: this.toNumber(record['brokeragePct'] ?? record['BrokeragePct']) ?? 0,
+      brokeragePct: this.toNumber(record['irisBrokeragePercentage'] ?? record['IrisBrokeragePercentage'] ?? record['brokeragePct'] ?? record['BrokeragePct']) ?? 0,
+      irisBrokerageRate: this.toNullableNumber(record['irisBrokerageRate'] ?? record['IrisBrokerageRate']),
+      irisBrokeragePercentage: this.toNullableNumber(record['irisBrokeragePercentage'] ?? record['IrisBrokeragePercentage']),
       brokerageAmount: this.toNumber(record['brokerageAmount'] ?? record['BrokerageAmount']) ?? 0,
-      otherDeductions: this.toNumber(record['otherDeductions'] ?? record['OtherDeductions']) ?? 0,
-      netAmount: this.toNumber(record['netAmount'] ?? record['NetAmount']) ?? 0,
+      irisBrokerageAmount: this.toNullableNumber(record['irisBrokerageAmount'] ?? record['IrisBrokerageAmount']),
+      otherDeductions: this.toNumber(record['otherDeductionsAmount'] ?? record['OtherDeductionsAmount'] ?? record['otherDeductions'] ?? record['OtherDeductions']) ?? 0,
+      otherDeductionsAmount: this.toNullableNumber(record['otherDeductionsAmount'] ?? record['OtherDeductionsAmount']),
+      otherDeductionsPercentage: this.toNullableNumber(record['otherDeductionsPercentage'] ?? record['OtherDeductionsPercentage']),
+      netAmount: this.toNumber(record['netPayableAmount'] ?? record['NetPayableAmount'] ?? record['netAmount'] ?? record['NetAmount']) ?? 0,
+      netPayableAmount: this.toNullableNumber(record['netPayableAmount'] ?? record['NetPayableAmount']),
+      signedNetPayableAmount: this.toNullableNumber(record['signedNetPayableAmount'] ?? record['SignedNetPayableAmount']),
       currencyCode: this.toText(record['currencyCode'] ?? record['CurrencyCode'])
     };
   }

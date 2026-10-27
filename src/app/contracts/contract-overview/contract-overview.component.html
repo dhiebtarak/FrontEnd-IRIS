@@ -41,13 +41,21 @@
                 <button type="button" (click)="openInvoiceModal()" class="rounded-xl bg-iris-teal px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-sky-100 transition hover:bg-iris-teal-light">
                   Create Invoice
                 </button>
-                <button type="button" (click)="openDebitNoteAction()" [disabled]="isDownloadingContractDebitNote()" class="rounded-xl border border-iris-teal bg-white px-5 py-2.5 text-sm font-bold text-iris-teal shadow-lg shadow-sky-100 transition hover:bg-sky-50 disabled:cursor-wait disabled:opacity-70">
-                  {{ isDownloadingContractDebitNote() ? 'Generating...' : 'Download Debit Note' }}
+                <button type="button" (click)="downloadContractFinancialNote()" [disabled]="isDownloadingFinancialNote()" class="rounded-xl border border-iris-teal bg-white px-5 py-2.5 text-sm font-bold text-iris-teal shadow-lg shadow-sky-100 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60">
+                  {{ isDownloadingFinancialNote() ? 'Generating PDF...' : contractDocumentActionLabel() }}
                 </button>
               }
               @if (canModifyContract()) {
                 <button type="button" (click)="backToInformation()" [disabled]="isStartingBinding()" class="rounded-xl border border-iris-border bg-white px-4 py-2.5 text-sm font-semibold text-iris-navy transition hover:border-iris-navy-light disabled:cursor-not-allowed disabled:opacity-60">
                   Modify Contract
+                </button>
+              }
+              @if (canMarkReadyForPlacement()) {
+                <button type="button" (click)="markReadyForPlacement()" [disabled]="isMarkingReady()" class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-sky-100 transition hover:bg-iris-teal-light disabled:cursor-wait disabled:opacity-60">
+                  @if (isMarkingReady()) {
+                    <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+                  }
+                  <span>{{ isMarkingReady() ? 'Updating status...' : 'Mark as Ready for Placement' }}</span>
                 </button>
               }
               @if (canAddReinsurer()) {
@@ -69,6 +77,11 @@
                 </button>
               }
             </div>
+            @if (invoiceDownloadError()) {
+              <div role="alert" class="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
+                {{ invoiceDownloadError() }}
+              </div>
+            }
           </div>
 
           @if (canStartBinding() && !hasConfirmedPanel()) {
@@ -83,14 +96,26 @@
             </div>
           }
 
-          @if (contractDebitNoteError()) {
-            <div class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-950">
-              <p>{{ contractDebitNoteError() }}</p>
-              <button type="button" (click)="retryContractDebitNoteDownload()" class="mt-3 rounded-xl border border-rose-300 bg-white px-4 py-2 text-xs font-bold text-rose-800 transition hover:bg-rose-100">
-                Retry
-              </button>
+          @if (statusTransitionErrors().length) {
+            <div class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-950" role="alert">
+              <h2 class="font-bold">Complete these fields before moving the Draft to Ready for Placement</h2>
+              <ul class="mt-3 space-y-3">
+                @for (entry of statusTransitionErrors(); track entry.field) {
+                  <li class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <strong>{{ entry.field }}:</strong>
+                      <span class="ml-1">{{ entry.messages.join(' ') }}</span>
+                    </div>
+                    <button type="button" (click)="editIncompleteField(entry.field)" class="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-900 hover:bg-rose-100">
+                      Edit this field
+                    </button>
+                  </li>
+                }
+              </ul>
+              <p class="mt-3 text-xs">The contract remains Draft until all placement requirements pass.</p>
             </div>
           }
+
         </div>
 
         <nav class="flex gap-1 overflow-x-auto border-b border-iris-divider bg-iris-bg/70 px-4 pt-3" aria-label="Contract workspace tabs">
@@ -98,24 +123,80 @@
             type="button"
             (click)="selectOverviewTab()"
             class="rounded-t-2xl border px-5 py-3 text-sm font-bold transition"
-            [ngClass]="activePanelId() === null ? 'border-iris-border border-b-white bg-white text-iris-navy' : 'border-transparent bg-transparent text-iris-slate hover:bg-white/70 hover:text-iris-navy'"
+            [ngClass]="activePanelId() === null && !isReinsurersTabActive() ? 'border-iris-border border-b-white bg-white text-iris-navy' : 'border-transparent bg-transparent text-iris-slate hover:bg-white/70 hover:text-iris-navy'"
           >
             Contract Overview
           </button>
-          @for (panel of panels(); track panel.idPanel) {
+          @if (canAddReinsurer()) {
             <button
               type="button"
-              (click)="selectPanelTab(panel)"
+              (click)="selectReinsurersTab()"
               class="rounded-t-2xl border px-5 py-3 text-sm font-bold transition"
-              [ngClass]="activePanelId() === panel.idPanel ? 'border-iris-border border-b-white bg-white text-iris-navy' : 'border-transparent bg-transparent text-iris-slate hover:bg-white/70 hover:text-iris-navy'"
+              [ngClass]="isReinsurersTabActive() ? 'border-iris-border border-b-white bg-white text-iris-navy' : 'border-transparent bg-transparent text-iris-slate hover:bg-white/70 hover:text-iris-navy'"
             >
-              {{ panel.reinsurerName || 'Reinsurer' }}
+              Reinsurers
             </button>
+          }
+          @if (canShowReinsurerTabs()) {
+            @for (panel of panels(); track panel.idPanel) {
+              <button
+                type="button"
+                (click)="selectPanelTab(panel)"
+                class="rounded-t-2xl border px-5 py-3 text-sm font-bold transition"
+                [ngClass]="activePanelId() === panel.idPanel && !isReinsurersTabActive() ? 'border-iris-border border-b-white bg-white text-iris-navy' : 'border-transparent bg-transparent text-iris-slate hover:bg-white/70 hover:text-iris-navy'"
+              >
+                {{ panel.reinsurerName || 'Reinsurer' }}
+              </button>
+            }
           }
         </nav>
 
         <div class="p-5 md:p-7">
-          @if (activePanelId() === null) {
+          @if (isReinsurersTabActive()) {
+            <section class="rounded-[22px] border border-iris-border bg-white p-5">
+              <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-iris-divider pb-4">
+                <div>
+                  <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Placement</p>
+                  <h2 class="mt-1 font-cambria text-2xl font-bold text-iris-navy">Reinsurers</h2>
+                </div>
+                @if (canAddReinsurer()) {
+                  <button type="button" (click)="openReinsurerForm()" class="rounded-xl bg-iris-teal px-4 py-2.5 text-sm font-bold text-white transition hover:bg-iris-teal-light">
+                    Add Reinsurer
+                  </button>
+                }
+              </div>
+              @if (panels().length) {
+                <div class="overflow-x-auto rounded-xl border border-iris-border">
+                  <table class="w-full min-w-[620px] text-left text-sm">
+                    <thead class="bg-iris-bg text-xs uppercase text-iris-slate">
+                      <tr>
+                        <th class="px-4 py-3">Reinsurer</th>
+                        <th class="px-4 py-3">Role</th>
+                        <th class="px-4 py-3">Signed share</th>
+                        <th class="px-4 py-3">Status</th>
+                        <th class="px-4 py-3">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-iris-divider">
+                      @for (panel of panels(); track panel.idPanel) {
+                        <tr>
+                          <td class="px-4 py-3 font-semibold text-iris-navy">{{ panel.reinsurerName || 'Reinsurer' }}</td>
+                          <td class="px-4 py-3">{{ panel.role || 'Not provided' }}</td>
+                          <td class="px-4 py-3">{{ formatPercent(panel.signedSharePct) }}</td>
+                          <td class="px-4 py-3">{{ getPanelDisplayStatus(panel) }}</td>
+                          <td class="px-4 py-3">
+                            <button type="button" (click)="selectPanelTab(panel)" class="font-bold text-iris-teal hover:text-iris-navy">View placement</button>
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              } @else {
+                <p class="rounded-xl bg-iris-bg px-4 py-5 text-sm font-semibold text-iris-slate">No reinsurer placement has been added yet.</p>
+              }
+            </section>
+          } @else if (activePanelId() === null) {
             <div class="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
               <section class="rounded-[22px] border border-iris-border bg-white p-5">
                 <div class="mb-4 flex items-center justify-between border-b border-iris-divider pb-3">
@@ -396,12 +477,16 @@
             <input type="number" formControlName="brokerageIrisAmount" readonly class="w-full rounded-xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-bold text-iris-navy outline-none" />
           </label>
           <label>
-            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Other deductions</span>
-            <input type="number" formControlName="otherDeductions" min="0" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
-            @if (panelForm.controls.otherDeductions.hasError('min')) {
-              <span class="mt-2 block text-xs font-semibold text-rose-700">Other deductions cannot be negative.</span>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Other Deductions %</span>
+            <input type="number" formControlName="otherDeductionsPercentage" min="0" max="100" step="any" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+            @if (panelForm.controls.otherDeductionsPercentage.hasError('min') || panelForm.controls.otherDeductionsPercentage.hasError('max')) {
+              <span class="mt-2 block text-xs font-semibold text-rose-700">Other Deductions must be between 0 and 100.</span>
             }
-            @if (panelForm.controls.otherDeductions.hasError('deductionsExceedGrossPremium')) {
+          </label>
+          <label>
+            <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Other Deductions Amount</span>
+            <input type="number" formControlName="otherDeductionsAmount" readonly class="w-full rounded-xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-bold text-iris-navy outline-none" />
+            @if (panelForm.controls.otherDeductionsAmount.hasError('deductionsExceedGrossPremium')) {
               <span class="mt-2 block text-xs font-semibold text-rose-700">Total deductions cannot exceed gross premium.</span>
             }
           </label>
@@ -492,8 +577,14 @@
             <tbody>
               @for (invoice of invoiceHistory(); track invoice.invoiceId) {
                 <tr class="border-b border-iris-divider">
-                  <td class="px-4 py-3 font-bold text-iris-navy">{{ invoice.invoiceNumber || 'Not provided' }}</td>
-                  <td class="px-4 py-3">{{ invoice.invoiceType || 'Not provided' }}</td>
+                  <td class="px-4 py-3 font-bold text-iris-navy">{{ invoice.documentNumber || invoice.invoiceNumber || 'Not provided' }}</td>
+                  <td class="px-4 py-3">
+                    @if (isAvoirInvoice(invoice)) {
+                      <span class="rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-800">Avoir</span>
+                    } @else {
+                      {{ getInvoiceTypeLabel(invoice.invoiceType) }}
+                    }
+                  </td>
                   <td class="px-4 py-3">{{ invoice.sequence ?? 'Not provided' }}</td>
                   <td class="px-4 py-3">{{ formatDate(invoice.invoiceDate) }}</td>
                   <td class="px-4 py-3">{{ formatMoney(getInvoiceAmount(invoice), invoice.currencyCode) }}</td>
@@ -505,7 +596,13 @@
                   <td class="px-4 py-3">
                     <div class="flex flex-wrap gap-2">
                       <button type="button" (click)="viewInvoiceAllocation(invoice)" class="rounded-lg border border-iris-border px-3 py-1.5 text-xs font-bold text-iris-navy transition hover:bg-iris-bg">View Allocation</button>
+                      <button type="button" (click)="downloadInvoiceDocument(invoice)" [disabled]="downloadingDebitNoteInvoiceId() !== null" class="rounded-lg border border-iris-teal px-3 py-1.5 text-xs font-bold text-iris-teal transition hover:bg-iris-bg disabled:cursor-not-allowed disabled:opacity-60">
+                        {{ downloadingDebitNoteInvoiceId() === invoice.invoiceId ? 'Generating PDF...' : (isAvoirInvoice(invoice) ? 'Download Avoir' : 'Download Invoice PDF') }}
+                      </button>
                     </div>
+                    @if (invoiceRowDownloadErrors()[invoice.invoiceId]; as downloadError) {
+                      <p role="alert" class="mt-2 text-xs font-semibold text-rose-800">{{ downloadError }}</p>
+                    }
                   </td>
                 </tr>
               }
@@ -514,6 +611,58 @@
         </div>
       }
     </section>
+
+      <section class="mt-5 rounded-[24px] border border-rose-200 bg-white p-6 shadow-[0_18px_50px_rgba(13,47,79,0.06)]">
+        <div class="border-b border-rose-100 pb-4">
+          <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-rose-700">Credit documents</p>
+          <h2 class="font-cambria text-2xl font-bold text-iris-navy">Avoir History</h2>
+        </div>
+        @if (!avoirHistory().length) {
+          <div class="mt-5 rounded-xl border border-dashed border-rose-200 bg-rose-50/40 px-4 py-6 text-center text-sm font-semibold text-iris-slate">No Avoirs have been created for this contract.</div>
+        } @else {
+        <div class="mt-5 overflow-x-auto">
+          <table class="min-w-full border-separate border-spacing-0 text-left text-sm">
+            <thead class="bg-rose-50 text-xs uppercase tracking-[0.12em] text-rose-800">
+              <tr>
+                <th class="px-4 py-3">Invoice / Avoir Number</th>
+                <th class="px-4 py-3">Type</th>
+                <th class="px-4 py-3">Sequence</th>
+                <th class="px-4 py-3">Date</th>
+                <th class="px-4 py-3">Amount</th>
+                <th class="px-4 py-3">Currency</th>
+                <th class="px-4 py-3">Payment Status</th>
+                <th class="px-4 py-3">Remaining</th>
+                <th class="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (invoice of avoirHistory(); track invoice.invoiceId) {
+                <tr class="border-b border-rose-100">
+                  <td class="px-4 py-3 font-bold text-iris-navy">{{ invoice.documentNumber || invoice.invoiceNumber || 'Not provided' }}</td>
+                  <td class="px-4 py-3"><span class="rounded-full border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-800">Avoir</span></td>
+                  <td class="px-4 py-3">{{ invoice.sequence ?? 'Not provided' }}</td>
+                  <td class="px-4 py-3">{{ formatDate(invoice.invoiceDate) }}</td>
+                  <td class="px-4 py-3 font-bold text-rose-800">{{ formatMoney(getInvoiceAmount(invoice), invoice.currencyCode) }}</td>
+                  <td class="px-4 py-3">{{ invoice.currencyCode || 'Not provided' }}</td>
+                  <td class="px-4 py-3"><span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getInvoicePaymentStatusClasses(invoice)">{{ getInvoicePaymentStatus(invoice) }}</span></td>
+                  <td class="px-4 py-3">{{ formatMoney(invoice.remainingAmount, invoice.currencyCode) }}</td>
+                  <td class="px-4 py-3"><div class="flex flex-wrap gap-2">
+                    <button type="button" (click)="viewInvoiceAllocation(invoice)" class="rounded-lg border border-iris-border px-3 py-1.5 text-xs font-bold text-iris-navy transition hover:bg-iris-bg">View Allocation</button>
+                    <button type="button" (click)="downloadInvoiceDocument(invoice)" [disabled]="downloadingDebitNoteInvoiceId() !== null" class="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-bold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60">
+                      {{ downloadingDebitNoteInvoiceId() === invoice.invoiceId ? 'Generating PDF...' : 'Download Avoir' }}
+                    </button>
+                  </div>
+                    @if (invoiceRowDownloadErrors()[invoice.invoiceId]; as downloadError) {
+                      <p role="alert" class="mt-2 text-xs font-semibold text-rose-800">{{ downloadError }}</p>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </section>
   }
 
   @if (selectedInvoiceAllocationView(); as invoice) {
@@ -527,7 +676,7 @@
           <button type="button" (click)="closeInvoiceAllocationView()" class="rounded-xl border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy transition hover:bg-iris-bg">Close</button>
         </div>
         <div class="mt-5">
-          <ng-container *ngTemplateOutlet="allocationTable; context: { allocations: invoice.allocations }"></ng-container>
+          <ng-container *ngTemplateOutlet="allocationTable; context: { allocations: invoice.allocations, isAvoir: isAvoirInvoice(invoice) }"></ng-container>
         </div>
       </section>
     </div>
@@ -539,7 +688,7 @@
         <div class="flex items-start justify-between gap-4 border-b border-iris-divider pb-4">
           <div>
             <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Back Officer Workflow</p>
-            <h2 class="mt-1 font-cambria text-2xl font-bold text-iris-navy">Create Invoice</h2>
+            <h2 class="mt-1 font-cambria text-2xl font-bold text-iris-navy">{{ isAvoirSelected() ? 'Create Avoir' : 'Create Invoice' }}</h2>
           </div>
           <button type="button" (click)="closeInvoiceModal()" [disabled]="isSubmittingInvoice()" class="rounded-xl border border-iris-border px-3 py-2 text-sm font-bold text-iris-navy transition hover:bg-iris-bg disabled:opacity-50">
             Close
@@ -548,7 +697,23 @@
 
         @if (invoiceError()) {
           <div class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-950">
-            {{ invoiceError() }}
+            <p>{{ invoiceError() }}</p>
+            @if (invoiceApiErrorDetails(); as details) {
+              <p class="mt-1 text-xs font-bold">{{ details.status > 0 ? 'HTTP ' + details.status : 'Request failed before an HTTP response was received' }}</p>
+              @if (details.detail) {
+                <p class="mt-2 whitespace-pre-wrap break-words text-xs font-medium">Backend detail: {{ details.detail }}</p>
+              }
+              @if (details.validationErrors.length > 0) {
+                <ul class="mt-2 list-disc space-y-1 pl-5 text-xs font-medium">
+                  @for (validationError of details.validationErrors; track $index) {
+                    <li>{{ validationError }}</li>
+                  }
+                </ul>
+              }
+              @if (details.traceId) {
+                <p class="mt-2 break-all font-mono text-[11px]">Trace ID: {{ details.traceId }}</p>
+              }
+            }
           </div>
         }
 
@@ -587,24 +752,70 @@
 
           <form [formGroup]="invoiceForm" (ngSubmit)="createInvoice()" class="mt-5 grid gap-4 md:grid-cols-2">
             <label>
+              <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Invoice type</span>
+              <select formControlName="invoiceType" class="w-full rounded-xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100">
+                <option value="">Select invoice type</option>
+                <option value="INVOICE">Invoice</option>
+                <option value="INVOICE_FEES">Invoice Fees</option>
+                <option value="AVOIR">Avoir</option>
+              </select>
+              @if (invoiceForm.controls.invoiceType.hasError('required')) {
+                <span class="mt-2 block text-xs font-semibold text-rose-700">Invoice type is required.</span>
+              }
+            </label>
+            @if (isAvoirSelected()) {
+              <fieldset class="md:col-span-2">
+                <legend class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">How should this Avoir be processed?</legend>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-iris-border p-4 transition has-[:checked]:border-iris-teal has-[:checked]:bg-sky-50">
+                    <input type="radio" formControlName="processingMode" value="PAIR_WITH_ENCAISSEMENT" (change)="setAvoirProcessingMode('PAIR_WITH_ENCAISSEMENT')" class="mt-1 accent-iris-teal" />
+                    <span class="text-sm font-bold text-iris-navy">Pair with an encaissement</span>
+                  </label>
+                  <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-iris-border p-4 transition has-[:checked]:border-iris-teal has-[:checked]:bg-sky-50">
+                    <input type="radio" formControlName="processingMode" value="DIRECT_TO_REMITTANCES" (change)="setAvoirProcessingMode('DIRECT_TO_REMITTANCES')" class="mt-1 accent-iris-teal" />
+                    <span class="text-sm font-bold text-iris-navy">Generate reinsurer remittances without pairing</span>
+                  </label>
+                </div>
+                @if (invoiceForm.controls.processingMode.touched && invoiceForm.controls.processingMode.hasError('required')) {
+                  <p class="mt-2 text-xs font-semibold text-rose-700">Choose how this Avoir will be processed.</p>
+                }
+                @if (invoiceForm.controls.processingMode.value === 'PAIR_WITH_ENCAISSEMENT') {
+                  <p class="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">The Avoir will follow the existing pairing workflow. No outgoing remittances will be generated until it is paired.</p>
+                } @else if (invoiceForm.controls.processingMode.value === 'DIRECT_TO_REMITTANCES') {
+                  <p class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">The Avoir will be distributed between the confirmed reinsurers and added directly to Draft Outgoing Remittances. No encaissement will be required.</p>
+                }
+              </fieldset>
+            }
+            <label>
               <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Invoice amount</span>
-              <input type="number" formControlName="amount" min="0.01" [step]="getInvoiceAmountStep()" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+              <input type="number" formControlName="amount" min="0.01" [max]="invoiceCreationAvailableAmount()" [step]="getInvoiceAmountStep()" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
               @if (invoiceForm.controls.amount.touched && invoiceForm.controls.amount.hasError('required')) {
                 <span class="mt-2 block text-xs font-semibold text-rose-700">Invoice amount is required.</span>
+              }
+              @if (invoiceForm.controls.amount.touched && invoiceForm.controls.amount.hasError('number')) {
+                <span class="mt-2 block text-xs font-semibold text-rose-700">Invoice amount must be numeric.</span>
               }
               @if (invoiceForm.controls.amount.touched && invoiceForm.controls.amount.hasError('min')) {
                 <span class="mt-2 block text-xs font-semibold text-rose-700">Invoice amount must be greater than zero.</span>
               }
-              @if (invoiceForm.controls.amount.hasError('exceedsAvailable')) {
-                <span class="mt-2 block text-xs font-semibold text-rose-700">Invoice amount cannot exceed the remaining invoiceable amount.</span>
+              @if (invoiceForm.controls.amount.hasError('exceedsAvailable') || invoiceForm.controls.amount.hasError('max')) {
+                <span class="mt-2 block text-xs font-semibold text-rose-700">{{ invoiceAmountLimitMessage() }}</span>
               }
             </label>
+            @if (isAvoirSelected()) {
+              <div class="md:col-span-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
+                <p><span class="font-bold">Available credit balance:</span> {{ availableAvoirAmount() == null ? 'Not provided by the backend' : formatMoney(availableAvoirAmount(), invoiceContext()?.currency) }}</p>
+                @if (isAvoirAvailableBalanceMissing()) {
+                  <p class="mt-1 text-xs">Avoir creation is blocked until the invoice context API returns the available credit balance.</p>
+                }
+              </div>
+            }
             <label>
               <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Invoice date</span>
               <input type="date" formControlName="invoiceDate" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm text-iris-navy outline-none focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
             </label>
             <label>
-              <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">Remaining after invoice</span>
+              <span class="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-iris-slate">{{ isAvoirSelected() ? 'Available after Avoir' : 'Remaining after invoice' }}</span>
               <input type="text" [value]="formatMoney(invoiceUnaffectedAmount())" readonly class="w-full rounded-xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-bold text-iris-navy outline-none" />
             </label>
             <label>
@@ -617,13 +828,23 @@
                 <div class="rounded-2xl border border-iris-border bg-iris-bg px-4 py-5 text-center text-sm font-semibold text-iris-slate">
                   Loading allocation preview...
                 </div>
+              } @else if (invoiceApiErrorDetails() && !invoicePreview()) {
+                <div class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-5 text-sm font-semibold text-rose-950">
+                  Allocation preview is unavailable. Correct the reported issue and wait for a successful preview before creating this document.
+                </div>
               } @else if (invoicePreview()) {
-                <ng-container *ngTemplateOutlet="allocationTable; context: { allocations: invoicePreviewAllocations() }"></ng-container>
+                @if (invoiceAllocationReconciliationMessage(); as reconciliationError) {
+                  <div class="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">{{ reconciliationError }}</div>
+                }
+                <ng-container *ngTemplateOutlet="allocationTable; context: { allocations: invoicePreviewAllocations(), isAvoir: isAvoirSelected() }"></ng-container>
+                @if (isAvoirSelected() && invoiceForm.controls.processingMode.value === 'DIRECT_TO_REMITTANCES') {
+                  <p class="mt-3 rounded-xl border border-iris-border bg-iris-bg px-4 py-3 text-sm text-iris-slate">The negative net-payable rows shown above will be created immediately in Draft Outgoing Remittances.</p>
+                }
               }
             </div>
 
-            <button type="submit" [disabled]="isInvoiceSubmitDisabled()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white shadow-lg shadow-sky-100 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-50 md:col-span-2">
-              {{ isSubmittingInvoice() ? 'Creating invoice...' : 'Create Invoice' }}
+            <button type="submit" [disabled]="isSubmittingInvoice()" class="rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white shadow-lg shadow-sky-100 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-50 md:col-span-2">
+              {{ isSubmittingInvoice() ? (isAvoirSelected() ? 'Creating Avoir...' : 'Creating invoice...') : (isAvoirSelected() ? (invoiceForm.controls.processingMode.value === 'DIRECT_TO_REMITTANCES' ? 'Create Avoir and Generate Remittances' : invoiceForm.controls.processingMode.value === 'PAIR_WITH_ENCAISSEMENT' ? 'Create Avoir for Pairing' : 'Choose Avoir Processing') : 'Create Invoice') }}
             </button>
           </form>
         }
@@ -631,7 +852,7 @@
     </div>
   }
 
-  <ng-template #allocationTable let-allocations="allocations">
+  <ng-template #allocationTable let-allocations="allocations" let-isAvoir="isAvoir">
     <div class="overflow-x-auto">
       <table class="min-w-full border-separate border-spacing-0 text-left text-sm">
         <thead class="bg-iris-bg text-xs uppercase tracking-[0.12em] text-iris-slate">
@@ -643,11 +864,12 @@
             <th class="px-3 py-3">Allocated gross premium</th>
             <th class="px-3 py-3">Cedent commission %</th>
             <th class="px-3 py-3">Cedent commission amount</th>
+            <th class="px-3 py-3">Allocated net premium</th>
             <th class="px-3 py-3">IRIS brokerage %</th>
             <th class="px-3 py-3">IRIS brokerage amount</th>
-            <th class="px-3 py-3">Other deductions</th>
-            <th class="px-3 py-3">Net amount</th>
-            <th class="px-3 py-3">Currency</th>
+            <th class="px-3 py-3">Other deductions %</th>
+            <th class="px-3 py-3">Other deductions amount</th>
+            <th class="px-3 py-3">Signed net-payable amount</th>
           </tr>
         </thead>
         <tbody>
@@ -656,33 +878,36 @@
               <td class="px-3 py-3">{{ allocation.reinsurerCode || 'Not provided' }}</td>
               <td class="px-3 py-3 font-bold text-iris-navy">{{ allocation.reinsurerName || 'Not provided' }}</td>
               <td class="px-3 py-3">{{ formatPercent(allocation.signedSharePct) }}</td>
-              <td class="px-3 py-3">{{ formatPercent(allocation.allocationRatio * 100) }}</td>
-              <td class="px-3 py-3">{{ formatMoney(allocation.grossPremium) }}</td>
-              <td class="px-3 py-3">{{ formatPercent(allocation.cedentCommissionPct) }}</td>
-              <td class="px-3 py-3">{{ formatMoney(allocation.cedentCommissionAmount) }}</td>
-              <td class="px-3 py-3">{{ formatPercent(allocation.brokeragePct) }}</td>
-              <td class="px-3 py-3">{{ formatMoney(allocation.brokerageAmount) }}</td>
-              <td class="px-3 py-3">{{ formatMoney(allocation.otherDeductions) }}</td>
-              <td class="px-3 py-3 font-bold text-iris-navy">{{ formatMoney(allocation.netAmount) }}</td>
-              <td class="px-3 py-3">{{ allocation.currencyCode || 'Not provided' }}</td>
+              <td class="px-3 py-3">{{ allocation.allocationRatioPercentage == null ? 'Not provided' : formatPercent(allocation.allocationRatioPercentage) }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(allocation.allocatedGrossPremium, isAvoir, allocation.currencyCode) }}</td>
+              <td class="px-3 py-3">{{ formatPercent(allocation.cedentCommissionPercentage ?? allocation.cedentCommissionPct) }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(allocation.cedentCommissionAmount, isAvoir, allocation.currencyCode) }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(allocation.allocatedNetPremium, isAvoir, allocation.currencyCode) }}</td>
+              <td class="px-3 py-3">{{ formatPercent(allocation.irisBrokeragePercentage) }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(allocation.irisBrokerageAmount, isAvoir, allocation.currencyCode) }}</td>
+              <td class="px-3 py-3">{{ allocation.otherDeductionsPercentage == null ? 'Not provided' : formatPercent(allocation.otherDeductionsPercentage) }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(allocation.otherDeductionsAmount ?? allocation.otherDeductions, isAvoir, allocation.currencyCode) }}</td>
+              <td class="px-3 py-3 font-bold text-iris-navy">{{ formatSignedNetPayable(allocation, isAvoir) }}</td>
             </tr>
           }
           @if (sumPremiumAllocations(allocations); as total) {
             <tr class="bg-iris-bg font-bold text-iris-navy">
               <td class="px-3 py-3" colspan="3">Totals</td>
-              <td class="px-3 py-3">{{ formatPercent(total.allocationRatio * 100) }}</td>
-              <td class="px-3 py-3">{{ formatMoney(total.grossPremium) }}</td>
+              <td class="px-3 py-3">{{ total.allocationRatioPercentage == null ? 'Not provided' : formatPercent(total.allocationRatioPercentage) }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(total.allocatedGrossPremium, isAvoir, total.currencyCode) }}</td>
               <td class="px-3 py-3"></td>
-              <td class="px-3 py-3">{{ formatMoney(total.cedentCommissionAmount) }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(total.cedentCommissionAmount, isAvoir, total.currencyCode) }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(total.allocatedNetPremium, isAvoir, total.currencyCode) }}</td>
               <td class="px-3 py-3"></td>
-              <td class="px-3 py-3">{{ formatMoney(total.brokerageAmount) }}</td>
-              <td class="px-3 py-3">{{ formatMoney(total.otherDeductions) }}</td>
-              <td class="px-3 py-3">{{ formatMoney(total.netAmount) }}</td>
-              <td class="px-3 py-3">{{ total.currencyCode || 'Not provided' }}</td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(total.irisBrokerageAmount, isAvoir, total.currencyCode) }}</td>
+              <td class="px-3 py-3"></td>
+              <td class="px-3 py-3">{{ formatAllocationAmount(total.otherDeductionsAmount, isAvoir, total.currencyCode) }}</td>
+              <td class="px-3 py-3">{{ formatSignedNetPayable(total, isAvoir) }}</td>
             </tr>
           }
         </tbody>
       </table>
     </div>
   </ng-template>
+
 </div>

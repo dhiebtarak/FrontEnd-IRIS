@@ -12,7 +12,7 @@
         <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-iris-teal">Contract Intake</p>
         <h1 class="mt-2 font-cambria text-3xl font-bold text-iris-navy">Facultative Information</h1>
         <p class="mt-3 max-w-3xl text-sm text-iris-slate md:text-base">
-          Save a facultative contract draft once the required contract information is in place, then continue to the contract overview.
+          Save an incomplete Draft at any time, then continue to its Contract Overview and complete it progressively.
         </p>
       </div>
     </div>
@@ -31,6 +31,15 @@
             </button>
           }
         </div>
+        @if (serverFieldErrorEntries().length > 0) {
+          <ul class="mt-3 list-inside list-disc space-y-1">
+            @for (entry of serverFieldErrorEntries(); track entry.field) {
+              @for (message of entry.messages; track $index) {
+                <li><strong>{{ entry.field }}:</strong> {{ message }}</li>
+              }
+            }
+          </ul>
+        }
       </div>
     }
 
@@ -69,11 +78,8 @@
                   type="text"
                   formControlName="name"
                   class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                  [ngClass]="hasError('name', 'required') || hasError('name', 'maxlength') || hasError('name', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  [ngClass]="hasError('name', 'maxlength') || hasError('name', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
                 />
-                @if (hasError('name', 'required')) {
-                  <p class="mt-2 text-sm text-rose-700">Contract name is required.</p>
-                }
                 @if (hasError('name', 'maxlength')) {
                   <p class="mt-2 text-sm text-rose-700">Contract name cannot exceed 255 characters.</p>
                 }
@@ -94,7 +100,7 @@
                     (click)="openCedentDropdown()"
                     (keydown)="handleCedentKeydown($event)"
                     class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    [ngClass]="hasError('counterpartyId', 'required') || hasError('counterpartyId', 'invalidSelection') || hasError('counterpartyId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                    [ngClass]="hasError('counterpartyId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
                     placeholder="Search cedents by name"
                     role="combobox"
                     aria-autocomplete="list"
@@ -136,9 +142,6 @@
                     </div>
                   }
                 </div>
-                @if (hasError('counterpartyId', 'required') || hasError('counterpartyId', 'invalidSelection')) {
-                  <p class="mt-2 text-sm text-rose-700">Select a cedent from the search results.</p>
-                }
                 @if (hasError('counterpartyId', 'serverError')) {
                   <p class="mt-2 text-sm text-rose-700">{{ form.controls.counterpartyId.errors?.['serverError'] }}</p>
                 }
@@ -151,7 +154,7 @@
                     id="currencyId"
                     formControlName="currencyId"
                     class="w-full appearance-none rounded-2xl border bg-white px-4 py-3 pr-11 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    [ngClass]="hasError('currencyId', 'required') || hasError('currencyId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                    [ngClass]="hasError('currencyId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
                   >
                     <option [ngValue]="null">Select a currency</option>
                     @for (currency of currencies(); track currency.id) {
@@ -164,9 +167,6 @@
                     </svg>
                   </span>
                 </div>
-                @if (hasError('currencyId', 'required')) {
-                  <p class="mt-2 text-sm text-rose-700">Currency is required.</p>
-                }
               </div>
 
               <div>
@@ -188,11 +188,8 @@
                   type="date"
                   formControlName="inceptionDate"
                   class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                  [ngClass]="hasError('inceptionDate', 'required') || hasError('inceptionDate', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  [ngClass]="hasError('inceptionDate', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
                 />
-                @if (hasError('inceptionDate', 'required')) {
-                  <p class="mt-2 text-sm text-rose-700">Inception date is required.</p>
-                }
                 <p class="mt-2 text-sm text-iris-slate">The inception year is used by the backend when generating the UMR.</p>
               </div>
 
@@ -203,11 +200,8 @@
                   type="date"
                   formControlName="expiryDate"
                   class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                  [ngClass]="hasError('expiryDate', 'required') || hasError('expiryDate', 'serverError') || form.hasError('expiryBeforeInception') ? 'border-rose-400' : 'border-iris-border'"
+                  [ngClass]="hasError('expiryDate', 'serverError') || form.hasError('expiryBeforeInception') ? 'border-rose-400' : 'border-iris-border'"
                 />
-                @if (hasError('expiryDate', 'required')) {
-                  <p class="mt-2 text-sm text-rose-700">Expiry date is required.</p>
-                }
                 @if (form.hasError('expiryBeforeInception') && (form.controls.expiryDate.touched || form.controls.inceptionDate.touched)) {
                   <p class="mt-2 text-sm text-rose-700">Expiry date cannot be earlier than inception date.</p>
                 }
@@ -257,13 +251,12 @@
                     (click)="openCoverageDropdown()"
                     (keydown)="handleMainCoverKeydown($event)"
                     class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    [ngClass]="hasError('coverageSelection.coverageIds', 'required') || hasError('coverageSelection.primaryMainCoverId', 'required') || hasError('coverageSelection.mainCoverId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                    [ngClass]="hasError('coverageSelection.mainCoverId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
                     placeholder="Search coverages by code or description"
                     role="combobox"
                     aria-autocomplete="list"
                     [attr.aria-expanded]="isCoverageDropdownOpen()"
                     aria-controls="main-cover-options"
-                    aria-describedby="coverage-selection-error"
                   />
                   @if (isMainCoverLoading()) {
                     <span class="absolute inset-y-0 right-4 flex items-center text-iris-slate">
@@ -302,12 +295,6 @@
                     </div>
                   }
                 </div>
-                @if (hasError('coverageSelection.coverageIds', 'required')) {
-                  <p id="coverage-selection-error" class="mt-2 text-sm text-rose-700">Select at least one coverage.</p>
-                }
-                @if (hasError('coverageSelection.primaryMainCoverId', 'required') || form.controls.coverageSelection.hasError('primaryCoverageRequired')) {
-                  <p class="mt-2 text-sm text-rose-700">Choose one selected coverage as Primary Main Cover.</p>
-                }
                 @if (form.controls.coverageSelection.hasError('primaryCoverageNotSelected')) {
                   <p class="mt-2 text-sm text-rose-700">Primary Main Cover must be one of the selected coverages.</p>
                 }
@@ -466,7 +453,7 @@
               <div>
                 <label class="mb-2 block text-sm font-semibold text-iris-navy" for="premiumRate">Premium rate</label>
                 <input id="premiumRate" type="text" inputmode="decimal" formControlName="premiumRate" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('premiumRate', 'nonNegative') || hasError('premiumRate', 'max') ? 'border-rose-400' : 'border-iris-border'" />
-                <p class="mt-2 text-sm text-iris-slate">Enter the premium rate as a percentage, for example 0.4 for 0.4%.</p>
+                <p class="mt-2 text-sm text-iris-slate">Enter the premium rate as a percentage, for example 10 for 0.1%.</p>
                 @if (hasError('premiumRate', 'max')) {
                   <p class="mt-2 text-sm text-rose-700">Premium rate must be between 0 and 100.</p>
                 }
@@ -555,10 +542,7 @@
               @if (form.controls.isFronting.value) {
                 <div>
                   <label class="mb-2 block text-sm font-semibold text-iris-navy" for="frontingReference">Fronting reference</label>
-                  <input id="frontingReference" type="text" formControlName="frontingReference" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('frontingReference', 'required') || hasError('frontingReference', 'serverError') ? 'border-rose-400' : 'border-iris-border'" />
-                  @if (hasError('frontingReference', 'required')) {
-                    <p class="mt-2 text-sm text-rose-700">Fronting reference is required when fronting is enabled.</p>
-                  }
+                  <input id="frontingReference" type="text" formControlName="frontingReference" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('frontingReference', 'serverError') ? 'border-rose-400' : 'border-iris-border'" />
                 </div>
               }
             </div>

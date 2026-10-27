@@ -1,6 +1,6 @@
 import { CommonModule, DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, HostListener, OnInit, computed, inject, isDevMode, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -15,9 +15,12 @@ import {
   DisbursementCommandResponse,
   DisbursementContext,
   ClosingDisbursementContext,
+  FinanceClosingQueueItem,
   DisbursementResponse,
+  EligibleAvoirRefundReceipt,
   EligibleInvoice,
   InvoiceResponse,
+  RemittanceBatchConfirmationResponse,
   RemittanceResponse
 } from '../../../shared/models/financial-workflow.model';
 import {
@@ -90,7 +93,14 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly eligibleInvoicesLoadState = signal<EligibleInvoicesLoadState>('idle');
   readonly eligibleInvoicesError = signal('');
   readonly eligibleInvoicesHttpStatus = signal<number | null>(null);
+  readonly selectedAvoirRefund = signal<InvoiceResponse | null>(null);
+  readonly eligibleAvoirRefundReceipts = signal<EligibleAvoirRefundReceipt[]>([]);
+  readonly isLoadingAvoirRefundReceipts = signal(false);
+  readonly isCreatingAvoirRefund = signal(false);
+  readonly avoirRefundError = signal('');
+  readonly refundReceiptInProgress = signal<number | null>(null);
   readonly generatedRemittances = signal<RemittanceResponse[]>([]);
+  readonly pairingWarningMessage = signal('');
   readonly selectedReceipt = signal<BankReceiptResponse | null>(null);
   readonly selectedPairingBankAccount = signal<BankAccountResponse | null>(null);
   readonly selectedCounterparty = signal<FinanceCounterpartyListItem | null>(null);
@@ -101,6 +111,10 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly completedDisbursement = signal<DisbursementResponse | null>(null);
   readonly disbursementContext = signal<DisbursementContext | null>(null);
   readonly closingContext = signal<ClosingDisbursementContext | null>(null);
+  readonly financeClosings = signal<FinanceClosingQueueItem[]>([]);
+  readonly hasLoadedFinanceClosings = signal(false);
+  private lastFinanceClosingRouteKey = '';
+  private queryParamsInitialized = false;
   readonly selectedClosingId = signal<number | null>(null);
   readonly isLoading = signal(false);
   readonly isBankAccountLoading = signal(false);
@@ -115,7 +129,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly invoiceQuery = signal('');
   readonly proposedAllocations = signal<Record<number, number>>({});
   readonly pendingReceiptId = signal<number | null>(null);
-  readonly pendingRemittanceRef = signal<number | null>(null);
+  readonly pendingRemittanceReference = signal<number | null>(null);
   readonly pendingNotificationId = signal<number | null>(null);
   readonly isTransferConfirmationOpen = signal(false);
   readonly isBeneficiaryLoading = signal(false);
@@ -135,22 +149,33 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly modal = signal<'receipt' | 'bank-account' | 'pairing' | 'disbursement' | 'remittance-confirmation' | null>(null);
   private disbursementContextSubscription: Subscription | null = null;
   private disbursementBankAccountsSubscription: Subscription | null = null;
-  private loadingDisbursementContextRef: number | null = null;
+  private loadingDisbursementContextReference: number | null = null;
   private loadingDisbursementBankAccountsCounterpartyId: number | null = null;
 
   readonly unpairedReceipts = computed(() => this.receipts().filter(receipt => this.normalizeStatus(receipt.pairingStatus) === 'unpaired'));
   readonly pendingInvoices = computed(() => this.invoices().filter(invoice => this.normalizeStatus(invoice.status).includes('pending')));
   readonly readyRemittances = computed(() => this.remittances().filter(remittance => this.normalizeStatus(remittance.status).includes('ready')));
   readonly selectedRemittanceIds = signal<Set<number>>(new Set());
+  readonly remittanceSelectionError = signal('');
+  readonly remittanceConfirmationCurrency = signal('');
   readonly selectedRemittanceLock = computed(() => {
     const selected = this.remittances().filter(remittance => this.selectedRemittanceIds().has(this.getRemittanceId(remittance)));
     const first = selected[0];
-    return first ? { reinsurerId: this.getRemittanceReinsurerId(first), currencyCode: first.currencyCode } : null;
+    return first ? {
+      reinsurerId: this.getRemittanceReinsurerId(first),
+      currencyCode: this.normalizeCurrencyCode(first.currencyCode)
+    } : null;
   });
   readonly selectedRemittanceRows = computed(() => this.remittances().filter(remittance => this.selectedRemittanceIds().has(this.getRemittanceId(remittance))));
-  readonly selectedRemittanceTotal = computed(() => this.selectedRemittanceRows()
-    .reduce((total, remittance) => total + (remittance.remainingPayableAmount ?? remittance.netPayableAmount ?? 0), 0));
+  readonly selectedPremiumTotal = computed(() => this.sumSelectedRemittanceMinorUnits(row => this.normalizeSourceType(row.sourceType) === 'PREMIUM'));
+  readonly selectedAvoirTotal = computed(() => this.sumSelectedRemittanceMinorUnits(row => this.normalizeSourceType(row.sourceType) === 'AVOIR'));
+  readonly selectedRemittanceTotal = computed(() => this.sumSelectedRemittanceMinorUnits(() => true));
   readonly selectedRemittanceCurrency = computed(() => this.selectedRemittanceRows()[0]?.currencyCode ?? '');
+  readonly selectedRemittanceReinsurer = computed(() => {
+    const first = this.selectedRemittanceRows()[0];
+    return first ? this.getRemittanceReinsurerName(first) : '';
+  });
+  readonly lastRemittanceConfirmation = signal<RemittanceBatchConfirmationResponse | null>(null);
   readonly activeBankAccounts = computed(() => this.bankAccounts().filter(account => account.isActive));
   readonly selectedDisbursementBankAccount = computed(() => {
     return this.activeBankAccounts().find(account => this.isValidDisbursementBankAccount(account)) ?? null;
@@ -275,6 +300,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
       const searchableText = this.normalizeSearchText([
         invoice.invoiceNumber,
+        invoice.documentNumber,
         invoice.label,
         invoice.umr,
         invoice.contractName,
@@ -294,18 +320,24 @@ export class FinancialWorkspacePageComponent implements OnInit {
     .map(([invoiceId, allocatedAmount]) => ({ invoiceId: Number(invoiceId), allocatedAmount }))
     .filter(item => Number.isInteger(item.invoiceId) && item.invoiceId > 0));
   readonly allocatedAmountInForm = computed(() => this.proposedAllocationItems()
-    .reduce((sum, item) => sum + (Number.isFinite(item.allocatedAmount) ? item.allocatedAmount : 0), 0));
-  readonly pairingRemainingAmount = computed(() => Math.max((this.selectedReceipt()?.availableAmount ?? 0) - this.allocatedAmountInForm(), 0));
+    .reduce((sum, item) => sum + this.getSignedAllocationAmount(item.invoiceId, item.allocatedAmount), 0));
+  readonly selectedInvoicePairingTotal = computed(() => this.proposedAllocationItems()
+    .filter(item => !this.isAvoirInvoiceById(item.invoiceId)).reduce((sum, item) => sum + item.allocatedAmount, 0));
+  readonly selectedAvoirPairingTotal = computed(() => this.proposedAllocationItems()
+    .filter(item => this.isAvoirInvoiceById(item.invoiceId)).reduce((sum, item) => sum - item.allocatedAmount, 0));
+  readonly pairingRemainingAmount = computed(() => (this.selectedReceipt()?.availableAmount ?? 0) - this.allocatedAmountInForm());
   readonly isPairingFormValid = computed(() => {
     const receipt = this.selectedReceipt();
     const allocations = this.proposedAllocationItems();
 
+    const selectedTotal = this.allocatedAmountInForm();
     return !!receipt
       && allocations.length > 0
       && allocations.every(item => Number.isFinite(item.allocatedAmount)
         && item.allocatedAmount > 0
         && item.allocatedAmount <= this.getEligibleInvoiceOutstandingAmountById(item.invoiceId))
-      && this.allocatedAmountInForm() <= receipt.availableAmount;
+      && selectedTotal > 0
+      && selectedTotal <= receipt.availableAmount;
   });
   readonly beneficiaryInfo = computed(() => {
     const details = this.selectedCounterpartyDetails();
@@ -360,7 +392,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
     pairingStatus: new FormControl('', { nonNullable: true }),
     counterpartyId: new FormControl<number | null>(null),
     currencyId: new FormControl<number | null>(null),
-    collectionType: new FormControl('', { nonNullable: true }),
     operationFrom: new FormControl('', { nonNullable: true }),
     operationTo: new FormControl('', { nonNullable: true })
   });
@@ -371,7 +402,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
     receiptMonth: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.pattern(/^\d{4}-\d{2}$/)] }),
     amountReceived: new FormControl<number | null>(null, [Validators.required, Validators.min(0.01)]),
     settlementMethod: new FormControl('BankTransfer', { nonNullable: true }),
-    collectionType: new FormControl('Premium', { nonNullable: true })
   });
 
   readonly bankAccountForm = new FormGroup({
@@ -442,7 +472,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
       this.receiptFilters.controls.pairingStatus.valueChanges,
       this.receiptFilters.controls.counterpartyId.valueChanges,
       this.receiptFilters.controls.currencyId.valueChanges,
-      this.receiptFilters.controls.collectionType.valueChanges,
       this.receiptFilters.controls.operationFrom.valueChanges,
       this.receiptFilters.controls.operationTo.valueChanges
     ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
@@ -499,13 +528,19 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
       this.pendingReceiptId.set(this.getPositiveId(params.get('receiptId')));
-      this.pendingRemittanceRef.set(this.getPositiveId(params.get('remittanceRef')));
+      this.pendingRemittanceReference.set(this.getPositiveId(params.get('remittanceReference')));
       this.pendingNotificationId.set(this.getPositiveId(params.get('notificationId')));
       const closingId = this.getPositiveId(params.get('closingId'));
       if (closingId != null && this.role() === 'finance' && this.page() === 'disbursements') {
-        this.pendingRemittanceRef.set(null);
+        this.pendingRemittanceReference.set(null);
         this.openClosingDisbursementModal(closingId);
+        const routeKey = `${closingId}:${params.get('notificationId') ?? ''}`;
+        if (this.queryParamsInitialized && this.hasLoadedFinanceClosings() && routeKey !== this.lastFinanceClosingRouteKey) {
+          this.loadRemittances();
+        }
+        this.lastFinanceClosingRouteKey = routeKey;
       }
+      this.queryParamsInitialized = true;
       this.openPendingReceiptIfAvailable();
       this.openPendingRemittanceIfAvailable();
     });
@@ -602,7 +637,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
       pairingStatus: this.receiptFilters.controls.pairingStatus.value,
       counterpartyId: this.receiptFilters.controls.counterpartyId.value,
       currencyId: this.receiptFilters.controls.currencyId.value,
-      collectionType: this.receiptFilters.controls.collectionType.value,
       operationFrom: this.receiptFilters.controls.operationFrom.value,
       operationTo: this.receiptFilters.controls.operationTo.value
     };
@@ -628,15 +662,16 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.errorMessage.set('');
     this.remittanceError.set('');
     if (this.role() === 'finance') {
-      this.workflowService.getDisbursementQueue().subscribe({
-        next: remittances => {
-          this.remittances.set(Array.isArray(remittances) ? remittances : []);
-          this.remittanceTotalCount.set(remittances.length);
+      this.workflowService.getFinanceClosingQueue().pipe(take(1)).subscribe({
+        next: closings => {
+          this.financeClosings.set(Array.isArray(closings) ? closings : []);
+          this.hasLoadedFinanceClosings.set(true);
+          this.remittances.set([]);
+          this.remittanceTotalCount.set(closings.length);
           this.remittanceTotalPages.set(1);
           this.isLoading.set(false);
-          this.openPendingRemittanceIfAvailable();
         },
-        error: error => this.handleLoadError(error, 'Remittances could not be loaded.', this.remittanceError)
+        error: error => this.handleLoadError(error, 'Disbursement closings could not be loaded.', this.remittanceError)
       });
       return;
     }
@@ -811,7 +846,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
       receiptMonth: this.currentMonth(),
       amountReceived: null,
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium'
     });
     this.receiptBankAccountQuery.set('');
     this.highlightedReceiptBankAccountIndex.set(0);
@@ -1106,17 +1140,17 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   private openPendingRemittanceIfAvailable(): void {
-    const remittanceRef = this.pendingRemittanceRef();
-    if (!remittanceRef || this.page() !== 'disbursements') {
+    const remittanceReference = this.pendingRemittanceReference();
+    if (!remittanceReference || this.page() !== 'disbursements') {
       return;
     }
 
-    const remittance = this.remittances().find(item => item.remittanceRef === remittanceRef);
+    const remittance = this.remittances().find(item => this.getNumericRemittanceReference(item) === remittanceReference);
     if (!remittance) {
       return;
     }
 
-    this.pendingRemittanceRef.set(null);
+    this.pendingRemittanceReference.set(null);
     if (this.pendingNotificationId() != null) {
       this.workflowService.markNotificationRead(this.pendingNotificationId()!).subscribe({
         next: () => this.pendingNotificationId.set(null),
@@ -1174,19 +1208,19 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.disbursementBankAccountsSubscription = this.modal() === 'disbursement' && !subscription.closed ? subscription : null;
   }
 
-  loadDisbursementContext(remittanceRef: number): void {
-    if (this.loadingDisbursementContextRef === remittanceRef) {
+  loadDisbursementContext(remittanceReference: number): void {
+    if (this.loadingDisbursementContextReference === remittanceReference) {
       return;
     }
 
     this.disbursementContextSubscription?.unsubscribe();
-    this.loadingDisbursementContextRef = remittanceRef;
+    this.loadingDisbursementContextReference = remittanceReference;
     this.isLoadingContext.set(true);
-    const subscription = this.workflowService.getDisbursementContext(remittanceRef).pipe(
+    const subscription = this.workflowService.getDisbursementContext(remittanceReference).pipe(
       take(1),
       finalize(() => {
         this.isLoadingContext.set(false);
-        this.loadingDisbursementContextRef = null;
+        this.loadingDisbursementContextReference = null;
       })
     ).subscribe({
       next: context => {
@@ -1197,19 +1231,25 @@ export class FinancialWorkspacePageComponent implements OnInit {
         }
         this.disbursementContext.set(context);
         const current = this.selectedRemittance();
-        if (!current || this.getRemittanceId(current) !== remittanceRef) {
+        if (!current || this.getNumericRemittanceReference(current) !== remittanceReference) {
           return;
         }
 
         const updated: RemittanceResponse = {
           ...current,
+          remittanceReference: context.remittanceReference ?? current.remittanceReference,
+          sourceType: context.sourceType ?? current.sourceType,
+          beneficiaryType: context.beneficiaryType ?? current.beneficiaryType,
+          sourceInvoiceId: context.avoirId ?? current.sourceInvoiceId,
+          sourceInvoiceNumber: context.avoirNumber ?? context.creditNoteNumber ?? current.sourceInvoiceNumber,
+          receiptReference: context.encaissementReference ?? current.receiptReference,
           contractId: context.contractId ?? current.contractId,
           contractName: context.contractName ?? current.contractName,
           umr: context.umr ?? current.umr,
           cedentName: context.cedentName ?? current.cedentName,
           panelId: context.panelId ?? current.panelId,
-          counterpartyId: context.reinsurerId ?? current.counterpartyId,
-          counterpartyName: context.reinsurerName || current.counterpartyName,
+          counterpartyId: context.beneficiaryId ?? context.reinsurerId ?? current.counterpartyId,
+          counterpartyName: context.beneficiaryName || context.reinsurerName || current.counterpartyName,
           grossPremium: context.grossPremium ?? current.grossPremium,
           otherDeductions: context.deductions ?? current.otherDeductions,
           netPayableAmount: context.netPayableAmount ?? current.netPayableAmount,
@@ -1221,7 +1261,18 @@ export class FinancialWorkspacePageComponent implements OnInit {
           transferCompletedAt: context.closedAt ?? current.transferCompletedAt
         };
         this.selectedRemittance.set(updated);
-        this.remittances.update(items => items.map(item => item.remittanceRef === remittanceRef ? updated : item));
+        this.remittances.update(items => items.map(item => this.getNumericRemittanceReference(item) === remittanceReference ? updated : item));
+        const bankAccountCounterpartyId = this.isAvoirRefund(updated)
+          ? context.beneficiaryId
+            ?? (current.beneficiaryType?.trim().toUpperCase() === 'CEDENT' ? current.counterpartyId : null)
+          : context.beneficiaryId ?? updated.counterpartyId;
+        if (bankAccountCounterpartyId != null && bankAccountCounterpartyId > 0) {
+          this.loadBankAccounts(bankAccountCounterpartyId);
+        } else {
+          this.disbursementLoadError.set(this.isAvoirRefund(updated)
+            ? 'The backend did not provide the cedent beneficiary ID for bank-account lookup.'
+            : 'The backend did not provide a valid beneficiary ID for bank-account lookup.');
+        }
         if (this.isPaymentInProgress(updated.status) && this.getActualDisbursementId(updated) === null) {
           const message = 'Backend disbursement DTO did not include a real disbursementId for this payment in progress remittance.';
           this.disbursementLoadError.set(message);
@@ -1233,6 +1284,9 @@ export class FinancialWorkspacePageComponent implements OnInit {
         const message = this.getErrorMessage(error, 'Disbursement context could not be loaded.');
         this.disbursementLoadError.set(message);
         this.errorMessage.set(message);
+        if (isDevMode() && error instanceof HttpErrorResponse && error.status === 404) {
+          console.error('Disbursement context returned 404', { remittanceReference });
+        }
       }
     });
     this.disbursementContextSubscription = subscription.closed ? null : subscription;
@@ -1253,6 +1307,10 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   openPairingModal(receipt: BankReceiptResponse): void {
+    this.pairingWarningMessage.set('');
+    this.selectedAvoirRefund.set(null);
+    this.eligibleAvoirRefundReceipts.set([]);
+    this.avoirRefundError.set('');
     this.selectedReceipt.set(receipt);
     this.selectedPairingBankAccount.set(null);
     this.generatedRemittances.set([]);
@@ -1269,6 +1327,51 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.workflowService.getBankAccounts(receipt.counterpartyId).subscribe({
       next: accounts => this.selectedPairingBankAccount.set(accounts.find(account => account.idBankAccount === receipt.bankAccountId) ?? null),
       error: error => this.errorMessage.set(this.getErrorMessage(error, 'Bank account details could not be loaded.'))
+    });
+  }
+
+  openAvoirRefund(invoice: InvoiceResponse): void {
+    if (!this.isAvoirInvoice(invoice) || this.isLoadingAvoirRefundReceipts() || this.isCreatingAvoirRefund()) return;
+    this.pairingWarningMessage.set('');
+    this.selectedReceipt.set(null);
+    this.selectedAvoirRefund.set(invoice);
+    this.eligibleAvoirRefundReceipts.set([]);
+    this.avoirRefundError.set('');
+    this.modal.set('pairing');
+    this.isLoadingAvoirRefundReceipts.set(true);
+    this.workflowService.getEligibleAvoirRefundReceipts(invoice.idInvoice).pipe(
+      take(1), takeUntilDestroyed(this.destroyRef), finalize(() => this.isLoadingAvoirRefundReceipts.set(false))
+    ).subscribe({
+      next: receipts => this.eligibleAvoirRefundReceipts.set(receipts),
+      error: error => this.avoirRefundError.set(this.getErrorMessage(error, 'Eligible encaissements could not be loaded.'))
+    });
+  }
+
+  createAvoirRefund(receipt: EligibleAvoirRefundReceipt): void {
+    const invoice = this.selectedAvoirRefund();
+    if (!invoice || this.isCreatingAvoirRefund() || this.refundReceiptInProgress() != null
+      || receipt.avoirInvoiceId !== invoice.idInvoice || !receipt.isEligibleForRefund) return;
+    this.isCreatingAvoirRefund.set(true);
+    this.refundReceiptInProgress.set(receipt.bankReceiptId);
+    this.avoirRefundError.set('');
+    this.workflowService.refundAvoir(receipt.bankReceiptId, {
+      avoirInvoiceId: invoice.idInvoice,
+      amount: receipt.refundAmount,
+      idempotencyKey: `avoir-refund-${invoice.idInvoice}-${receipt.bankReceiptId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    }).pipe(
+      take(1), takeUntilDestroyed(this.destroyRef), finalize(() => {
+        this.isCreatingAvoirRefund.set(false);
+        this.refundReceiptInProgress.set(null);
+      })
+    ).subscribe({
+      next: result => {
+        this.successMessage.set(`Cedent refund ${result.remittanceReference} created for ${result.beneficiaryName}.`);
+        this.closeModal();
+        this.loadInvoices();
+        this.loadReceipts();
+        this.loadRemittances();
+      },
+      error: error => this.avoirRefundError.set(this.getErrorMessage(error, 'The Avoir refund could not be created.'))
     });
   }
 
@@ -1322,12 +1425,17 @@ export class FinancialWorkspacePageComponent implements OnInit {
     }
     this.selectedClosingId.set(null);
     this.closingContext.set(null);
-    const remittanceId = this.getRemittanceId(remittance);
+    const remittanceId = this.getNumericRemittanceReference(remittance);
+    if (remittanceId == null) {
+      this.disbursementLoadError.set('The backend did not provide a valid remittanceReference.');
+      this.errorMessage.set(this.disbursementLoadError());
+      return;
+    }
     const selected = this.selectedRemittance();
     if (this.modal() === 'disbursement'
       && selected
       && this.getRemittanceId(selected) === remittanceId
-      && (this.disbursementContext()?.remittanceId === remittanceId || this.loadingDisbursementContextRef === remittanceId)) {
+      && (this.getContextRemittanceReference(this.disbursementContext()) === remittanceId || this.loadingDisbursementContextReference === remittanceId)) {
       return;
     }
 
@@ -1340,7 +1448,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.bankAccounts.set([]);
     this.modal.set('disbursement');
     this.loadDisbursementContext(remittanceId);
-    this.loadBankAccounts(remittance.counterpartyId);
   }
 
   openRemittanceConfirmation(remittance: RemittanceResponse): void {
@@ -1386,7 +1493,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
   startClosingPayment(): void {
     const context = this.closingContext();
-    if (!context?.canStartPayment || this.isSubmitting()) return;
+    if (!context || !this.canStartClosingPayment(context) || this.isSubmitting()) return;
     this.submit(() => this.workflowService.startClosingDisbursement(context.closingId), 'Closing payment started.', updated => {
       this.closingContext.set(updated);
       this.loadRemittances();
@@ -1401,6 +1508,24 @@ export class FinancialWorkspacePageComponent implements OnInit {
       this.closingContext.set(updated);
       this.loadRemittances();
     }, false);
+  }
+
+  canStartClosingPayment(context: ClosingDisbursementContext): boolean {
+    const status = this.normalizeStatus(context.status).replace(/[\s_-]/g, '');
+    const bank = context.selectedBankAccount;
+    return context.isConsistent === true
+      && context.totalClosingAmount > 0
+      && status === 'awaitingfinancedisbursement'
+      && Boolean(bank?.idBankAccount && bank.bankName?.trim() && bank.iban?.trim() && bank.swiftBic?.trim())
+      && context.canStartPayment === true;
+  }
+
+  formatSignedMoney(value: number | null | undefined, currencyCode?: string | null): string {
+    if (value == null) return this.formatMoney(value, currencyCode);
+    const formatted = this.formatMoney(value, currencyCode);
+    const prefix = currencyCode ? `${currencyCode} ` : '';
+    const amount = formatted.startsWith(prefix) ? formatted.slice(prefix.length) : formatted;
+    return `${prefix}${value > 0 ? '+' : ''}${amount}`;
   }
 
   downloadFinanceClosing(): void {
@@ -1482,7 +1607,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
       amountReceived: raw.amountReceived!,
       receiptMonth: raw.receiptMonth,
       settlementMethod: raw.settlementMethod,
-      collectionType: raw.collectionType
     }), 'Encaissement created and sent to the Back Officer for pairing.', () => this.loadReceipts());
   }
 
@@ -1625,20 +1749,37 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
     const payload = { allocations };
     console.debug('Pair Encaissement allocation payload', payload);
+    this.pairingWarningMessage.set('');
 
-    this.submit(() => this.workflowService.allocateReceiptInvoices(receipt.idBankReceipt, payload), 'Encaissement paired successfully.', response => {
-      this.selectedReceipt.set(response);
-      this.generatedRemittances.set(response.generatedRemittances ?? response.remittances ?? []);
+    this.submit(() => this.workflowService.allocateReceiptInvoices(receipt.idBankReceipt, payload).pipe(take(1)), 'Encaissement paired successfully.', response => {
+      const updatedReceipt = { ...receipt, ...response };
+      const createdRemittances = Array.isArray(response.createdRemittances) ? response.createdRemittances : [];
+      this.selectedReceipt.set(updatedReceipt);
+      this.receipts.update(items => items.map(item => item.idBankReceipt === updatedReceipt.idBankReceipt ? updatedReceipt : item));
+      this.generatedRemittances.set(createdRemittances);
       this.loadReceipts();
       this.loadInvoices();
-      this.loadRemittances();
+      if (createdRemittances.length) {
+        this.remittances.update(items => {
+          const byId = new Map(items.map(item => [item.remittanceRef, item]));
+          for (const remittance of createdRemittances) byId.set(remittance.remittanceRef, remittance);
+          return [...byId.values()];
+        });
+      } else {
+        this.pairingWarningMessage.set('Pairing succeeded, but the backend returned no createdRemittances. Check the Outgoing Remittances list or contact support.');
+      }
       const notificationId = this.pendingNotificationId();
       if (notificationId != null) {
         this.workflowService.markNotificationRead(notificationId).subscribe({
           error: error => this.errorMessage.set(this.getErrorMessage(error, 'Notification could not be marked as read.'))
         });
       }
-    }, false);
+      if (this.page() === 'remittances') {
+        this.loadRemittances();
+      } else {
+        void this.router.navigate(['/workspace/reassurance/back-officer/outgoing-remittances']);
+      }
+    });
   }
 
   confirmRemittance(remittance: RemittanceResponse): void {
@@ -1655,10 +1796,11 @@ export class FinancialWorkspacePageComponent implements OnInit {
       const updated = {
         ...remittance,
         ...response,
-        status: 'Awaiting Finance Disbursement'
+        status: response.status || remittance.status
       };
       this.remittances.update(items => items.map(item => item.remittanceRef === remittance.remittanceRef ? updated : item));
       this.remittanceToConfirm.set(null);
+      this.loadRemittances();
     });
   }
 
@@ -1666,28 +1808,33 @@ export class FinancialWorkspacePageComponent implements OnInit {
     return this.selectedRemittanceIds().has(this.getRemittanceId(remittance));
   }
 
+  isDraftRemittanceSelectable(remittance: RemittanceResponse): boolean {
+    return this.role() === 'back-office'
+      && remittance.status?.trim().toUpperCase() === 'DRAFT'
+      && this.getRemittanceId(remittance) > 0
+      && this.getRemittanceReinsurerId(remittance) > 0;
+  }
+
   canSelectRemittance(remittance: RemittanceResponse): boolean {
-    if (!this.isOutgoingClosingEligible(remittance)) {
+    if (!this.isDraftRemittanceSelectable(remittance)) {
       return false;
     }
 
     const lock = this.selectedRemittanceLock();
     return !lock
-      || (lock.reinsurerId === this.getRemittanceReinsurerId(remittance) && lock.currencyCode === remittance.currencyCode);
+      || this.isCompatibleRemittance(lock, remittance);
   }
 
   getRemittanceSelectionDisabledReason(remittance: RemittanceResponse): string {
-    if (!this.isOutgoingClosingEligible(remittance)) {
-      if (remittance.closingId || remittance.closingReference || remittance.closingIssuedDate) {
-        return 'This row is already included in a closing.';
-      }
-
-      return 'This remittance is not eligible for closing.';
+    if (this.role() !== 'back-office') return 'Only a Back Officer can select remittances for Finance confirmation.';
+    if (remittance.status?.trim().toUpperCase() !== 'DRAFT') {
+      return 'Only Draft remittances can be selected for Finance confirmation.';
     }
-
+    if (this.getRemittanceId(remittance) <= 0) return 'The remittance primary ID is missing.';
+    if (this.getRemittanceReinsurerId(remittance) <= 0) return 'The remittance reinsurer ID is missing.';
     const lock = this.selectedRemittanceLock();
-    if (lock && (lock.reinsurerId !== this.getRemittanceReinsurerId(remittance) || lock.currencyCode !== remittance.currencyCode)) {
-      return 'Select remittances for the same reinsurer and currency only.';
+    if (lock && !this.isCompatibleRemittance(lock, remittance)) {
+      return 'Select remittances for the same reinsurer and currency.';
     }
 
     return '';
@@ -1695,10 +1842,21 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
   toggleRemittanceSelection(remittance: RemittanceResponse, checked: boolean): void {
     const remittanceId = this.getRemittanceId(remittance);
+    if (remittanceId <= 0) {
+      this.remittanceSelectionError.set('The backend did not provide a valid remittance ID.');
+      return;
+    }
+    if (checked && !this.isDraftRemittanceSelectable(remittance)) {
+      this.remittanceSelectionError.set(this.getRemittanceSelectionDisabledReason(remittance));
+      return;
+    }
     if (checked && !this.canSelectRemittance(remittance)) {
+      this.remittanceSelectionError.set(this.getRemittanceSelectionDisabledReason(remittance));
       return;
     }
 
+    if (checked) this.lastRemittanceConfirmation.set(null);
+    this.remittanceSelectionError.set('');
     this.selectedRemittanceIds.update(ids => {
       const next = new Set(ids);
       checked ? next.add(remittanceId) : next.delete(remittanceId);
@@ -1708,6 +1866,104 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
   clearRemittanceSelection(): void {
     this.selectedRemittanceIds.set(new Set());
+    this.remittanceSelectionError.set('');
+  }
+
+  eligibleVisibleRemittances(): RemittanceResponse[] {
+    const draftRows = this.remittances().filter(remittance => this.isDraftRemittanceSelectable(remittance));
+    const first = draftRows[0];
+    const lock = this.selectedRemittanceLock() ?? (first ? {
+      reinsurerId: this.getRemittanceReinsurerId(first),
+      currencyCode: this.normalizeCurrencyCode(first.currencyCode)
+    } : null);
+    return lock ? draftRows.filter(row => this.isCompatibleRemittance(lock, row)) : [];
+  }
+
+  allEligibleVisibleRemittancesSelected(): boolean {
+    const eligible = this.eligibleVisibleRemittances();
+    return eligible.length > 0 && eligible.every(remittance => this.isRemittanceSelected(remittance));
+  }
+
+  someEligibleVisibleRemittancesSelected(): boolean {
+    const eligible = this.eligibleVisibleRemittances();
+    return eligible.some(remittance => this.isRemittanceSelected(remittance)) && !this.allEligibleVisibleRemittancesSelected();
+  }
+
+  toggleAllEligibleVisibleRemittances(checked: boolean): void {
+    const eligible = checked ? this.eligibleVisibleRemittances() : this.remittances().filter(row => this.isRemittanceSelected(row));
+    this.selectedRemittanceIds.update(current => {
+      const next = new Set(current);
+      for (const row of eligible) {
+        const id = this.getRemittanceId(row);
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+    this.remittanceSelectionError.set('');
+    if (checked && this.eligibleVisibleRemittances().length < this.remittances().filter(row => row.status?.trim().toUpperCase() === 'DRAFT').length) {
+      this.remittanceSelectionError.set('Select remittances for the same reinsurer and currency.');
+    }
+  }
+
+  canPrintSelectedClosing(): boolean {
+    const rows = this.selectedRemittanceRows();
+    return rows.length > 0 && rows.length === this.selectedRemittanceIds().size && rows.every(row => this.isOutgoingClosingEligible(row));
+  }
+
+  confirmSelectedRemittancesForDisbursement(): void {
+    const rows = this.selectedRemittanceRows();
+    const ids = rows.map(row => this.getRemittanceId(row));
+    if (!ids.length || rows.length !== this.selectedRemittanceIds().size || this.isSubmitting()) return;
+    if (rows.some(row => !this.canSelectRemittance(row)) || new Set(ids).size !== ids.length) {
+      this.remittanceSelectionError.set('The selected remittances are no longer eligible or compatible. Refresh and select them again.');
+      return;
+    }
+
+    this.isSubmitting.set(true);
+    this.errorMessage.set('');
+    this.successMessage.set('');
+    this.workflowService.confirmRemittancesForDisbursement(ids).pipe(
+      take(1),
+      finalize(() => this.isSubmitting.set(false))
+    ).subscribe({
+      next: response => {
+        const currencyCode = this.selectedRemittanceCurrency();
+        const updates = new Map(response.items.map(item => [item.remittanceId, item]));
+        this.remittances.update(items => items.map(item => {
+          const update = updates.get(this.getRemittanceId(item));
+          return update ? { ...item, ...update } : item;
+        }));
+        this.clearRemittanceSelection();
+        this.lastRemittanceConfirmation.set(response);
+        this.remittanceConfirmationCurrency.set(currencyCode);
+        this.successMessage.set(this.getBatchConfirmationMessage(response, currencyCode));
+        this.loadRemittances();
+        this.refreshNotifications();
+      },
+      error: (error: HttpErrorResponse) => {
+        if (error.status === 409) {
+          const body = error.error && typeof error.error === 'object'
+            ? error.error as Record<string, unknown>
+            : {};
+          const message = typeof body['message'] === 'string' && body['message'].trim()
+            ? body['message'].trim()
+            : this.getErrorMessage(error, 'Selected remittances could not be confirmed.');
+          const references = this.getAffectedRemittanceReferences(body);
+          this.errorMessage.set(references.length
+            ? `${message} Affected remittances: ${references.join(', ')}.`
+            : message);
+
+          console.warn('Remittance batch confirmation conflict.', {
+            code: body['code'] ?? null,
+            traceId: body['traceId'] ?? body['traceID'] ?? body['requestId'] ?? null
+          });
+          return;
+        }
+
+        this.errorMessage.set(this.getErrorMessage(error, 'Selected remittances could not be confirmed.'));
+      }
+    });
   }
 
   printSelectedClosing(): void {
@@ -1870,11 +2126,110 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   getRemittanceReinsurerId(remittance: RemittanceResponse): number {
-    return remittance.reinsurerId ?? remittance.counterpartyId;
+    return this.getPositiveId(remittance.reinsurerId) ?? 0;
+  }
+
+  getRemittanceBeneficiaryId(remittance: RemittanceResponse): number {
+    return remittance.beneficiaryCounterpartyId ?? remittance.beneficiaryId ?? remittance.counterpartyId;
+  }
+
+  getRemittanceBeneficiaryName(remittance: RemittanceResponse): string {
+    return this.getRemittanceBeneficiaryType(remittance) === 'Cedent'
+      ? (remittance.cedentName?.trim() || remittance.counterpartyName || 'Not provided')
+      : (remittance.reinsurerName?.trim() || remittance.counterpartyName || 'Not provided');
+  }
+
+  private getCurrencyPrecision(currency: string): number {
+    try {
+      return new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
+    } catch {
+      return 2;
+    }
+  }
+
+  private normalizeCurrencyCode(value: string | null | undefined): string {
+    return value?.trim().toUpperCase() ?? '';
+  }
+
+  private normalizeSourceType(value: string | null | undefined): string {
+    return value?.trim().toUpperCase().replaceAll(' ', '_') ?? '';
+  }
+
+  private isCompatibleRemittance(lock: { reinsurerId: number; currencyCode: string }, remittance: RemittanceResponse): boolean {
+    return lock.reinsurerId === this.getRemittanceReinsurerId(remittance)
+      && lock.currencyCode === this.normalizeCurrencyCode(remittance.currencyCode);
+  }
+
+  private sumSelectedRemittanceMinorUnits(predicate: (row: RemittanceResponse) => boolean): number {
+    const rows = this.selectedRemittanceRows().filter(predicate);
+    const precision = this.getCurrencyPrecision(rows[0]?.currencyCode ?? '');
+    const factor = 10n ** BigInt(precision);
+    const units = rows.reduce((total, row) => {
+      const amount = row.signedNetPayableAmount;
+      return total + (amount == null || !Number.isFinite(amount)
+        ? 0n
+        : BigInt(Math.round(amount * Number(factor))));
+    }, 0n);
+    return Number(units) / Number(factor);
+  }
+
+  formatSignedRemittanceTotal(amount: number, currencyCode: string): string {
+    const precision = this.getCurrencyPrecision(currencyCode);
+    const value = new Intl.NumberFormat(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision }).format(Math.abs(amount));
+    const sign = amount > 0 ? '+' : amount < 0 ? '−' : '';
+    return `${sign}${value} ${currencyCode}`.trim();
+  }
+
+  private getBatchConfirmationMessage(response: RemittanceBatchConfirmationResponse, currencyCode: string): string {
+    if (response.settlementMode?.toUpperCase().includes('CREDIT') || (response.netBalance ?? 0) < 0) {
+      return `Remittances confirmed. Net credit balance: ${this.formatMoney(response.netBalance ?? 0, currencyCode)}. Net amount: ${this.formatSignedRemittanceTotal(response.netBalance ?? 0, currencyCode)}. No positive disbursement was created.`;
+    }
+    if (response.settlementMode || response.amountToDisburse != null) {
+      const netAmount = response.netBalance == null ? '' : ` Net amount: ${this.formatSignedRemittanceTotal(response.netBalance, currencyCode)}.`;
+      return `${response.items.length} remittance${response.items.length === 1 ? '' : 's'} confirmed.${netAmount} Amount to disburse: ${this.formatMoney(response.amountToDisburse ?? 0, currencyCode)}.`;
+    }
+    return `${response.items.length} remittance${response.items.length === 1 ? '' : 's'} sent to Finance for disbursement.`;
+  }
+
+  private getAffectedRemittanceReferences(body: Record<string, unknown>): string[] {
+    const candidates = body['affectedRemittanceReferences']
+      ?? body['remittanceReferences']
+      ?? body['affectedRemittances'];
+    if (!Array.isArray(candidates)) {
+      return typeof body['remittanceReference'] === 'string' ? [body['remittanceReference']] : [];
+    }
+
+    return candidates.flatMap(candidate => {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return [candidate.trim()];
+      }
+      if (candidate && typeof candidate === 'object') {
+        const item = candidate as Record<string, unknown>;
+        const reference = item['remittanceReference'] ?? item['reference'] ?? item['remittanceRef'];
+        return typeof reference === 'string' || typeof reference === 'number' ? [String(reference)] : [];
+      }
+      return [];
+    });
   }
 
   getRemittanceReinsurerName(remittance: RemittanceResponse): string {
-    return remittance.reinsurerName || remittance.counterpartyName;
+    return remittance.reinsurerName?.trim() || remittance.counterpartyName || 'Not provided';
+  }
+
+  getRemittanceBeneficiaryType(remittance: RemittanceResponse): string {
+    const type = remittance.beneficiaryType?.trim().toUpperCase();
+    if (type === 'CEDENT') return 'Cedent';
+    if (type === 'REINSURER') return 'Reinsurer';
+    if (remittance.beneficiaryType?.trim()) return remittance.beneficiaryType;
+    return remittance.panelId == null ? 'Cedent' : 'Reinsurer';
+  }
+
+  getRemittanceSourceLabel(remittance: RemittanceResponse): string {
+    const source = this.normalizeSourceType(remittance.sourceType);
+    if (source === 'PREMIUM') return 'Premium';
+    if (source === 'AVOIR') return 'Avoir';
+    if (source === 'AVOIR_REFUND') return 'Avoir Refund';
+    return source ? source.replaceAll('_', ' ') : 'Not provided';
   }
 
   getRemittanceContractDisplay(remittance: RemittanceResponse): string {
@@ -1888,7 +2243,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   getRemittanceInvoiceDisplay(remittance: RemittanceResponse): string {
-    return remittance.invoiceNumber?.trim() || (remittance.invoiceId ? `Invoice ${remittance.invoiceId}` : 'Not provided');
+    return remittance.invoiceAvoirNumber?.trim() || 'Not provided';
   }
 
   getRemittanceReceiptDisplay(remittance: RemittanceResponse): string {
@@ -1896,40 +2251,63 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   downloadListedInvoice(invoice: InvoiceResponse): void {
-    const invoiceId = this.getPositiveId(invoice.idInvoice);
-    if (invoiceId == null) {
-      this.errorMessage.set('Invoice could not be downloaded: the invoice is missing a valid backend ID.');
+    const documentId = this.getPositiveId(invoice.idInvoice) ?? this.getPositiveId(invoice.invoiceId);
+    const isAvoir = this.isAvoirInvoice(invoice);
+    const documentName = isAvoir ? 'Avoir' : 'Invoice';
+    if (documentId == null) {
+      this.errorMessage.set(`${documentName} could not be downloaded: the document is missing a valid backend ID.`);
       return;
     }
-    if (this.downloadingInvoiceIds().has(invoiceId)) return;
-    this.downloadingInvoiceIds.update(ids => new Set(ids).add(invoiceId));
+    if (this.downloadingInvoiceIds().has(documentId)) return;
+    this.downloadingInvoiceIds.update(ids => new Set(ids).add(documentId));
     this.errorMessage.set('');
-    this.workflowService.downloadPremiumDebitNote(invoiceId).pipe(
+    const download = isAvoir
+      ? this.workflowService.downloadAvoirPdf(documentId)
+      : this.workflowService.downloadInvoicePdf(documentId);
+    download.pipe(
       take(1),
       takeUntilDestroyed(this.destroyRef),
       finalize(() => this.downloadingInvoiceIds.update(ids => {
         const remaining = new Set(ids);
-        remaining.delete(invoiceId);
+        remaining.delete(documentId);
         return remaining;
       }))
     ).subscribe({
       next: file => {
         if (!this.isPdfDownload(file)) {
-          this.errorMessage.set('Invoice could not be downloaded: the backend response was not a PDF.');
+          this.errorMessage.set(`${documentName} could not be downloaded: the backend response was not a PDF.`);
           return;
         }
         try {
-          this.saveDownloadedFile(file, 'invoice-' + invoiceId + '.pdf');
+          const number = this.getInvoiceDocumentNumber(invoice);
+          this.saveDownloadedFile(file, `${isAvoir ? 'Avoir' : 'Facture'}_${number}.pdf`);
         } catch {
-          this.errorMessage.set('Invoice could not be downloaded. Please retry.');
+          this.errorMessage.set(`${documentName} could not be downloaded. Please retry.`);
         }
       },
-      error: (error: HttpErrorResponse) => this.setDownloadError(error, 'Invoice could not be downloaded. Please retry.')
+      error: (error: HttpErrorResponse) => this.setDownloadError(error, `${documentName} could not be downloaded. Please retry.`)
     });
+  }
+
+  invoiceDownloadActionLabel(invoice: InvoiceResponse): string {
+    if (this.downloadingInvoiceIds().has(invoice.idInvoice)) return 'Downloading...';
+    return this.isAvoirInvoice(invoice) ? 'Download Avoir' : 'Download Invoice';
   }
 
   getInvoiceLabel(invoice: InvoiceResponse): string {
     return invoice.label?.trim() || 'No label';
+  }
+
+  getInvoiceDocumentNumber(invoice: InvoiceResponse): string {
+    const number = invoice.documentNumber?.trim() || invoice.invoiceNumber?.trim();
+    if (number) {
+      return number;
+    }
+    return `${this.isAvoirInvoice(invoice) ? 'AV' : 'INV'}-${invoice.idInvoice}`;
+  }
+
+  isAvoirInvoice(invoice: Pick<InvoiceResponse, 'invoiceType' | 'isAvoir'> | Pick<EligibleInvoice, 'invoiceType' | 'isAvoir'>): boolean {
+    return invoice.isAvoir === true || invoice.invoiceType?.trim().toUpperCase() === 'AVOIR';
   }
 
   getInvoiceContractDisplay(invoice: InvoiceResponse): string {
@@ -1946,6 +2324,17 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
   getInvoiceTypeLabel(invoiceType: string | null | undefined): string {
     const normalized = this.normalizeStatus(invoiceType ?? '');
+    if (normalized === 'avoir') {
+      return 'Avoir';
+    }
+    if (normalized === 'invoice') {
+      return 'Invoice';
+    }
+
+    if (normalized === 'invoicefees') {
+      return 'Invoice Fees';
+    }
+
     if (normalized.includes('reinsurer')) {
       return 'Reinsurer Payable';
     }
@@ -1958,12 +2347,17 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   getInvoicePrimaryAmount(invoice: InvoiceResponse): number | null {
-    return invoice.invoiceAmount
+    const signedAmount = invoice.signedAmount;
+    if (signedAmount != null && Number.isFinite(signedAmount)) {
+      return signedAmount;
+    }
+    const amount = invoice.invoiceAmount
       ?? invoice.grossAmount
       ?? invoice.actualAmount
       ?? invoice.amount
       ?? invoice.affectedAmount
       ?? invoice.netPremium;
+    return amount == null ? null : (this.isAvoirInvoice(invoice) ? -Math.abs(amount) : amount);
   }
 
   getInvoiceRecoveryStatus(invoice: InvoiceResponse): InvoicePaymentStatus {
@@ -1983,7 +2377,24 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   getEligibleInvoiceOutstandingAmount(invoice: EligibleInvoice): number {
-    return Math.max(invoice.remainingAmount ?? invoice.outstandingAmount ?? 0, 0);
+    const amount = invoice.remainingAmount ?? invoice.outstandingAmount ?? 0;
+    return this.isAvoirInvoice(invoice) ? Math.abs(amount) : Math.max(amount, 0);
+  }
+
+  getEligibleInvoiceSignedAmount(invoice: EligibleInvoice, amount: number | null | undefined): number | null | undefined {
+    if (amount == null) {
+      return amount;
+    }
+    return this.isAvoirInvoice(invoice) ? -Math.abs(amount) : amount;
+  }
+
+  private getSignedAllocationAmount(invoiceId: number, amount: number): number {
+    const invoice = this.eligibleInvoices().find(item => this.getPositiveId(item.invoiceId) === invoiceId);
+    return invoice && this.isAvoirInvoice(invoice) ? -Math.abs(amount) : amount;
+  }
+
+  private isAvoirInvoiceById(invoiceId: number): boolean {
+    return this.eligibleInvoices().some(invoice => invoice.invoiceId === invoiceId && this.isAvoirInvoice(invoice));
   }
 
   getEligibleInvoiceOutstandingAmountById(invoiceId: number): number {
@@ -2063,18 +2474,27 @@ export class FinancialWorkspacePageComponent implements OnInit {
       return [];
     }
 
+    const cedentRefund = this.isAvoirRefund(remittance);
+    const context = this.disbursementContext();
     return [
-      { label: 'Contract name', value: remittance.contractName || 'Not provided by backend' },
-      { label: 'UMR', value: remittance.umr || 'Not provided by backend' },
-      { label: 'Cedent', value: remittance.cedentName || 'Not provided by backend' },
-      { label: 'Reinsurer', value: remittance.counterpartyName },
-      { label: 'Panel', value: remittance.panelId == null ? 'Not linked' : `Panel ${remittance.panelId}` },
-      { label: 'Gross/allocated premium', value: this.formatMoney(this.getRemittanceGrossAmount(remittance), remittance.currencyCode) },
-      { label: 'Deductions', value: this.formatMoney(this.getRemittanceDeductions(remittance), remittance.currencyCode) },
-      { label: 'Net payable amount', value: this.formatMoney(remittance.netPayableAmount, remittance.currencyCode) },
-      { label: 'Currency', value: remittance.currencyCode },
-      { label: 'Current status', value: this.getRemittanceStatusLabel(remittance.status) },
-      { label: 'Remittance reference', value: String(remittance.remittanceRef) },
+      { label: 'Beneficiary type', value: cedentRefund ? 'Cedent' : this.getRemittanceBeneficiaryType(remittance) },
+      { label: cedentRefund ? 'Cedent beneficiary' : 'Reinsurer', value: context?.beneficiaryName || this.getRemittanceReinsurerName(remittance) },
+      { label: 'Contract name', value: context?.contractName || remittance.contractName || 'Not provided by backend' },
+      { label: 'UMR', value: context?.umr || remittance.umr || 'Not provided by backend' },
+      { label: 'Cedent', value: context?.cedentName || remittance.cedentName || 'Not provided by backend' },
+      ...(cedentRefund ? [
+        { label: 'Avoir number', value: context?.avoirNumber || context?.creditNoteNumber || remittance.sourceInvoiceNumber || remittance.invoiceNumber || 'Not provided' },
+        { label: 'Encaissement reference', value: context?.encaissementReference || remittance.receiptReference || 'Not provided' },
+        { label: 'Refund amount', value: this.formatMoney(context?.netPayableAmount ?? remittance.netPayableAmount, context?.currency || remittance.currencyCode) }
+      ] : [{ label: 'Panel', value: remittance.panelId == null ? 'Not linked' : `Panel ${remittance.panelId}` }]),
+      ...(!cedentRefund ? [
+        { label: 'Gross/allocated premium', value: this.formatMoney(this.getRemittanceGrossAmount(remittance), remittance.currencyCode) },
+        { label: 'Deductions', value: this.formatMoney(this.getRemittanceDeductions(remittance), remittance.currencyCode) },
+        { label: 'Net payable amount', value: this.formatMoney(remittance.netPayableAmount, remittance.currencyCode) }
+      ] : []),
+      { label: 'Currency', value: context?.currency || context?.currencyCode || remittance.currencyCode },
+      { label: 'Current status', value: this.getRemittanceStatusLabel(context?.status || remittance.status) },
+      { label: 'Remittance reference', value: context?.remittanceReference || remittance.remittanceReference || (cedentRefund ? 'Not provided' : String(remittance.remittanceRef)) },
       ...(this.isClosedDisbursement(remittance.status)
         ? [{ label: 'Transfer completion date', value: remittance.transferCompletedAt ? new Date(remittance.transferCompletedAt).toLocaleDateString() : 'Not provided by backend' }]
         : [])
@@ -2146,35 +2566,52 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
     this.isSubmitting.set(true);
     this.errorMessage.set('');
-    const remittanceId = this.getRemittanceId(remittance);
-    this.workflowService.startDisbursement(remittanceId).subscribe({
+    const remittanceReference = this.getNumericRemittanceReference(remittance);
+    if (remittanceReference == null) {
+      this.errorMessage.set('The backend did not provide a valid remittanceReference.');
+      return;
+    }
+    this.workflowService.startDisbursement(remittanceReference).subscribe({
       next: response => {
         const updated = this.applyDisbursementCommandResponse(remittance, response, 'PaymentInProgress');
-        const downloadUrl = this.getCommandDownloadUrl(response);
-        if (!downloadUrl) {
+        const downloadRequest = this.isAvoirRefund(updated)
+          ? this.downloadCreditNoteFromContext()
+          : (() => {
+            const downloadUrl = this.getCommandDownloadUrl(response);
+            return downloadUrl ? this.workflowService.downloadDocumentUrl(downloadUrl) : null;
+          })();
+        if (!downloadRequest) {
           this.isSubmitting.set(false);
-          this.errorMessage.set('The backend did not return an invoice download URL.');
+          this.errorMessage.set('The backend did not return a payment document download URL.');
           this.loadRemittances();
           return;
         }
 
-        this.workflowService.downloadDocumentUrl(downloadUrl).subscribe({
+        downloadRequest.subscribe({
           next: file => {
             if (!this.isPdfDownload(file)) {
               this.isSubmitting.set(false);
-              this.errorMessage.set('The backend response was not a PDF invoice.');
+              this.errorMessage.set(this.isAvoirRefund(updated)
+                ? 'The backend response was not a PDF Credit Note.'
+                : 'The backend response was not a PDF invoice.');
               this.loadRemittances();
               return;
             }
-            this.saveDownloadedFile(file, `invoice-remittance-${updated.remittanceRef}.pdf`);
+            this.saveDownloadedFile(file, this.isAvoirRefund(updated)
+              ? `CreditNote-${updated.sourceInvoiceNumber || updated.remittanceRef}.pdf`
+              : `invoice-remittance-${updated.remittanceRef}.pdf`);
             this.isSubmitting.set(false);
-            this.successMessage.set('Invoice downloaded. Payment processing has started.');
+            this.successMessage.set(this.isAvoirRefund(updated)
+              ? 'Credit Note downloaded. Cedent refund payment processing has started.'
+              : 'Invoice downloaded. Payment processing has started.');
             this.loadRemittances();
             this.refreshNotifications();
           },
           error: (error: HttpErrorResponse) => {
             this.isSubmitting.set(false);
-            this.errorMessage.set(this.getErrorMessage(error, 'Invoice could not be downloaded.'));
+            this.errorMessage.set(this.getErrorMessage(error, this.isAvoirRefund(updated)
+              ? 'Credit Note could not be downloaded.'
+              : 'Invoice could not be downloaded.'));
             this.loadRemittances();
           }
         });
@@ -2192,9 +2629,13 @@ export class FinancialWorkspacePageComponent implements OnInit {
       return;
     }
 
-    const request = this.getExistingInvoiceDownloadRequest(remittance);
+    const request = this.isAvoirRefund(remittance)
+      ? this.downloadCreditNoteFromContext()
+      : this.getExistingInvoiceDownloadRequest(remittance);
     if (!request) {
-      this.errorMessage.set('Backend disbursement DTO did not include a real disbursementId for invoice download.');
+      this.errorMessage.set(this.isAvoirRefund(remittance)
+        ? 'Backend disbursement context did not provide a Credit Note download URL.'
+        : 'Backend disbursement DTO did not include a real disbursementId for invoice download.');
       return;
     }
 
@@ -2203,13 +2644,19 @@ export class FinancialWorkspacePageComponent implements OnInit {
     request.pipe(finalize(() => this.isDownloadingInvoice.set(false))).subscribe({
       next: file => {
         if (!this.isPdfDownload(file)) {
-          this.errorMessage.set('The backend response was not a PDF invoice.');
+          this.errorMessage.set(this.isAvoirRefund(remittance)
+            ? 'The backend response was not a PDF Credit Note.'
+            : 'The backend response was not a PDF invoice.');
           return;
         }
-        this.saveDownloadedFile(file, `invoice-remittance-${remittance.remittanceRef}.pdf`);
+        this.saveDownloadedFile(file, this.isAvoirRefund(remittance)
+          ? `CreditNote-${remittance.sourceInvoiceNumber || remittance.remittanceRef}.pdf`
+          : `invoice-remittance-${remittance.remittanceRef}.pdf`);
       },
       error: (error: HttpErrorResponse) => {
-        this.errorMessage.set(this.getErrorMessage(error, 'Invoice could not be downloaded.'));
+        this.errorMessage.set(this.getErrorMessage(error, this.isAvoirRefund(remittance)
+          ? 'Credit Note could not be downloaded.'
+          : 'Invoice could not be downloaded.'));
       }
     });
   }
@@ -2325,7 +2772,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.disbursementContextSubscription = null;
     this.disbursementBankAccountsSubscription?.unsubscribe();
     this.disbursementBankAccountsSubscription = null;
-    this.loadingDisbursementContextRef = null;
+    this.loadingDisbursementContextReference = null;
     this.loadingDisbursementBankAccountsCounterpartyId = null;
     this.isLoadingContext.set(false);
     this.isBankAccountLoading.set(false);
@@ -2364,7 +2811,8 @@ export class FinancialWorkspacePageComponent implements OnInit {
     };
 
     this.selectedRemittance.set(updated);
-    this.disbursementContext.update(context => context && context.remittanceId === this.getRemittanceId(current)
+    this.disbursementContext.update(context => context
+      && this.getContextRemittanceReference(context) === this.getNumericRemittanceReference(current)
       ? {
         ...context,
         status: updated.status,
@@ -2402,12 +2850,43 @@ export class FinancialWorkspacePageComponent implements OnInit {
     return null;
   }
 
+  private downloadCreditNoteFromContext(): Observable<BackendFileDownload> | null {
+    const remittance = this.selectedRemittance();
+    if (!remittance || !this.isAvoirRefund(remittance)) return null;
+    const url = this.disbursementContext()?.creditNoteDownloadUrl?.trim();
+    return url ? this.workflowService.downloadDocumentUrl(url) : null;
+  }
+
   private getActualDisbursementId(remittance: RemittanceResponse): number | null {
     return this.disbursementContext()?.disbursementId ?? remittance.disbursementId ?? null;
   }
 
   getRemittanceId(remittance: RemittanceResponse): number {
-    return remittance.remittanceId ?? remittance.remittanceRef;
+    return Number.isSafeInteger(remittance.remittanceRef) && remittance.remittanceRef > 0 ? remittance.remittanceRef : 0;
+  }
+
+  getNumericRemittanceReference(remittance: RemittanceResponse | null | undefined): number | null {
+    if (!remittance) return null;
+    const reference = remittance.remittanceReference?.trim() ?? '';
+    if (/^\d+$/.test(reference) && Number.isSafeInteger(Number(reference)) && Number(reference) > 0) {
+      return Number(reference);
+    }
+    if (this.isAvoirRefund(remittance)) return null;
+    return Number.isSafeInteger(remittance.remittanceRef) && remittance.remittanceRef > 0
+      ? remittance.remittanceRef
+      : null;
+  }
+
+  getContextRemittanceReference(context: DisbursementContext | null | undefined): number | null {
+    if (!context) return null;
+    const reference = context.remittanceReference?.trim() ?? '';
+    return /^\d+$/.test(reference) && Number.isSafeInteger(Number(reference)) && Number(reference) > 0
+      ? Number(reference)
+      : null;
+  }
+
+  isAvoirRefund(remittance: RemittanceResponse | null | undefined): boolean {
+    return remittance?.sourceType?.trim().toUpperCase() === 'AVOIR_REFUND';
   }
 
   private isPdfDownload(file: BackendFileDownload): boolean {
@@ -2464,7 +2943,10 @@ export class FinancialWorkspacePageComponent implements OnInit {
         afterSuccess(response);
       },
       error: (error: HttpErrorResponse) => {
-        this.errorMessage.set(this.getErrorMessage(error, 'Request failed. Review the form and retry.'));
+        const fallback = 'Request failed. Review the form and retry.';
+        this.errorMessage.set(this.selectedClosingId() != null
+          ? this.getCommandErrorMessage(error, fallback)
+          : this.getErrorMessage(error, fallback));
         this.isSubmitting.set(false);
       }
     });
@@ -2601,6 +3083,16 @@ export class FinancialWorkspacePageComponent implements OnInit {
     }
 
     return fallback;
+  }
+
+  private getCommandErrorMessage(error: HttpErrorResponse, fallback: string): string {
+    const body = error.error && typeof error.error === 'object' ? error.error as Record<string, unknown> : {};
+    const message = body['message'] ?? body['detail'] ?? body['title'];
+    const traceId = body['traceId'] ?? body['traceID'] ?? body['requestId'];
+    const parts = [typeof message === 'string' && message.trim() ? message : this.getErrorMessage(error, fallback)];
+    if (error.status) parts.push(`HTTP ${error.status}`);
+    if (typeof traceId === 'string' && traceId.trim()) parts.push(`Trace ID: ${traceId}`);
+    return parts.join(' · ');
   }
 
   private getConfirmTransferErrorMessage(error: HttpErrorResponse): string {

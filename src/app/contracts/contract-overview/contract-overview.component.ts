@@ -1,11 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
-import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, DestroyRef, OnInit, computed, inject, isDevMode, signal } from '@angular/core';
+import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, from, map, of, Subscription, switchMap, tap, throwError } from 'rxjs';
 import {
   ContractPanelItem,
   CoverageOption,
@@ -20,10 +20,12 @@ import { DocumentContext } from '../../shared/models/document.model';
 import { CounterpartiesService } from '../../shared/services/counterparties.service';
 import { ContractsService } from '../../shared/services/contracts.service';
 import {
+  BackendFileDownload,
   InvoiceContext,
   InvoicePanelOption,
   InvoiceReceiptAllocation,
   PremiumDebitNoteAllocation,
+  PremiumDebitNoteRequest,
   PremiumDebitNotePreview,
   PremiumDebitNoteResponse
 } from '../../shared/models/financial-workflow.model';
@@ -38,6 +40,26 @@ interface ContractFinancialSummary {
 }
 
 type AmountInputMode = 'amount' | 'percentage';
+
+interface InvoiceApiErrorDetails {
+  status: number;
+  detail: string | null;
+  validationErrors: string[];
+  traceId: string | null;
+}
+
+class InvalidPdfResponseError extends Error {
+  constructor(readonly response: BackendFileDownload) {
+    super('The server response was not a PDF.');
+  }
+}
+
+const finiteAmountValidator: ValidatorFn = control => {
+  const value = control.value;
+  return value == null || value === '' || (typeof value === 'number' && Number.isFinite(value))
+    ? null
+    : { number: true };
+};
 
 @Component({
   selector: 'app-contract-overview',
@@ -69,31 +91,41 @@ export class ContractOverviewComponent implements OnInit {
   readonly isLoading = signal(true);
   readonly isDownloadingSlips = signal(false);
   readonly isStartingBinding = signal(false);
+  readonly isMarkingReady = signal(false);
+  readonly isReinsurersTabActive = signal(false);
   readonly errorMessage = signal('');
   readonly slipMessage = signal('');
+  readonly statusTransitionErrors = signal<Array<{ field: string; messages: string[] }>>([]);
   readonly isReinsurerFormOpen = signal(false);
   readonly isSubmittingPanel = signal(false);
   readonly isInvoiceModalOpen = signal(false);
   readonly isLoadingInvoiceContext = signal(false);
   readonly isLoadingInvoiceHistory = signal(false);
   readonly isLoadingInvoicePreview = signal(false);
-  readonly isDownloadingContractDebitNote = signal(false);
   readonly isSubmittingInvoice = signal(false);
   readonly downloadingDebitNoteInvoiceId = signal<number | null>(null);
+  readonly isDownloadingFinancialNote = signal(false);
   readonly invoiceError = signal('');
+  readonly invoiceApiErrorDetails = signal<InvoiceApiErrorDetails | null>(null);
   readonly invoiceContextError = signal('');
   readonly invoiceHistoryError = signal('');
   readonly invoiceSuccessMessage = signal('');
   readonly invoiceDownloadError = signal('');
-  readonly contractDebitNoteError = signal('');
+  readonly invoiceRowDownloadErrors = signal<Record<number, string>>({});
   readonly invoiceContext = signal<InvoiceContext | null>(null);
   readonly invoiceHistory = signal<PremiumDebitNoteResponse[]>([]);
+  readonly avoirHistory = signal<PremiumDebitNoteResponse[]>([]);
   readonly invoicePreview = signal<PremiumDebitNotePreview | null>(null);
   readonly selectedInvoiceAllocationView = signal<PremiumDebitNoteResponse | null>(null);
   readonly lastCreatedInvoice = signal<PremiumDebitNoteResponse | null>(null);
   readonly latestInvoice = computed(() => this.invoiceHistory()[0] ?? null);
   readonly invoiceSubmissionKey = signal<string | null>(null);
   readonly invoiceAmountValue = signal(0);
+  private invoicePreviewRequestKey: string | null = null;
+  private invoicePreviewReadyKey: string | null = null;
+  private invoicePreviewRequestId = 0;
+  private invoicePreviewSubscription: Subscription | null = null;
+  private invoicePreviewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   readonly panelFormMode = signal<'create' | 'edit'>('create');
   readonly editingPanelId = signal<number | null>(null);
   readonly confirmingPanelId = signal<number | null>(null);
@@ -119,7 +151,7 @@ export class ContractOverviewComponent implements OnInit {
       statusDisplay: getContractStatusDisplay(contract?.status),
       statusClasses: getContractStatusClasses(contract?.status),
       period: contract ? `${this.formatDate(contract.inceptionDate)} to ${this.formatDate(contract.expiryDate)}` : 'Not provided',
-      cedent: contract?.counterpartyName || (contract ? `Counterparty #${contract.counterpartyId}` : 'Not provided')
+      cedent: contract?.counterpartyName || (contract?.counterpartyId != null ? `Counterparty #${contract.counterpartyId}` : 'Not provided')
     };
   });
   readonly hasConfirmedPanel = computed(() => this.panels().some(panel => this.isPanelConfirmed(panel)));
@@ -154,7 +186,18 @@ export class ContractOverviewComponent implements OnInit {
     const amount = this.invoiceContext()?.remainingInvoiceableAmount;
     return amount == null ? null : amount;
   });
-  readonly invoiceUnaffectedAmount = computed(() => Math.max(0, (this.remainingInvoiceableAmount() ?? 0) - this.invoiceAmount()));
+  readonly availableAvoirAmount = computed(() => {
+    const amount = this.toFiniteNumber(this.invoiceContext()?.availableCreditBalance);
+    return amount == null ? null : Math.max(0, amount);
+  });
+  readonly invoiceUnaffectedAmount = computed(() => {
+    if (this.isAvoirSelected()) {
+      return this.invoicePreview()?.remainingAmount ?? null;
+    }
+
+    const remaining = this.remainingInvoiceableAmount();
+    return remaining == null ? null : Math.max(0, remaining - this.invoiceAmount());
+  });
   readonly invoicePreviewAllocations = computed(() => this.invoicePreview()?.allocations ?? []);
   readonly invoicePreviewTotals = computed(() => this.sumPremiumAllocations(this.invoicePreviewAllocations()));
   readonly invoiceContextRows = computed(() => {
@@ -168,14 +211,16 @@ export class ContractOverviewComponent implements OnInit {
     return [
       { label: 'Contract name', value: contract.name || 'Not provided' },
       { label: 'UMR', value: contract.umr || 'Not provided' },
-      { label: 'Cedent', value: contract.counterpartyName || `Counterparty #${contract.counterpartyId}` },
+      { label: 'Cedent', value: contract.counterpartyName || (contract.counterpartyId != null ? `Counterparty #${contract.counterpartyId}` : 'Not provided') },
       { label: 'Contract period', value: `${this.formatDate(contract.inceptionDate)} to ${this.formatDate(contract.expiryDate)}` },
-      { label: 'Currency', value: context?.currency || contract.currencyCode || 'Not provided' },
-      { label: 'Contract gross premium', value: this.formatMoney(context?.contractGrossPremium ?? null) },
-      { label: 'Cedent commission', value: this.formatPercent(context?.cedentCommissionPct ?? null) },
-      { label: 'Invoiceable gross premium', value: this.formatMoney(context?.invoiceableGrossPremium ?? null) },
-      { label: 'Already invoiced amount', value: this.formatMoney(context?.alreadyInvoicedAmount ?? 0) },
-      { label: 'Remaining invoiceable amount', value: this.formatMoney(context?.remainingInvoiceableAmount ?? null) },
+      { label: 'Currency', value: context?.currencyCode || context?.currency || contract.currencyCode || 'Not provided' },
+      { label: 'Contract gross premium', value: this.formatMoney(context?.contractGrossPremium ?? null, context?.currencyCode) },
+      { label: 'Cedent commission', value: this.formatPercent(context?.cedentCommissionPercentage ?? context?.cedentCommissionPct ?? null) },
+      { label: 'Cedent commission amount', value: this.formatMoney(context?.cedentCommissionAmount ?? null, context?.currencyCode) },
+      { label: 'Contract signed share', value: this.formatPercent(context?.contractSignedSharePercentage ?? null) },
+      { label: 'Invoiceable net premium', value: this.formatMoney(context?.invoiceableNetPremium ?? null, context?.currencyCode) },
+      { label: 'Already invoiced amount', value: this.formatMoney(context?.alreadyInvoicedAmount ?? 0, context?.currencyCode) },
+      { label: 'Remaining invoiceable amount', value: this.formatMoney(context?.remainingInvoiceableAmount ?? null, context?.currencyCode) },
       { label: 'Confirmed reinsurers', value: this.getConfirmedReinsurersSummary(context) }
     ];
   });
@@ -191,8 +236,8 @@ export class ContractOverviewComponent implements OnInit {
       { label: 'Contract name', value: contract.name || 'Not provided' },
       { label: 'UMR', value: contract.umr || 'Not provided' },
       { label: 'Contract type', value: contract.contractType || 'Facultative' },
-      { label: 'Cedent', value: contract.counterpartyName || `Counterparty #${contract.counterpartyId}` },
-      { label: 'Currency', value: contract.currencyCode || `Currency #${contract.currencyId}` },
+      { label: 'Cedent', value: contract.counterpartyName || (contract.counterpartyId != null ? `Counterparty #${contract.counterpartyId}` : 'Not provided') },
+      { label: 'Currency', value: contract.currencyCode || (contract.currencyId != null ? `Currency #${contract.currencyId}` : 'Not provided') },
       { label: 'Type of business', value: contract.contractType || 'Facultative' },
       { label: 'Reception date', value: this.formatDate(contract.receptionDate) },
       { label: 'Inception date', value: this.formatDate(contract.inceptionDate) },
@@ -210,8 +255,8 @@ export class ContractOverviewComponent implements OnInit {
     }
 
     return [
-      { label: 'Cedent', value: contract.counterpartyName || `Counterparty #${contract.counterpartyId}` },
-      { label: 'Currency', value: contract.currencyCode || `Currency #${contract.currencyId}` },
+      { label: 'Cedent', value: contract.counterpartyName || (contract.counterpartyId != null ? `Counterparty #${contract.counterpartyId}` : 'Not provided') },
+      { label: 'Currency', value: contract.currencyCode || (contract.currencyId != null ? `Currency #${contract.currencyId}` : 'Not provided') },
       { label: 'Main cover', value: this.formatCoverage(this.coverage()?.mainCover) },
       { label: 'Created by', value: contract.createdBy || 'Not provided' },
       { label: 'Created date', value: this.formatDate(contract.createdAt) }
@@ -281,7 +326,8 @@ export class ContractOverviewComponent implements OnInit {
     cedentCommissionAmount: this.formBuilder.control<number | null>(null),
     brokerageIrisPct: this.formBuilder.control<number | null>(null, [Validators.min(0), Validators.max(100)]),
     brokerageIrisAmount: this.formBuilder.control<number | null>(null),
-    otherDeductions: this.formBuilder.control<number | null>(null, [Validators.min(0)]),
+    otherDeductionsPercentage: this.formBuilder.control<number | null>(null, [Validators.min(0), Validators.max(100)]),
+    otherDeductionsAmount: this.formBuilder.control<number | null>({ value: null, disabled: true }),
     netPremium: this.formBuilder.control<number | null>(null),
     reinsurancePremiumReference: this.formBuilder.control('', { nonNullable: true }),
     status: this.formBuilder.control('', { nonNullable: true })
@@ -300,14 +346,21 @@ export class ContractOverviewComponent implements OnInit {
   readonly invoiceForm = this.formBuilder.group({
     receiptAllocationId: this.formBuilder.control<number | null>(null),
     panelId: this.formBuilder.control<number | null>(null),
-    invoiceType: this.formBuilder.control('CEDENT_PREMIUM_DEBIT_NOTE', { nonNullable: true }),
+    invoiceType: this.formBuilder.control('', { nonNullable: true, validators: [Validators.required] }),
+    processingMode: this.formBuilder.control(''),
     invoiceDate: this.formBuilder.control(this.today(), { nonNullable: true, validators: [Validators.required] }),
-    amount: this.formBuilder.control<number | null>(null, [Validators.required, Validators.min(0.01)]),
+    amount: this.formBuilder.control<number | null>(null, [Validators.required, finiteAmountValidator, Validators.min(0.01)]),
     label: this.formBuilder.control('', { nonNullable: true }),
     settlementMethod: this.formBuilder.control('', { nonNullable: true })
   });
 
   ngOnInit(): void {
+    this.destroyRef.onDestroy(() => {
+      if (this.invoicePreviewDebounceTimer != null) {
+        clearTimeout(this.invoicePreviewDebounceTimer);
+      }
+      this.cancelInvoicePreviewRequest();
+    });
     this.bindReinsurerSearch();
     this.bindPanelFinancialControls();
     this.bindInvoiceControls();
@@ -340,7 +393,7 @@ export class ContractOverviewComponent implements OnInit {
         this.contract.set(response.contract);
         this.loadedContractId.set(this.getPositiveId(response.contract.contractId) ?? response.contractId);
         this.ensureActivePanelExists();
-        if (this.isBackOfficeMode() && response.contract.status?.trim().toLowerCase() === 'bound') {
+        if (this.isBackOfficeMode() && normalizeContractStatus(response.contract.status) === 'bound') {
           this.loadInvoiceContext();
           this.loadInvoiceHistory();
         }
@@ -436,6 +489,43 @@ export class ContractOverviewComponent implements OnInit {
     });
   }
 
+  markReadyForPlacement(): void {
+    const contractId = this.contractId();
+    if (contractId == null || !this.canMarkReadyForPlacement() || this.isMarkingReady()) {
+      return;
+    }
+
+    this.isMarkingReady.set(true);
+    this.slipMessage.set('');
+    this.statusTransitionErrors.set([]);
+    this.contractsService.completeDraft(contractId).pipe(
+      switchMap(updatedContract => {
+        this.applyContractOverview(updatedContract);
+        return this.contractsService.getContractOverview(contractId);
+      }),
+      finalize(() => this.isMarkingReady.set(false))
+    ).subscribe({
+      next: updatedContract => {
+        this.applyContractOverview(updatedContract);
+        this.loadPanelsForContract(contractId);
+        this.showMessage('Contract marked Ready for Placement.');
+      },
+      error: (error: HttpErrorResponse) => {
+        this.statusTransitionErrors.set(this.getFieldValidationErrors(error.error)
+          .filter(entry => entry.field.trim().toLowerCase() !== 'isfronting'));
+        this.slipMessage.set(this.getBackendMessage(error) ?? this.getStatusTransitionErrorMessage(error));
+      }
+    });
+  }
+
+  editIncompleteField(field: string): void {
+    const contractId = this.contractId();
+    if (contractId == null) return;
+    void this.router.navigate([this.informationRoute], {
+      queryParams: { contractId, focusField: field }
+    });
+  }
+
   openReinsurerForm(): void {
     if (!this.canAddReinsurer()) {
       return;
@@ -461,7 +551,8 @@ export class ContractOverviewComponent implements OnInit {
       cedentCommissionAmount: null,
       brokerageIrisPct: null,
       brokerageIrisAmount: null,
-      otherDeductions: null,
+      otherDeductionsPercentage: null,
+      otherDeductionsAmount: null,
       netPremium: null,
       reinsurancePremiumReference: '',
       status: ''
@@ -499,7 +590,8 @@ export class ContractOverviewComponent implements OnInit {
       cedentCommissionAmount: null,
       brokerageIrisPct: panel.brokeragePct,
       brokerageIrisAmount: null,
-      otherDeductions: panel.otherDeductions,
+      otherDeductionsPercentage: panel.otherDeductionsPercentage,
+      otherDeductionsAmount: panel.otherDeductionsAmount ?? panel.otherDeductions,
       netPremium: panel.netPremium,
       reinsurancePremiumReference: panel.premiumReference ?? '',
       status: panel.status ?? ''
@@ -545,6 +637,10 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   submitReinsurerPanel(): void {
+    if (this.isSubmittingPanel()) {
+      return;
+    }
+
     const contractId = this.contractId();
 
     if (contractId == null) {
@@ -567,6 +663,11 @@ export class ContractOverviewComponent implements OnInit {
         this.panelForm.controls.reinsurerId.markAsTouched();
       }
 
+      return;
+    }
+
+    if (!this.isEditMode() && this.panels().some(panel => panel.idCounterparty === this.getSelectedReinsurerId())) {
+      this.reinsurerLookupError.set('This reinsurer already has a placement on the contract.');
       return;
     }
 
@@ -601,7 +702,13 @@ export class ContractOverviewComponent implements OnInit {
           ? 'Reinsurer placement updated.'
           : 'Reinsurer added to the placement panel.');
         this.applyContractOverview(contractOverview);
-        this.loadPanels(preferredPanel);
+        if (isEditing) {
+          this.loadPanels(preferredPanel);
+        } else {
+          this.activePanelId.set(null);
+          this.isReinsurersTabActive.set(true);
+          this.loadPanelsForContract(contractId);
+        }
       },
       error: (error: HttpErrorResponse) => {
         this.reinsurerLookupError.set(this.getPanelSaveErrorMessage(error));
@@ -610,10 +717,17 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   selectOverviewTab(): void {
+    this.isReinsurersTabActive.set(false);
+    this.activePanelId.set(null);
+  }
+
+  selectReinsurersTab(): void {
+    this.isReinsurersTabActive.set(true);
     this.activePanelId.set(null);
   }
 
   selectPanelTab(panel: ContractPanelItem): void {
+    this.isReinsurersTabActive.set(false);
     this.activePanelId.set(panel.idPanel);
   }
 
@@ -663,43 +777,39 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   canModifyContract(): boolean {
-    if (this.isBackOfficeMode()) {
-      return false;
-    }
-
-    return this.canUseAction(['ModifyContract', 'UpdateContract', 'EditContract', 'Modify']);
+    return this.isFrontOfficer() && ['draft', 'readyforplacement'].includes(this.contractStatus());
   }
 
   canAddReinsurer(): boolean {
-    if (this.isBackOfficeMode()) {
-      return false;
-    }
-
-    return this.canUseAction(['AddReinsurer', 'AddPlacement', 'CreatePanel', 'AddContractPanel']);
+    return this.isFrontOfficer() && ['readyforplacement', 'placementinprogress'].includes(this.contractStatus());
   }
 
   canStartBinding(): boolean {
-    if (this.isBackOfficeMode()) {
-      return false;
-    }
+    return this.isFrontOfficer() && ['readyforplacement', 'placementinprogress'].includes(this.contractStatus());
+  }
 
-    return this.canUseAction(['StartBinding', 'StartBindingPhase']);
+  canMarkReadyForPlacement(): boolean {
+    return this.isFrontOfficer() && this.contractStatus() === 'draft';
   }
 
   canCancelContract(): boolean {
-    if (this.isBackOfficeMode()) {
-      return false;
-    }
-
-    return this.canUseAction(['CancelContract', 'Cancel']);
+    return this.isFrontOfficer() && ['draft', 'readyforplacement', 'placementinprogress'].includes(this.contractStatus());
   }
 
   canEditPlacements(): boolean {
-    if (this.isBackOfficeMode()) {
-      return false;
-    }
+    return this.isFrontOfficer() && ['readyforplacement', 'placementinprogress'].includes(this.contractStatus());
+  }
 
-    return this.canUseAction(['EditPlacement', 'UpdatePlacement', 'EditPanel', 'UpdatePanel']);
+  canShowReinsurerTabs(): boolean {
+    return ['readyforplacement', 'placementinprogress', 'bound'].includes(this.contractStatus());
+  }
+
+  private isFrontOfficer(): boolean {
+    return !this.isBackOfficeMode() && this.authService.hasWorkspaceRole('FrontOfficer');
+  }
+
+  private contractStatus(): string {
+    return normalizeContractStatus(this.contract()?.status);
   }
 
   cancelContract(): void {
@@ -723,8 +833,34 @@ export class ContractOverviewComponent implements OnInit {
     return this.isBackOfficeMode() && this.isContractBound();
   }
 
+  isAvoirSelected(): boolean {
+    return this.isAvoirType(this.invoiceForm.controls.invoiceType.value);
+  }
+
+  invoiceCreationAvailableAmount(): number | null {
+    return this.isAvoirSelected() ? this.availableAvoirAmount() : this.remainingInvoiceableAmount();
+  }
+
+  invoiceAmountLimitMessage(): string {
+    if (this.isAvoirSelected()) {
+      return 'Avoir amount cannot exceed the available net invoiced balance.';
+    }
+
+    const remaining = this.remainingInvoiceableAmount();
+    const formatted = remaining == null
+      ? 'the remaining invoiceable amount'
+      : this.formatMoney(remaining, this.invoiceContext()?.currencyCode);
+    return `Invoice amount cannot exceed the remaining invoiceable amount of ${formatted}.`;
+  }
+
+  contractDocumentActionLabel(): string {
+    const type = this.contract()?.contractDocumentType?.trim().toUpperCase();
+    const hasAvoir = type === 'CREDIT_NOTE' || this.contract()?.hasAvoir === true;
+    return hasAvoir ? 'Download Credit Note' : 'Download Debit Note';
+  }
+
   isContractBound(): boolean {
-    return this.contract()?.status?.trim().toLowerCase() === 'bound';
+    return this.contractStatus() === 'bound';
   }
 
   isFullyInvoiced(): boolean {
@@ -757,10 +893,13 @@ export class ContractOverviewComponent implements OnInit {
       return;
     }
 
+    this.setInvoiceSubmissionState(false);
+    this.invalidateInvoicePreview();
     this.invoiceForm.reset({
       receiptAllocationId: null,
       panelId: null,
-      invoiceType: 'CEDENT_PREMIUM_DEBIT_NOTE',
+      invoiceType: '',
+      processingMode: '',
       invoiceDate: this.today(),
       amount: null,
       label: '',
@@ -768,11 +907,13 @@ export class ContractOverviewComponent implements OnInit {
     });
     this.invoiceAmountValue.set(0);
     this.invoicePreview.set(null);
+    this.invoicePreviewReadyKey = null;
     this.invoiceSuccessMessage.set('');
     this.lastCreatedInvoice.set(null);
     this.invoiceSubmissionKey.set(null);
     this.invoiceAllocationSearchControl.setValue('', { emitEvent: false });
     this.invoiceError.set('');
+    this.invoiceApiErrorDetails.set(null);
     this.invoiceContextError.set('');
     this.isInvoiceModalOpen.set(true);
     if (!this.isLoadingInvoiceContext()) {
@@ -787,14 +928,65 @@ export class ContractOverviewComponent implements OnInit {
 
     this.isInvoiceModalOpen.set(false);
     this.invoiceError.set('');
+    this.invoiceApiErrorDetails.set(null);
+    this.invalidateInvoicePreview();
   }
 
-  openDebitNoteAction(): void {
-    if (!this.shouldShowInvoiceAction() || this.isDownloadingContractDebitNote()) {
-      return;
-    }
+  downloadContractFinancialNote(): void {
+    const contractId = this.contractId();
+    if (!this.shouldShowInvoiceAction() || contractId == null || this.isDownloadingFinancialNote()) return;
 
-    this.downloadContractDebitNote();
+    this.isDownloadingFinancialNote.set(true);
+    this.invoiceDownloadError.set('');
+    this.financialWorkflowService.downloadContractFinancialNote(contractId).pipe(
+      switchMap(download => !download.fileName?.trim() || !download.documentType
+        ? throwError(() => new Error('The financial-note response is missing its document type or filename.'))
+        : of(download)),
+      switchMap(download => this.validatePdfDownload(download)),
+      finalize(() => this.isDownloadingFinancialNote.set(false))
+    ).subscribe({
+      next: download => {
+        this.contract.update(current => current ? {
+          ...current,
+          contractDocumentType: download.documentType,
+          hasAvoir: download.documentType === 'CREDIT_NOTE'
+        } : current);
+        this.downloadBlob(download.blob, download.fileName!);
+      },
+      error: error => { void this.handleFinancialNoteDownloadError(error); }
+    });
+  }
+
+  private validatePdfDownload<T extends BackendFileDownload>(download: T) {
+    return from(download.blob.slice(0, 5).text()).pipe(
+      switchMap(signature => signature === '%PDF-' ? of(download) : throwError(() => new InvalidPdfResponseError(download)))
+    );
+  }
+
+  private async handleFinancialNoteDownloadError(error: unknown): Promise<void> {
+    const invalidPdf = error instanceof InvalidPdfResponseError;
+    const httpError = error instanceof HttpErrorResponse ? error : null;
+    let payload: unknown = invalidPdf ? error.response.blob : httpError?.error;
+    if (payload instanceof Blob) {
+      const text = await payload.text();
+      try { payload = JSON.parse(text) as unknown; } catch { payload = text; }
+    }
+    const normalized = new HttpErrorResponse({
+      status: httpError?.status ?? 502,
+      statusText: httpError?.statusText ?? 'Invalid PDF response',
+      error: payload
+    });
+    const backendMessage = this.getBackendMessage(normalized);
+    const message = backendMessage && !/^\s*</.test(backendMessage)
+      ? backendMessage
+      : invalidPdf ? 'The server response was not a valid PDF. No file was downloaded.' : 'The contract financial note could not be downloaded.';
+    const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const traceId = body['traceId'] ?? body['traceID'] ?? body['requestId'];
+    this.invoiceDownloadError.set(typeof traceId === 'string' && traceId.trim() ? `${message} (Trace ID: ${traceId.trim()})` : message);
+    if (isDevMode()) console.error('Contract financial-note PDF download failed.', {
+      contractId: this.contractId(), status: httpError?.status ?? 502,
+      code: body['code'] ?? body['error'] ?? null, traceId: traceId ?? null
+    });
   }
 
   selectInvoiceAllocation(option: InvoiceReceiptAllocation): void {
@@ -806,39 +998,90 @@ export class ContractOverviewComponent implements OnInit {
     this.invoiceAmountValue.set(option.availableAmount > 0 ? option.availableAmount : 0);
   }
 
-  createInvoice(): void {
-    const contractId = this.contractId();
-    const raw = this.invoiceForm.getRawValue();
-    const amount = Number(raw.amount);
-    const remainingAmount = this.remainingInvoiceableAmount();
-
-    if (contractId == null || remainingAmount == null || this.invoiceForm.invalid || this.isSubmittingInvoice() || !Number.isFinite(amount) || amount <= 0 || amount > remainingAmount) {
-      if (remainingAmount != null && amount > remainingAmount) {
-        this.invoiceForm.controls.amount.setErrors({ exceedsAvailable: true });
-      }
-      this.invoiceForm.markAllAsTouched();
+  setAvoirProcessingMode(mode: '' | 'PAIR_WITH_ENCAISSEMENT' | 'DIRECT_TO_REMITTANCES'): void {
+    if (this.isSubmittingInvoice()) {
       return;
     }
 
-    this.isSubmittingInvoice.set(true);
+    this.invoiceForm.controls.processingMode.setValue(mode);
+    this.invoiceForm.controls.processingMode.markAsTouched();
+    this.invoiceSubmissionKey.set(mode ? this.createIdempotencyKey() : null);
+    this.updateInvoiceAmountValidators();
     this.invoiceError.set('');
+    this.invoiceApiErrorDetails.set(null);
+    this.loadInvoicePreview();
+  }
+
+  createInvoice(): void {
+    const contractId = this.contractId();
+    const raw = this.invoiceForm.value;
+    const amount = Number(raw.amount);
+    const isAvoir = this.isAvoirType(raw.invoiceType ?? '');
+    const processingMode = raw.processingMode ?? '';
+    const availableAmount = isAvoir ? this.availableAvoirAmount() : this.remainingInvoiceableAmount();
+
+    if (contractId == null || this.invoiceForm.invalid || this.isSubmittingInvoice()
+      || (isAvoir && !this.isValidAvoirProcessingMode(processingMode))
+      || availableAmount == null || availableAmount <= 0 || !Number.isFinite(amount) || amount <= 0 || amount > availableAmount
+      || !this.isInvoiceAllocationValid() || this.isLoadingInvoicePreview()
+      || this.invoicePreviewReadyKey == null
+      || this.invoicePreviewReadyKey !== this.invoicePreviewRequestKey
+      || this.isLoadingInvoiceContext()
+      || (!isAvoir && !!this.invoiceContext()?.blockingReason)) {
+      this.invoiceForm.markAllAsTouched();
+      if (availableAmount != null && amount > availableAmount) {
+        this.invoiceForm.controls.amount.setErrors({ exceedsAvailable: true });
+      }
+      const invalidControls = this.getInvalidInvoiceControlNames();
+      if (invalidControls.length > 0) {
+        this.invoiceError.set(`Correct these fields before submitting: ${invalidControls.join(', ')}.`);
+      } else if (isAvoir && !this.isValidAvoirProcessingMode(processingMode)) {
+        this.invoiceError.set('Choose how this Avoir will be processed.');
+      } else if (availableAmount == null || availableAmount <= 0 || amount > (availableAmount ?? 0)) {
+        this.invoiceError.set(this.invoiceAmountLimitMessage());
+      } else if (!this.isInvoiceAllocationValid()) {
+        this.invoiceError.set('The backend allocation preview is invalid. Review the allocation rows before submitting.');
+      } else if (this.isLoadingInvoicePreview() || this.isLoadingInvoiceContext()) {
+        this.invoiceError.set('Wait for the invoice context and allocation preview to finish loading.');
+      }
+      if (isDevMode()) {
+        console.debug('Invoice submission blocked by form validation.', {
+          rawValue: this.invoiceForm.value,
+          formErrors: this.invoiceForm.errors,
+          invalidControls: this.getInvalidInvoiceControlDetails()
+        });
+      }
+      return;
+    }
+
+    this.setInvoiceSubmissionState(true);
+    this.invoiceError.set('');
+    this.invoiceApiErrorDetails.set(null);
     const idempotencyKey = this.invoiceSubmissionKey() ?? this.createIdempotencyKey();
     this.invoiceSubmissionKey.set(idempotencyKey);
     this.financialWorkflowService.createPremiumDebitNote(contractId, {
+      invoiceType: (raw.invoiceType ?? '') as 'INVOICE' | 'INVOICE_FEES' | 'AVOIR',
+      ...(isAvoir ? { processingMode: processingMode as 'PAIR_WITH_ENCAISSEMENT' | 'DIRECT_TO_REMITTANCES' } : {}),
       grossAmount: amount,
-      invoiceDate: raw.invoiceDate,
-      label: raw.label.trim() || null,
+      invoiceDate: raw.invoiceDate ?? this.today(),
+      label: raw.label?.trim() || null,
       idempotencyKey
     }).pipe(
-      finalize(() => this.isSubmittingInvoice.set(false))
+      finalize(() => this.setInvoiceSubmissionState(false))
     ).subscribe({
       next: invoice => {
-        const invoiceNumber = invoice.invoiceNumber?.trim();
-        const message = invoiceNumber ? `Invoice ${invoiceNumber} created successfully.` : 'Invoice created successfully.';
+        const invoiceNumber = invoice.documentNumber?.trim() || invoice.invoiceNumber?.trim();
+        const isAvoir = this.isAvoirType(invoice.invoiceType);
+        const message = isAvoir
+          ? (invoiceNumber ? `Avoir ${invoiceNumber} created successfully.` : 'Avoir created successfully.')
+          : (invoiceNumber ? `Invoice ${invoiceNumber} created successfully.` : 'Invoice created successfully.');
+        const responseMode = invoice.processingMode ?? processingMode;
         this.invoiceSuccessMessage.set(message);
         this.lastCreatedInvoice.set(invoice);
-        this.invoiceHistory.update(items => items.some(item => item.invoiceId === invoice.invoiceId) ? items : [invoice, ...items]);
-        this.showMessage(message);
+        this.addInvoiceToHistory(invoice);
+        if (!isAvoir || responseMode !== 'DIRECT_TO_REMITTANCES') {
+          this.showMessage(message);
+        }
         this.invoiceSubmissionKey.set(null);
         this.invoicePreview.set(null);
         this.invoiceForm.patchValue({ amount: null, label: '' });
@@ -846,21 +1089,131 @@ export class ContractOverviewComponent implements OnInit {
         this.isInvoiceModalOpen.set(false);
         this.loadInvoiceContext();
         this.loadInvoiceHistory();
+        if (isAvoir && responseMode === 'DIRECT_TO_REMITTANCES') {
+          const createdRemittances = invoice.createdRemittances ?? [];
+          this.showMessage(createdRemittances.length > 0
+            ? `${message} ${createdRemittances.length} draft reinsurer remittance(s) created.`
+            : 'Avoir created, but the backend returned no created remittances. Check Draft Outgoing Remittances.');
+          void this.router.navigate(['/workspace/reassurance/back-officer/outgoing-remittances']);
+        }
       },
-      error: (error: HttpErrorResponse) => this.invoiceError.set(this.getInvoiceErrorMessage(error))
+      error: (error: HttpErrorResponse) => {
+        if (isDevMode()) {
+          console.error('Invoice creation request failed.', {
+            status: error.status,
+            error: error.error,
+            errors: error.error?.errors,
+            detail: error.error?.detail,
+            traceId: error.error?.traceId
+          });
+        }
+        this.invoiceError.set(this.getInvoiceSubmissionErrorMessage(error));
+        this.invoiceApiErrorDetails.set(this.getInvoiceApiErrorDetails(error));
+      }
     });
   }
 
+  private setInvoiceSubmissionState(submitting: boolean): void {
+    const editableControls = [
+      this.invoiceForm.controls.invoiceType,
+      this.invoiceForm.controls.amount,
+      this.invoiceForm.controls.invoiceDate,
+      this.invoiceForm.controls.label
+    ];
+    for (const control of editableControls) {
+      if (submitting && control.enabled) {
+        control.disable({ emitEvent: false });
+      } else if (!submitting && control.disabled) {
+        control.enable({ emitEvent: false });
+      }
+    }
+    this.isSubmittingInvoice.set(submitting);
+  }
+
+  private getInvalidInvoiceControlNames(): string[] {
+    const labels: Record<string, string> = {
+      invoiceType: 'Invoice type',
+      processingMode: 'Avoir processing mode',
+      invoiceDate: 'Invoice date',
+      amount: 'Invoice amount',
+      label: 'Label'
+    };
+    return Object.entries(this.invoiceForm.controls)
+      .filter(([, control]) => control.enabled && control.invalid)
+      .map(([name]) => labels[name] ?? name);
+  }
+
+  private getInvalidInvoiceControlDetails(): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(this.invoiceForm.controls)
+        .filter(([, control]) => control.enabled && control.invalid)
+        .map(([name, control]) => [name, control.errors])
+    );
+  }
+
   isInvoiceSubmitDisabled(): boolean {
-    const remainingAmount = this.remainingInvoiceableAmount();
-    return this.isSubmittingInvoice()
+    const isAvoir = this.isAvoirSelected();
+    const availableAmount = isAvoir ? this.availableAvoirAmount() : this.remainingInvoiceableAmount();
+    const commonInvalid = this.isSubmittingInvoice()
       || this.isLoadingInvoiceContext()
-      || this.isLoadingInvoicePreview()
-      || !!this.invoiceContext()?.blockingReason
       || this.invoiceForm.invalid
       || this.invoiceAmount() <= 0
-      || remainingAmount == null
-      || this.invoiceAmount() > remainingAmount;
+      || availableAmount == null
+      || availableAmount <= 0
+      || this.invoiceAmount() > (availableAmount ?? 0)
+      || (isAvoir && !this.isValidAvoirProcessingMode(this.invoiceForm.controls.processingMode.value));
+
+    return commonInvalid
+      || this.isLoadingInvoicePreview()
+      || !this.isInvoiceAllocationValid()
+      || this.hasInvoiceAllocationReconciliationError()
+      || (!isAvoir && !!this.invoiceContext()?.blockingReason);
+  }
+
+  hasInvoiceAllocationReconciliationError(): boolean {
+    const preview = this.invoicePreview();
+    return !!preview && (preview.isReconciled === false
+      || (preview.reconciliationDifference != null && preview.reconciliationDifference !== 0));
+  }
+
+  invoiceAllocationReconciliationMessage(): string | null {
+    const preview = this.invoicePreview();
+    if (!preview || !this.hasInvoiceAllocationReconciliationError()) return null;
+    return preview.reconciliationDifference == null
+      ? 'The backend allocation totals do not reconcile. Invoice creation is disabled.'
+      : `The backend allocation totals differ by ${this.formatMoney(preview.reconciliationDifference, preview.currencyCode ?? undefined)}. Invoice creation is disabled.`;
+  }
+
+  isInvoiceAllocationValid(): boolean {
+    const preview = this.invoicePreview();
+    const allocations = preview?.allocations ?? [];
+    const amount = this.invoiceAmount();
+    if (!preview || this.invoicePreviewReadyKey == null
+      || this.invoicePreviewReadyKey !== this.invoicePreviewRequestKey
+      || allocations.length === 0 || !Number.isFinite(amount) || amount <= 0) {
+      return false;
+    }
+
+    const allocatedNet = allocations.reduce((total, allocation) => total + (allocation.allocatedNetPremium ?? 0), 0);
+    return this.roundMoney(allocatedNet) === this.roundMoney(amount)
+      && this.roundMoney(preview.grossAmount) === this.roundMoney(amount);
+  }
+
+  formatAllocationAmount(amount: number | null | undefined, _isAvoir: boolean, currencyCode?: string): string {
+    if (amount == null) {
+      return 'Not provided';
+    }
+    return this.formatMoney(amount, currencyCode);
+  }
+
+  formatSignedNetPayable(allocation: PremiumDebitNoteAllocation, isAvoir: boolean): string {
+    if (allocation.signedNetPayableAmount != null) {
+      return this.formatMoney(allocation.signedNetPayableAmount, allocation.currencyCode);
+    }
+    if (isAvoir) {
+      return 'Signed payable amount not provided by the backend';
+    }
+    return this.formatMoney(allocation.netPayableAmount ?? allocation.netAmount, allocation.currencyCode);
   }
 
   getInvoiceAllocationLabel(allocation: InvoiceReceiptAllocation): string {
@@ -893,25 +1246,93 @@ export class ContractOverviewComponent implements OnInit {
     this.selectedInvoiceAllocationView.set(null);
   }
 
-  retryContractDebitNoteDownload(): void {
-    this.downloadContractDebitNote();
-  }
-
-  private downloadContractDebitNote(): void {
-    const contractId = this.contractId();
-    if (contractId == null) {
-      this.contractDebitNoteError.set('Contract id is missing. Please reload the contract overview.');
+  downloadInvoiceDocument(invoice: PremiumDebitNoteResponse): void {
+    const invoiceId = this.getPositiveId(invoice.invoiceId);
+    if (invoiceId == null || this.downloadingDebitNoteInvoiceId() != null) {
       return;
     }
 
-    this.isDownloadingContractDebitNote.set(true);
-    this.contractDebitNoteError.set('');
-    this.financialWorkflowService.downloadContractDebitNote(contractId).pipe(
-      finalize(() => this.isDownloadingContractDebitNote.set(false))
-    ).subscribe({
-      next: download => this.downloadBlob(download.blob, download.fileName || `DebitNote-${contractId}.pdf`),
-      error: (error: HttpErrorResponse) => this.contractDebitNoteError.set(this.getDebitNoteDownloadErrorMessage(error))
+    const isAvoir = this.isAvoirInvoice(invoice);
+    this.downloadingDebitNoteInvoiceId.set(invoiceId);
+    this.invoiceRowDownloadErrors.update(errors => {
+      const next = { ...errors };
+      delete next[invoiceId];
+      return next;
     });
+    const request = isAvoir
+      ? this.financialWorkflowService.downloadAvoirCreditNote(invoiceId)
+      : this.financialWorkflowService.downloadPremiumDebitNote(invoiceId);
+
+    request.pipe(
+      switchMap(download => from(download.blob.slice(0, 5).text()).pipe(
+        switchMap(signature => signature === '%PDF-'
+          ? of(download)
+          : throwError(() => new InvalidPdfResponseError(download)))
+      )),
+      finalize(() => this.downloadingDebitNoteInvoiceId.set(null))
+    ).subscribe({
+      next: download => this.downloadBlob(download.blob, this.getInvoiceDocumentFilename(invoice, download)),
+      error: error => { void this.handleInvoiceDocumentDownloadError(invoice, error); }
+    });
+  }
+
+  private getInvoiceDocumentFilename(invoice: PremiumDebitNoteResponse, download: BackendFileDownload): string {
+    const backendFilename = download.fileName?.trim();
+    if (backendFilename) {
+      return backendFilename.replace(/[\\/:*?"<>|]/g, '_');
+    }
+
+    const documentNumber = invoice.documentNumber || invoice.invoiceNumber || String(invoice.invoiceId);
+    const prefix = this.isAvoirInvoice(invoice) ? 'Avoir' : 'Invoice';
+    return `${prefix}_${documentNumber.replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
+  }
+
+  private async handleInvoiceDocumentDownloadError(invoice: PremiumDebitNoteResponse, error: unknown): Promise<void> {
+    const invalidPdf = error instanceof InvalidPdfResponseError;
+    const httpError = error instanceof HttpErrorResponse ? error : null;
+    let payload: unknown = invalidPdf ? error.response.blob : httpError?.error;
+    if (payload instanceof Blob) {
+      const text = await payload.text();
+      try {
+        payload = JSON.parse(text) as unknown;
+      } catch {
+        payload = text;
+      }
+    }
+
+    const parsedError = new HttpErrorResponse({
+      status: httpError?.status ?? 502,
+      statusText: httpError?.statusText ?? 'Invalid PDF response',
+      error: payload
+    });
+    const backendMessage = this.getBackendMessage(parsedError);
+    const message = backendMessage && !/^\s*</.test(backendMessage)
+      ? backendMessage
+      : invalidPdf
+        ? 'The server response was not a valid PDF. No file was downloaded.'
+        : `${this.isAvoirInvoice(invoice) ? 'Avoir' : 'Invoice'} PDF could not be downloaded. HTTP ${httpError?.status ?? 0} ${httpError?.statusText ?? ''}`.trim();
+    const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const extensions = body['extensions'] && typeof body['extensions'] === 'object'
+      ? body['extensions'] as Record<string, unknown>
+      : {};
+    const traceIdValue = body['traceId'] ?? body['traceID'] ?? body['requestId'] ?? extensions['traceId'];
+    const traceId = typeof traceIdValue === 'string' && traceIdValue.trim() ? traceIdValue.trim() : null;
+    const invoiceId = this.getPositiveId(invoice.invoiceId);
+    if (invoiceId != null) {
+      this.invoiceRowDownloadErrors.update(errors => ({
+        ...errors,
+        [invoiceId]: traceId ? `${message} (Trace ID: ${traceId})` : message
+      }));
+    }
+
+    if (isDevMode()) {
+      console.error('Invoice document PDF download failed.', {
+        invoiceId: invoice.invoiceId,
+        status: httpError?.status ?? 502,
+        code: body['code'] ?? body['codeKey'] ?? null,
+        traceId
+      });
+    }
   }
 
   sumPremiumAllocations(allocations: PremiumDebitNoteAllocation[]): PremiumDebitNoteAllocation {
@@ -921,13 +1342,23 @@ export class ContractOverviewComponent implements OnInit {
       reinsurerName: 'Total',
       signedSharePct: null,
       allocationRatio: total.allocationRatio + allocation.allocationRatio,
+      allocationRatioPercentage: (total.allocationRatioPercentage ?? 0) + (allocation.allocationRatioPercentage ?? 0),
       grossPremium: total.grossPremium + allocation.grossPremium,
+      allocatedGrossPremium: (total.allocatedGrossPremium ?? 0) + (allocation.allocatedGrossPremium ?? 0),
+      allocatedNetPremium: (total.allocatedNetPremium ?? 0) + (allocation.allocatedNetPremium ?? 0),
+      allocationAmount: (total.allocationAmount ?? 0) + (allocation.allocationAmount ?? 0),
       cedentCommissionPct: 0,
+      cedentCommissionPercentage: 0,
       cedentCommissionAmount: total.cedentCommissionAmount + (allocation.cedentCommissionAmount ?? 0),
       brokeragePct: 0,
+      irisBrokeragePercentage: 0,
       brokerageAmount: total.brokerageAmount + allocation.brokerageAmount,
+      irisBrokerageAmount: (total.irisBrokerageAmount ?? 0) + (allocation.irisBrokerageAmount ?? 0),
       otherDeductions: total.otherDeductions + allocation.otherDeductions,
+      otherDeductionsAmount: (total.otherDeductionsAmount ?? 0) + (allocation.otherDeductionsAmount ?? allocation.otherDeductions),
       netAmount: total.netAmount + allocation.netAmount,
+      netPayableAmount: (total.netPayableAmount ?? 0) + (allocation.netPayableAmount ?? allocation.netAmount),
+      signedNetPayableAmount: (total.signedNetPayableAmount ?? 0) + (allocation.signedNetPayableAmount ?? allocation.netPayableAmount ?? allocation.netAmount),
       currencyCode: allocation.currencyCode || total.currencyCode
     }), {
       panelId: 0,
@@ -935,13 +1366,23 @@ export class ContractOverviewComponent implements OnInit {
       reinsurerName: 'Total',
       signedSharePct: null,
       allocationRatio: 0,
+      allocationRatioPercentage: 0,
       grossPremium: 0,
+      allocatedGrossPremium: 0,
+      allocatedNetPremium: 0,
+      allocationAmount: 0,
       cedentCommissionPct: 0,
+      cedentCommissionPercentage: 0,
       cedentCommissionAmount: 0,
       brokeragePct: 0,
+      irisBrokeragePercentage: 0,
       brokerageAmount: 0,
+      irisBrokerageAmount: 0,
       otherDeductions: 0,
+      otherDeductionsAmount: 0,
       netAmount: 0,
+      netPayableAmount: 0,
+      signedNetPayableAmount: 0,
       currencyCode: this.invoiceContext()?.currency || this.contract()?.currencyCode || ''
     });
   }
@@ -952,6 +1393,40 @@ export class ContractOverviewComponent implements OnInit {
 
   getStatusClasses(status: string | null | undefined): string {
     return getContractStatusClasses(status);
+  }
+
+  getInvoiceTypeLabel(invoiceType: string | null | undefined): string {
+    const normalized = (invoiceType ?? '').trim().toUpperCase();
+    if (normalized === 'AVOIR') return 'Avoir';
+    if (normalized === 'INVOICE') return 'Invoice';
+    if (normalized === 'INVOICE_FEES') return 'Invoice Fees';
+    if (normalized === 'CEDENT_PREMIUM_INVOICE') return 'Cedent Premium Invoice';
+    if (normalized === 'REINSURER_PAYABLE') return 'Reinsurer Payable';
+    return invoiceType?.trim() || 'Not provided';
+  }
+
+  private isAvoirType(invoiceType: string | null | undefined): boolean {
+    return invoiceType?.trim().toUpperCase() === 'AVOIR';
+  }
+
+  private addInvoiceToHistory(invoice: PremiumDebitNoteResponse): void {
+    if (this.isAvoirType(invoice.invoiceType)) {
+      this.avoirHistory.update(items => items.some(item => item.invoiceId === invoice.invoiceId) ? items : [invoice, ...items]);
+      return;
+    }
+
+    const invoiceType = invoice.invoiceType?.trim().toUpperCase();
+    if (invoiceType === 'INVOICE' || invoiceType === 'INVOICE_FEES') {
+      this.invoiceHistory.update(items => items.some(item => item.invoiceId === invoice.invoiceId) ? items : [invoice, ...items]);
+    }
+  }
+
+  isAvoirAvailableBalanceMissing(): boolean {
+    return this.isAvoirSelected() && this.availableAvoirAmount() == null;
+  }
+
+  isAvoirInvoice(invoice: PremiumDebitNoteResponse): boolean {
+    return this.isAvoirType(invoice.invoiceType) || invoice.isAvoir === true;
   }
 
   getPanelStatusClasses(panel: ContractPanelItem): string {
@@ -984,7 +1459,8 @@ export class ContractOverviewComponent implements OnInit {
       { label: 'Premium rate', value: this.formatPercent(panel.premiumRatePct) },
       { label: 'Gross premium', value: this.formatMoney(this.calculatePanelGrossPremium(panel)) },
       { label: 'Brokerage IRIS', value: this.formatPercent(panel.brokeragePct) },
-      { label: 'Other deductions', value: this.formatMoney(panel.otherDeductions) },
+      { label: 'Other Deductions %', value: this.formatPercent(panel.otherDeductionsPercentage ?? null) },
+      { label: 'Other Deductions Amount', value: this.formatMoney(panel.otherDeductionsAmount ?? panel.otherDeductions) },
       { label: 'Net premium', value: this.formatMoney(this.calculatePanelNetPremium(panel)) },
       { label: 'Reinsurance premium reference', value: panel.premiumReference || 'Not provided' },
       { label: 'Panel status', value: this.getPanelDisplayStatus(panel) }
@@ -1000,18 +1476,19 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   formatMoney(value: number | null, currencyCode?: string): string {
-    if (value == null) {
+    if (value == null || !Number.isFinite(value)) {
       return 'Not provided';
     }
 
     const contract = this.contract();
-    const decimalPlaces = contract?.currencyDecimalPlaces ?? 2;
-    const number = new Intl.NumberFormat(undefined, {
-      minimumFractionDigits: decimalPlaces,
-      maximumFractionDigits: decimalPlaces
-    }).format(value);
+    const context = this.invoiceContext();
+    const decimalPlaces = context?.currencyDecimalPlaces ?? contract?.currencyDecimalPlaces ?? undefined;
+    const numberFormatOptions: Intl.NumberFormatOptions = decimalPlaces == null
+      ? {}
+      : { minimumFractionDigits: decimalPlaces, maximumFractionDigits: decimalPlaces };
+    const number = new Intl.NumberFormat(undefined, numberFormatOptions).format(value);
 
-    return `${currencyCode ?? contract?.currencyCode ?? ''} ${number}`.trim();
+    return `${currencyCode ?? context?.currencyCode ?? context?.currency ?? contract?.currencyCode ?? ''} ${number}`.trim();
   }
 
   formatCoverage(option: CoverageOption | null | undefined): string {
@@ -1083,6 +1560,16 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   getInvoiceAmount(invoice: PremiumDebitNoteResponse): number | null {
+    const signedAmount = this.toFiniteNumber(invoice.signedAmount);
+    if (signedAmount != null) {
+      return signedAmount;
+    }
+
+    if (this.isAvoirType(invoice.invoiceType)) {
+      const amount = this.toFiniteNumber(invoice.amount) ?? this.toFiniteNumber(invoice.grossAmount);
+      return amount == null ? null : -Math.abs(amount);
+    }
+
     const grossAmount = this.toFiniteNumber(invoice.grossAmount);
     if (grossAmount == null) {
       return null;
@@ -1163,7 +1650,7 @@ export class ContractOverviewComponent implements OnInit {
     const cedentCommissionAmount = grossPremium * cedentCommissionPct / 100;
     const brokeragePct = this.toFiniteNumber(panel.brokeragePct) ?? 0;
     const brokerageAmount = grossPremium * brokeragePct / 100;
-    const otherDeductions = this.toFiniteNumber(panel.otherDeductions) ?? 0;
+    const otherDeductions = this.toFiniteNumber(panel.otherDeductionsAmount ?? panel.otherDeductions) ?? 0;
 
     return this.roundMoney(Math.max(0, grossPremium - cedentCommissionAmount - brokerageAmount - otherDeductions));
   }
@@ -1193,7 +1680,15 @@ export class ContractOverviewComponent implements OnInit {
     const deductible = raw.deductibleMode === 'percentage' && grossPremium != null && raw.deductiblePct != null
       ? this.roundMoney(grossPremium * Number(raw.deductiblePct) / 100)
       : this.toFiniteNumber(raw.deductible);
-    const otherDeductions = this.toFiniteNumber(raw.otherDeductions) ?? 0;
+    const otherDeductionsPct = this.toFiniteNumber(raw.otherDeductionsPercentage);
+    const otherDeductionsAmount = grossPremium == null
+      ? null
+      : otherDeductionsPct == null
+        ? this.panelForm.controls.otherDeductionsPercentage.dirty
+          ? 0
+          : this.toFiniteNumber(this.panelForm.controls.otherDeductionsAmount.value) ?? 0
+        : this.roundMoney(grossPremium * otherDeductionsPct / 100);
+    const otherDeductions = otherDeductionsAmount ?? 0;
     const totalDeductions = (cedentCommissionAmount ?? 0) + (brokerageIrisAmount ?? 0) + otherDeductions;
     const netPremium = grossPremium == null || cedentCommissionAmount == null
       ? null
@@ -1204,6 +1699,7 @@ export class ContractOverviewComponent implements OnInit {
     this.setCalculatedControlValue(this.panelForm.controls.cedentCommissionPct, cedentCommissionPct);
     this.setCalculatedControlValue(this.panelForm.controls.cedentCommissionAmount, cedentCommissionAmount);
     this.setCalculatedControlValue(this.panelForm.controls.brokerageIrisAmount, brokerageIrisAmount);
+    this.setCalculatedControlValue(this.panelForm.controls.otherDeductionsAmount, otherDeductionsAmount);
     this.setCalculatedControlValue(this.panelForm.controls.limitOfLiability, limitOfLiability);
     this.setCalculatedControlValue(this.panelForm.controls.deductible, deductible);
     this.setCalculatedControlValue(this.panelForm.controls.netPremium, netPremium);
@@ -1222,7 +1718,10 @@ export class ContractOverviewComponent implements OnInit {
     this.setControlError(this.panelForm.controls.premiumRate, 'min', !this.isAtLeast(this.panelForm.controls.premiumRate.value, 0));
     this.setControlError(this.panelForm.controls.premiumRate, 'max', !this.isAtMost(this.panelForm.controls.premiumRate.value, 100));
     this.setControlError(this.panelForm.controls.netPremium, 'deductionsExceedGrossPremium', exceedsGrossPremium);
-    this.setControlError(this.panelForm.controls.otherDeductions, 'deductionsExceedGrossPremium', exceedsGrossPremium);
+    this.setControlError(this.panelForm.controls.otherDeductionsPercentage, 'invalidNumber', !this.isValidOptionalNumber(this.panelForm.controls.otherDeductionsPercentage.value));
+    this.setControlError(this.panelForm.controls.otherDeductionsPercentage, 'min', !this.isAtLeast(this.panelForm.controls.otherDeductionsPercentage.value, 0));
+    this.setControlError(this.panelForm.controls.otherDeductionsPercentage, 'max', !this.isAtMost(this.panelForm.controls.otherDeductionsPercentage.value, 100));
+    this.setControlError(this.panelForm.controls.otherDeductionsAmount, 'deductionsExceedGrossPremium', exceedsGrossPremium);
   }
 
   private setCalculatedControlValue(control: AbstractControl<number | null>, value: number | null): void {
@@ -1298,8 +1797,27 @@ export class ContractOverviewComponent implements OnInit {
     this.invoiceForm.controls.amount.valueChanges.subscribe(value => {
       const amount = Number(value ?? 0);
       this.invoiceAmountValue.set(Number.isFinite(amount) ? amount : 0);
+      this.scheduleInvoicePreview();
+    });
+    this.invoiceForm.controls.invoiceType.valueChanges.subscribe(() => {
+      this.invoiceForm.controls.processingMode.setValue('', { emitEvent: false });
+      this.invoiceForm.controls.processingMode.markAsUntouched();
+      this.invoiceSubmissionKey.set(null);
+      this.updateInvoiceAmountValidators();
+      const availableAmount = this.invoiceCreationAvailableAmount();
+      const currentAmount = Number(this.invoiceForm.controls.amount.value ?? 0);
+      if (availableAmount == null) {
+        this.invoiceForm.controls.amount.setValue(null, { emitEvent: false });
+        this.invoiceAmountValue.set(0);
+      } else if (!Number.isFinite(currentAmount) || currentAmount <= 0 || currentAmount > availableAmount) {
+        const nextAmount = availableAmount > 0 ? availableAmount : null;
+        this.invoiceForm.controls.amount.setValue(nextAmount, { emitEvent: false });
+        this.invoiceAmountValue.set(nextAmount ?? 0);
+      }
       this.loadInvoicePreview();
     });
+    this.invoiceForm.controls.invoiceDate.valueChanges.subscribe(() => this.scheduleInvoicePreview());
+    this.invoiceForm.controls.label.valueChanges.subscribe(() => this.scheduleInvoicePreview());
   }
 
   private loadInvoiceContext(): void {
@@ -1312,15 +1830,23 @@ export class ContractOverviewComponent implements OnInit {
 
     this.isLoadingInvoiceContext.set(true);
     this.invoiceContextError.set('');
+    this.invoicePreviewRequestKey = null;
+    this.invoicePreviewReadyKey = null;
+    this.invoicePreviewRequestId++;
+    this.cancelInvoicePreviewRequest();
+    this.invoicePreview.set(null);
+    this.isLoadingInvoicePreview.set(false);
     this.financialWorkflowService.getInvoiceContext(contractId).pipe(
       finalize(() => this.isLoadingInvoiceContext.set(false))
     ).subscribe({
       next: context => {
         this.invoiceContext.set(context);
+        this.updateInvoiceAmountValidators();
         if (this.isInvoiceModalOpen()) {
-          const remainingAmount = context.remainingInvoiceableAmount;
-          this.invoiceForm.controls.amount.setValue(remainingAmount > 0 ? remainingAmount : null, { emitEvent: false });
-          this.invoiceAmountValue.set(remainingAmount > 0 ? remainingAmount : 0);
+          const remainingAmount = this.invoiceCreationAvailableAmount();
+          this.invoiceForm.controls.amount.setValue(remainingAmount != null && remainingAmount > 0 ? remainingAmount : null, { emitEvent: false });
+          this.invoiceAmountValue.set(remainingAmount != null && remainingAmount > 0 ? remainingAmount : 0);
+          this.loadInvoicePreview();
         }
       },
       error: (error: HttpErrorResponse) => {
@@ -1343,33 +1869,161 @@ export class ContractOverviewComponent implements OnInit {
     this.financialWorkflowService.getContractPremiumDebitNotes(contractId).pipe(
       finalize(() => this.isLoadingInvoiceHistory.set(false))
     ).subscribe({
-      next: invoices => this.invoiceHistory.set(invoices.filter(invoice => invoice.contractId === contractId)),
+      next: invoices => {
+        const forContract = invoices.filter(invoice => invoice.contractId === contractId);
+        this.invoiceHistory.set(forContract.filter(invoice => ['INVOICE', 'INVOICE_FEES'].includes(invoice.invoiceType?.trim().toUpperCase() ?? '')));
+        this.avoirHistory.set(forContract.filter(invoice => this.isAvoirType(invoice.invoiceType)));
+      },
       error: (error: HttpErrorResponse) => this.invoiceHistoryError.set(this.getInvoiceErrorMessage(error))
     });
   }
 
   private loadInvoicePreview(): void {
+    if (this.invoicePreviewDebounceTimer != null) {
+      clearTimeout(this.invoicePreviewDebounceTimer);
+      this.invoicePreviewDebounceTimer = null;
+    }
     const contractId = this.contractId();
     const raw = this.invoiceForm.getRawValue();
     const amount = Number(raw.amount);
-    const remainingAmount = this.remainingInvoiceableAmount();
+    const remainingAmount = this.invoiceCreationAvailableAmount();
 
-    this.invoicePreview.set(null);
-    if (contractId == null || this.invoiceContext()?.blockingReason || remainingAmount == null || !Number.isFinite(amount) || amount <= 0 || amount > remainingAmount) {
+    const isAvoir = this.isAvoirType(raw.invoiceType);
+    if (contractId == null || !['INVOICE', 'INVOICE_FEES', 'AVOIR'].includes(raw.invoiceType)
+      || (isAvoir && !this.isValidAvoirProcessingMode(raw.processingMode))
+      || (!isAvoir && this.invoiceContext()?.blockingReason) || remainingAmount == null || !Number.isFinite(amount) || amount <= 0 || amount > remainingAmount) {
+      this.invoicePreviewRequestKey = null;
+      this.invoicePreviewReadyKey = null;
+      this.invoicePreviewRequestId++;
+      this.cancelInvoicePreviewRequest();
+      this.invoicePreview.set(null);
+      this.isLoadingInvoicePreview.set(false);
       return;
     }
 
-    this.isLoadingInvoicePreview.set(true);
-    this.financialWorkflowService.previewPremiumDebitNote(contractId, {
+    const request: PremiumDebitNoteRequest = {
+      invoiceType: raw.invoiceType as 'INVOICE' | 'INVOICE_FEES' | 'AVOIR',
+      ...(isAvoir && this.isValidAvoirProcessingMode(raw.processingMode)
+        ? {
+            processingMode: raw.processingMode,
+            ...(raw.processingMode === 'DIRECT_TO_REMITTANCES'
+              ? { idempotencyKey: this.invoiceSubmissionKey() ?? this.createPreviewIdempotencyKey() }
+              : {})
+          }
+        : {}),
       grossAmount: amount,
       invoiceDate: raw.invoiceDate,
       label: raw.label.trim() || null
-    }).pipe(
-      finalize(() => this.isLoadingInvoicePreview.set(false))
+    };
+    if (isAvoir && raw.processingMode === 'DIRECT_TO_REMITTANCES' && !request.idempotencyKey) {
+      this.invoiceSubmissionKey.set(this.createIdempotencyKey());
+      request.idempotencyKey = this.invoiceSubmissionKey();
+    }
+    const requestKey = JSON.stringify({ contractId, ...request });
+    if (requestKey === this.invoicePreviewRequestKey
+      && (this.isLoadingInvoicePreview() || this.invoicePreview() != null)) {
+      return;
+    }
+
+    this.invoiceError.set('');
+    this.invoiceApiErrorDetails.set(null);
+    this.invoicePreviewReadyKey = null;
+    const requestId = ++this.invoicePreviewRequestId;
+    this.cancelInvoicePreviewRequest();
+    this.invoicePreviewRequestKey = requestKey;
+    this.invoicePreview.set(null);
+    this.isLoadingInvoicePreview.set(true);
+    this.invoicePreviewSubscription = this.financialWorkflowService.previewPremiumDebitNote(contractId, request).pipe(
+      finalize(() => {
+        if (requestId === this.invoicePreviewRequestId) {
+          this.isLoadingInvoicePreview.set(false);
+          this.invoicePreviewSubscription = null;
+        }
+      })
     ).subscribe({
-      next: preview => this.invoicePreview.set(preview),
-      error: (error: HttpErrorResponse) => this.invoiceError.set(this.getInvoiceErrorMessage(error))
+      next: preview => {
+        if (requestId === this.invoicePreviewRequestId) {
+          this.invoicePreview.set(preview);
+          this.invoicePreviewReadyKey = requestKey;
+        }
+      },
+      error: (error: HttpErrorResponse) => {
+        if (requestId === this.invoicePreviewRequestId) {
+          this.invoicePreview.set(null);
+          this.invoiceError.set(this.getInvoiceErrorMessage(error));
+          this.invoiceApiErrorDetails.set(this.getInvoiceApiErrorDetails(error));
+          this.invoicePreviewReadyKey = null;
+        }
+      }
     });
+  }
+
+  private scheduleInvoicePreview(): void {
+    if (this.invoicePreviewDebounceTimer != null) {
+      clearTimeout(this.invoicePreviewDebounceTimer);
+    }
+
+    const requestId = ++this.invoicePreviewRequestId;
+    this.cancelInvoicePreviewRequest();
+    this.invoicePreviewRequestKey = null;
+    this.invoicePreviewReadyKey = null;
+    this.invoicePreview.set(null);
+    this.invoiceError.set('');
+    this.invoiceApiErrorDetails.set(null);
+    this.isLoadingInvoicePreview.set(false);
+    if (this.invoiceForm.controls.processingMode.value === 'DIRECT_TO_REMITTANCES') {
+      this.invoiceSubmissionKey.set(null);
+    }
+    this.invoicePreviewDebounceTimer = setTimeout(() => {
+      this.invoicePreviewDebounceTimer = null;
+      if (requestId === this.invoicePreviewRequestId) {
+        this.loadInvoicePreview();
+      }
+    }, 250);
+  }
+
+  private cancelInvoicePreviewRequest(): void {
+    this.invoicePreviewSubscription?.unsubscribe();
+    this.invoicePreviewSubscription = null;
+  }
+
+  private invalidateInvoicePreview(): void {
+    if (this.invoicePreviewDebounceTimer != null) {
+      clearTimeout(this.invoicePreviewDebounceTimer);
+      this.invoicePreviewDebounceTimer = null;
+    }
+    this.invoicePreviewRequestId++;
+    this.cancelInvoicePreviewRequest();
+    this.invoicePreviewRequestKey = null;
+    this.invoicePreviewReadyKey = null;
+    this.invoicePreview.set(null);
+    this.isLoadingInvoicePreview.set(false);
+  }
+
+  private updateInvoiceAmountValidators(): void {
+    const validators = [Validators.required, finiteAmountValidator, Validators.min(0.01)];
+    const availableAmount = this.invoiceCreationAvailableAmount();
+    if (availableAmount != null) {
+      validators.push(Validators.max(availableAmount));
+    }
+
+    const amountControl = this.invoiceForm.controls.amount;
+    amountControl.setValidators(validators);
+    amountControl.updateValueAndValidity({ emitEvent: false });
+
+    const processingModeControl = this.invoiceForm.controls.processingMode;
+    processingModeControl.setValidators(this.isAvoirSelected() ? [Validators.required] : []);
+    processingModeControl.updateValueAndValidity({ emitEvent: false });
+  }
+
+  private isValidAvoirProcessingMode(value: string | null | undefined): value is 'PAIR_WITH_ENCAISSEMENT' | 'DIRECT_TO_REMITTANCES' {
+    return value === 'PAIR_WITH_ENCAISSEMENT' || value === 'DIRECT_TO_REMITTANCES';
+  }
+
+  private createPreviewIdempotencyKey(): string {
+    const key = this.createIdempotencyKey();
+    this.invoiceSubmissionKey.set(key);
+    return key;
   }
 
   private syncInvoicePanelSelection(): void {
@@ -1436,9 +2090,11 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   private resetForContractLoad(): void {
+    this.invalidateInvoicePreview();
     this.contract.set(null);
     this.contractPanels.set([]);
     this.activePanelId.set(null);
+    this.isReinsurersTabActive.set(false);
     this.isReinsurerFormOpen.set(false);
     this.panelFormMode.set('create');
     this.editingPanelId.set(null);
@@ -1449,24 +2105,24 @@ export class ContractOverviewComponent implements OnInit {
     this.reinsurerLookupError.set('');
     this.slipMessage.set('');
     this.isInvoiceModalOpen.set(false);
-    this.isDownloadingContractDebitNote.set(false);
     this.invoiceContext.set(null);
     this.invoiceHistory.set([]);
+    this.avoirHistory.set([]);
     this.invoiceHistoryError.set('');
     this.invoicePreview.set(null);
     this.selectedInvoiceAllocationView.set(null);
     this.invoiceSubmissionKey.set(null);
     this.invoiceSuccessMessage.set('');
     this.invoiceDownloadError.set('');
-    this.contractDebitNoteError.set('');
     this.invoiceError.set('');
+    this.invoiceApiErrorDetails.set(null);
     this.invoiceContextError.set('');
     this.invoiceAllocationSearchControl.setValue('', { emitEvent: false });
     this.invoiceAmountValue.set(0);
     this.invoiceForm.reset({
       receiptAllocationId: null,
       panelId: null,
-      invoiceType: 'CEDENT_PREMIUM_DEBIT_NOTE',
+      invoiceType: '',
       invoiceDate: this.today(),
       amount: null,
       label: '',
@@ -1551,7 +2207,7 @@ export class ContractOverviewComponent implements OnInit {
     this.contract.set(contractOverview);
     this.loadedContractId.set(this.getPositiveId(contractOverview.contractId) ?? this.loadedContractId());
     this.ensureActivePanelExists();
-    if (this.isBackOfficeMode() && contractOverview.status?.trim().toLowerCase() === 'bound') {
+    if (this.isBackOfficeMode() && normalizeContractStatus(contractOverview.status) === 'bound') {
       this.loadInvoiceContext();
       this.loadInvoiceHistory();
     }
@@ -1570,7 +2226,9 @@ export class ContractOverviewComponent implements OnInit {
       premiumRatePct: this.toFiniteNumber(raw.premiumRate),
       grossPremium: raw.grossPremium,
       brokeragePct: this.toFiniteNumber(raw.brokerageIrisPct) ?? 0,
-      otherDeductions: this.toFiniteNumber(raw.otherDeductions) ?? 0,
+      otherDeductionsPercentage: raw.otherDeductionsPercentage == null && this.panelForm.controls.otherDeductionsPercentage.dirty
+        ? 0
+        : this.toFiniteNumber(raw.otherDeductionsPercentage),
       premiumReference: raw.reinsurancePremiumReference.trim() || null
     };
   }
@@ -1671,48 +2329,30 @@ export class ContractOverviewComponent implements OnInit {
     return panels.find(panel => panel.idCounterparty === preferredPanel.idCounterparty) ?? panels.at(-1) ?? null;
   }
 
-  private canUseAction(aliases: string[]): boolean {
-    const contract = this.contract();
-
-    if (!contract) {
-      return false;
+  private getStatusTransitionErrorMessage(error: HttpErrorResponse): string {
+    if (error.status === 401 || error.status === 403) {
+      return 'Your session is not authorized to mark this contract Ready for Placement.';
     }
 
-    const status = normalizeContractStatus(contract.status);
-
-    if (status === 'bound' || status === 'expired' || status === 'cancelled') {
-      return false;
+    if (error.status === 404) {
+      return 'The contract could not be found.';
     }
 
-    if (contract.allowedActions.length > 0) {
-      const normalizedAliases = new Set(aliases.map(action => this.normalizeAction(action)));
-      return contract.allowedActions.some(action => normalizedAliases.has(this.normalizeAction(action)));
+    if (error.status === 0) {
+      return 'Unable to reach the contract service.';
     }
 
-    return this.canUseFallbackAction(status, aliases);
+    return 'The contract could not be marked Ready for Placement.';
   }
 
-  private canUseFallbackAction(status: string, aliases: string[]): boolean {
-    const normalizedAliases = aliases.map(action => this.normalizeAction(action));
-    const wants = (action: string) => normalizedAliases.includes(action);
-
-    if (status === 'draft') {
-      return wants('modifycontract') || wants('updatecontract') || wants('editcontract') || wants('modify') || wants('cancelcontract') || wants('cancel');
-    }
-
-    if (status === 'readyforplacement') {
-      return !normalizedAliases.some(action => action === 'startbinding' || action === 'startbindingphase' || action === 'editplacement' || action === 'updateplacement' || action === 'editpanel' || action === 'updatepanel');
-    }
-
-    if (status === 'placementinprogress') {
-      return true;
-    }
-
-    return false;
-  }
-
-  private normalizeAction(action: string): string {
-    return action.trim().replace(/[\s_-]+/g, '').toLowerCase();
+  private getFieldValidationErrors(body: unknown): Array<{ field: string; messages: string[] }> {
+    if (!body || typeof body !== 'object') return [];
+    const errors = (body as { errors?: unknown }).errors;
+    if (!errors || typeof errors !== 'object' || Array.isArray(errors)) return [];
+    return Object.entries(errors as Record<string, unknown>).map(([field, value]) => ({
+      field,
+      messages: Array.isArray(value) ? value.map(String) : [String(value)]
+    }));
   }
 
   private getLoadErrorMessage(error: HttpErrorResponse): string {
@@ -1744,6 +2384,11 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   private getPanelSaveErrorMessage(error: HttpErrorResponse): string {
+    const backendMessage = this.getBackendMessage(error);
+    if (backendMessage) {
+      return backendMessage;
+    }
+
     if (error.status === 400) {
       return 'The reinsurer placement values were rejected by the backend.';
     }
@@ -1829,16 +2474,43 @@ export class ContractOverviewComponent implements OnInit {
     return 'Invoice could not be created right now.';
   }
 
-  private getDebitNoteDownloadErrorMessage(error: HttpErrorResponse): string {
-    const backendMessage = this.getBackendMessage(error);
-
-    if (backendMessage) {
-      return backendMessage;
+  private getInvoiceSubmissionErrorMessage(error: HttpErrorResponse): string {
+    if (error.status >= 500) {
+      return `The invoice request could not be completed (HTTP ${error.status}).`;
     }
+    return this.getInvoiceErrorMessage(error);
+  }
 
-    return error.status > 0
-      ? `Debit note could not be downloaded. HTTP ${error.status} ${error.statusText || ''}`.trim()
-      : 'Debit note could not be downloaded. Unable to reach the contract service.';
+  private getInvoiceApiErrorDetails(error: HttpErrorResponse): InvoiceApiErrorDetails {
+    const body = error.error && typeof error.error === 'object'
+      ? error.error as Record<string, unknown>
+      : {};
+    const rawErrors = body['errors'];
+    const validationErrors = Array.isArray(rawErrors)
+      ? rawErrors.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : rawErrors && typeof rawErrors === 'object'
+        ? Object.entries(rawErrors as Record<string, unknown>).flatMap(([field, value]) => {
+            const messages = Array.isArray(value) ? value : [value];
+            return messages.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+              .map(message => `${field}: ${message}`);
+          })
+        : [];
+    const detail = typeof body['detail'] === 'string' && body['detail'].trim()
+      ? body['detail'].trim()
+      : typeof error.error === 'string' && error.error.trim()
+        ? error.error.trim()
+        : null;
+    const extensions = body['extensions'] && typeof body['extensions'] === 'object'
+      ? body['extensions'] as Record<string, unknown>
+      : {};
+    const trace = body['traceId'] ?? body['traceID'] ?? body['requestId'] ?? extensions['traceId'];
+
+    return {
+      status: error.status,
+      detail,
+      validationErrors,
+      traceId: typeof trace === 'string' && trace.trim() ? trace.trim() : null
+    };
   }
 
   private getBackendMessage(error: HttpErrorResponse): string | null {

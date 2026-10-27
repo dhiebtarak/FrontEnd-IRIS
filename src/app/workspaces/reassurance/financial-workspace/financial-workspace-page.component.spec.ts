@@ -16,9 +16,10 @@ describe('FinancialWorkspacePageComponent', () => {
   const batchContext = {
     closingId: 1, closingReference: 'CL-1', closingDate: '2026-10-12T08:00:00Z', status: 'AwaitingFinanceDisbursement',
     reinsurerId: 5, reinsurerName: 'AMI', reinsurerAddress: 'Tunis', reinsurerCity: 'Tunis', reinsurerCountry: 'Tunisia',
-    currencyId: 1, currencyCode: 'TND', totalClosingAmount: 1000, bankAccounts: [], selectedBankAccount: null,
-    lines: [{ remittanceRef: 6, remittanceReference: 'REM-6', contractName: 'Factory', umr: 'UMR-1', panelName: 'AMI panel', invoiceNumber: 'INV-1', receiptReference: 'ENC-1', netPayableAmount: 600 },
-      { remittanceRef: 7, remittanceReference: 'REM-7', contractName: 'Warehouse', umr: 'UMR-2', panelName: 'AMI panel 2', invoiceNumber: 'INV-2', receiptReference: 'ENC-2', netPayableAmount: 400 }],
+    currencyId: 1, currencyCode: 'TND', totalClosingAmount: 199.55, storedTotal: 199.55, calculatedTotal: 199.55, difference: 0, isConsistent: true, bankAccounts: [],
+    selectedBankAccount: { idBankAccount: 3, bankName: 'BIAT', bankCity: 'Tunis', bankCountry: 'Tunisia', iban: 'TN00000000000000000000000000', swiftBic: 'BIATTNTT', correspondentBankName: null, correspondentSwiftBic: null, isDefault: false },
+    lines: [{ remittanceRef: 6, remittanceReference: 'REM-13', sourceType: 'PREMIUM', contractName: 'Factory', umr: 'UMR-1', panelName: 'AMI panel', invoiceNumber: 'INV-1', receiptReference: null, netPayableAmount: 200, signedNetPayableAmount: 200 },
+      { remittanceRef: 7, remittanceReference: 'REM-22', sourceType: 'AVOIR', contractName: 'Warehouse', umr: 'UMR-2', panelName: 'AMI panel 2', invoiceNumber: 'AV-1', receiptReference: null, netPayableAmount: -0.45, signedNetPayableAmount: -0.45 }],
     canDownloadPdf: true, pdfDownloadUrl: '/api/finance/closings/1/pdf', disbursementId: null,
     canStartPayment: true, canConfirmTransfer: false, validationMessage: null
   };
@@ -31,10 +32,13 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(workflowService.getClosingDisbursementContext).toHaveBeenCalledWith(1);
     expect(workflowService.getDisbursementContext).not.toHaveBeenCalled();
     expect(fixture.componentInstance.selectedRemittance()).toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('REM-6');
-    expect(fixture.nativeElement.textContent).toContain('REM-7');
+    expect(fixture.nativeElement.textContent).toContain('REM-13');
+    expect(fixture.nativeElement.textContent).toContain('REM-22');
     expect(fixture.nativeElement.textContent).toContain('UMR-2');
     expect(fixture.nativeElement.textContent).toContain('CL-1');
+    expect(fixture.nativeElement.textContent).toContain('TND -0,450');
+    expect(fixture.nativeElement.textContent).toContain('TND +199,550');
+    expect(fixture.nativeElement.textContent).toContain('No encaissement');
   });
 
   it('processes the complete closing using its ID', () => {
@@ -65,14 +69,64 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(fixture.componentInstance.closingContext()).toBeNull();
     expect(fixture.componentInstance.disbursementLoadError()).toContain('different closing');
   });
+
+  it('renders one mixed Premium/Avoir queue row and opens its closing by ID', () => {
+    workflowService.getFinanceClosingQueue.mockReturnValue(of([{
+      closingId: 8, closingReference: 'CL-8', reinsurerName: 'AMI', lineCount: 2, premiumTotal: 200,
+      avoirTotal: 0.45, netPayableAmount: 199.55, currencyCode: 'TND', issueDate: '2026-10-21', status: 'AwaitingFinanceDisbursement'
+    }]));
+    routeData.next({ role: 'finance', page: 'disbursements' });
+    createComponent();
+    fixture.detectChanges();
+    expect(workflowService.getFinanceClosingQueue).toHaveBeenCalledTimes(1);
+    expect(fixture.nativeElement.textContent).toContain('CL-8');
+    expect(fixture.nativeElement.textContent).toContain('TND 199,550');
+    expect(fixture.nativeElement.querySelectorAll('tbody tr').length).toBe(1);
+    workflowService.getClosingDisbursementContext.mockReturnValue(of({ ...batchContext, closingId: 8, closingReference: 'CL-8' }));
+    getButtonsByText('Make Disbursement')[0].click();
+    expect(workflowService.getClosingDisbursementContext).toHaveBeenCalledWith(8);
+    expect(workflowService.getDisbursementContext).not.toHaveBeenCalled();
+  });
+
+  it('shows stored, calculated and difference values from an inconsistent backend context', () => {
+    createComponent();
+    workflowService.getClosingDisbursementContext.mockReturnValue(of({
+      ...batchContext, isConsistent: false, storedTotal: 199.55, calculatedTotal: 199.5, difference: -0.05,
+      validationMessage: 'Closing lines do not reconcile.'
+    }));
+    fixture.componentInstance.openClosingDisbursementModal(1);
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Stored total:');
+    expect(text).toContain('Calculated total:');
+    expect(text).toContain('Difference:');
+    expect(text).toContain('Closing lines do not reconcile.');
+    expect(fixture.componentInstance.canStartClosingPayment(fixture.componentInstance.closingContext()!)).toBe(false);
+  });
+
+  it('prevents duplicate start-payment calls while the request is pending', () => {
+    createComponent();
+    workflowService.getClosingDisbursementContext.mockReturnValue(of(batchContext));
+    const pending = new Subject<any>();
+    workflowService.startClosingDisbursement.mockReturnValue(pending);
+    fixture.componentInstance.openClosingDisbursementModal(1);
+    fixture.componentInstance.startClosingPayment();
+    fixture.componentInstance.startClosingPayment();
+    expect(workflowService.startClosingDisbursement).toHaveBeenCalledTimes(1);
+    pending.next({ ...batchContext, status: 'PaymentInProgress', canStartPayment: false });
+    pending.complete();
+  });
   let workflowService: {
     getFinanceReceipts: ReturnType<typeof vi.fn>;
     getBackOfficeReceipts: ReturnType<typeof vi.fn>;
     getReceipt: ReturnType<typeof vi.fn>;
     createReceipt: ReturnType<typeof vi.fn>;
     getEligibleInvoices: ReturnType<typeof vi.fn>;
+    getEligibleAvoirRefundReceipts: ReturnType<typeof vi.fn>;
+    refundAvoir: ReturnType<typeof vi.fn>;
     allocateReceiptInvoices: ReturnType<typeof vi.fn>;
     getDisbursementQueue: ReturnType<typeof vi.fn>;
+    getFinanceClosingQueue: ReturnType<typeof vi.fn>;
     getDisbursementContext: ReturnType<typeof vi.fn>;
     getClosingDisbursementContext: ReturnType<typeof vi.fn>;
     startClosingDisbursement: ReturnType<typeof vi.fn>;
@@ -82,7 +136,10 @@ describe('FinancialWorkspacePageComponent', () => {
     startDisbursement: ReturnType<typeof vi.fn>;
     confirmTransfer: ReturnType<typeof vi.fn>;
     confirmRemittance: ReturnType<typeof vi.fn>;
+    confirmRemittancesForDisbursement: ReturnType<typeof vi.fn>;
     downloadDisbursementInvoice: ReturnType<typeof vi.fn>;
+    downloadInvoicePdf: ReturnType<typeof vi.fn>;
+    downloadAvoirPdf: ReturnType<typeof vi.fn>;
     downloadPremiumDebitNote: ReturnType<typeof vi.fn>;
     downloadDocument: ReturnType<typeof vi.fn>;
     downloadDocumentUrl: ReturnType<typeof vi.fn>;
@@ -127,7 +184,6 @@ describe('FinancialWorkspacePageComponent', () => {
             allocatedAmount: 0,
             pairingStatus: 'Unpaired',
             settlementMethod: 'BANK_TRANSFER',
-            collectionType: 'PREMIUM',
             bankReference: 'BR-1',
             settlementLabel: 'Premium'
           }
@@ -142,8 +198,11 @@ describe('FinancialWorkspacePageComponent', () => {
       getReceipt: vi.fn().mockReturnValue(of({})),
       createReceipt: vi.fn().mockReturnValue(of({})),
       getEligibleInvoices: vi.fn().mockReturnValue(of({ items: [], status: 200 })),
+      getEligibleAvoirRefundReceipts: vi.fn().mockReturnValue(of([])),
+      refundAvoir: vi.fn().mockReturnValue(of({ remittanceId: 7, remittanceReference: 'REM-7', beneficiaryName: 'Cedent' })),
       allocateReceiptInvoices: vi.fn().mockReturnValue(of({})),
       getDisbursementQueue: vi.fn().mockReturnValue(of([])),
+      getFinanceClosingQueue: vi.fn().mockReturnValue(of([])),
       getDisbursementContext: vi.fn().mockReturnValue(of({})),
       getClosingDisbursementContext: vi.fn().mockReturnValue(of({})),
       startClosingDisbursement: vi.fn().mockReturnValue(of({})),
@@ -153,7 +212,10 @@ describe('FinancialWorkspacePageComponent', () => {
       startDisbursement: vi.fn().mockReturnValue(of({})),
       confirmTransfer: vi.fn().mockReturnValue(of({})),
       confirmRemittance: vi.fn().mockReturnValue(of({})),
+      confirmRemittancesForDisbursement: vi.fn().mockReturnValue(of({ items: [] })),
       downloadPremiumDebitNote: vi.fn(),
+      downloadInvoicePdf: vi.fn(),
+      downloadAvoirPdf: vi.fn(),
       downloadDisbursementInvoice: vi.fn().mockReturnValue(of({ blob: new Blob(['pdf'], { type: 'application/pdf' }), fileName: 'invoice.pdf', contentType: 'application/pdf' })),
       downloadDocument: vi.fn().mockReturnValue(of({ blob: new Blob(['pdf'], { type: 'application/pdf' }), fileName: 'invoice.pdf', contentType: 'application/pdf' })),
       downloadDocumentUrl: vi.fn().mockReturnValue(of({ blob: new Blob(['pdf'], { type: 'application/pdf' }), fileName: 'invoice.pdf', contentType: 'application/pdf' })),
@@ -236,6 +298,116 @@ describe('FinancialWorkspacePageComponent', () => {
       .filter((button): button is HTMLButtonElement => button instanceof HTMLButtonElement && button.textContent?.trim() === text);
   }
 
+  it('shows Avoir amounts as negative while keeping allocation inputs positive and pairing their signed net', () => {
+    routeData.next({ role: 'back-office', page: 'receipts' });
+    createComponent();
+    const component = fixture.componentInstance;
+    const invoice = {
+      invoiceId: 11,
+      idInvoice: 11,
+      invoiceNumber: 'INV-11',
+      invoiceType: 'INVOICE',
+      invoiceAmount: 100,
+      grossAmount: 100,
+      remainingAmount: 100,
+      outstandingAmount: 100
+    } as any;
+    const avoir = {
+      invoiceId: 12,
+      idInvoice: 12,
+      invoiceNumber: 'AV-12',
+      invoiceType: 'AVOIR',
+      invoiceAmount: 50,
+      grossAmount: 50,
+      signedAmount: -50,
+      remainingAmount: 50,
+      outstandingAmount: 50
+    } as any;
+    component.eligibleInvoices.set([invoice, avoir]);
+    component.selectedReceipt.set({ availableAmount: 50 } as any);
+    component.proposedAllocations.set({ 11: 100, 12: 50 });
+
+    expect(component.getInvoicePrimaryAmount(avoir)).toBe(-50);
+    expect(component.getEligibleInvoiceSignedAmount(avoir, 50)).toBe(-50);
+    expect(component.allocatedAmountInForm()).toBe(50);
+    expect(component.pairingRemainingAmount()).toBe(0);
+    expect(component.proposedAllocationItems().map(item => item.allocatedAmount)).toEqual([100, 50]);
+    expect(component.isPairingFormValid()).toBe(true);
+  });
+
+  it('uses backend eligible receipts for the Avoir-only Cedent refund flow', () => {
+    const eligibleReceipt = {
+      bankReceiptId: 2, receiptReference: 'BR-2', receiptAmount: 45, allocatedAmount: 45, remainingAmount: 0, pairingStatus: 'Paired',
+      currencyCode: 'TND', contractId: 4, contractName: 'Bound contract', cedentId: 3,
+      cedentName: 'Cedent', avoirInvoiceId: 25, avoirNumber: 'AV-25', availableAvoirAmount: 10, refundAmount: 10,
+      isEligibleForRefund: true, eligibilityFailureReason: null
+    };
+    workflowService.getEligibleAvoirRefundReceipts.mockReturnValue(of([eligibleReceipt]));
+    routeData.next({ role: 'back-office', page: 'invoices' });
+    createComponent();
+    const component = fixture.componentInstance;
+    const avoir = { idInvoice: 25, invoiceType: 'AVOIR', invoiceNumber: 'AV-25' } as any;
+
+    component.openAvoirRefund(avoir);
+    expect(workflowService.getEligibleAvoirRefundReceipts).toHaveBeenCalledWith(25);
+    expect(component.eligibleAvoirRefundReceipts()).toEqual([eligibleReceipt]);
+    component.createAvoirRefund(eligibleReceipt);
+
+    expect(workflowService.refundAvoir).toHaveBeenCalledTimes(1);
+    expect(workflowService.refundAvoir.mock.calls[0][0]).toBe(2);
+    expect(workflowService.refundAvoir.mock.calls[0][1]).toMatchObject({ avoirInvoiceId: 25, amount: 10 });
+    expect(component.successMessage()).toContain('REM-7');
+  });
+
+  it('shows a backend-returned unpaired encaissement and disables refund only by backend eligibility', () => {
+    const receipt = {
+      bankReceiptId: 31, receiptReference: 'BR-31', receiptAmount: 100, allocatedAmount: 0,
+      remainingAmount: 100, pairingStatus: 'Unpaired', currencyCode: 'TND', contractId: 4,
+      contractName: 'Bound contract', cedentId: 3, cedentName: 'Cedent', avoirInvoiceId: 25,
+      avoirNumber: 'AV-25', availableAvoirAmount: 10, refundAmount: 10,
+      isEligibleForRefund: false, eligibilityFailureReason: 'A cedent refund requires this encaissement to be fully paired.'
+    };
+    workflowService.getEligibleAvoirRefundReceipts.mockReturnValue(of([receipt]));
+    routeData.next({ role: 'back-office', page: 'invoices' });
+    createComponent();
+    const component = fixture.componentInstance;
+
+    component.openAvoirRefund({ idInvoice: 25, invoiceType: 'AVOIR', invoiceNumber: 'AV-25' } as any);
+    fixture.detectChanges();
+
+    expect(component.eligibleAvoirRefundReceipts()).toEqual([receipt]);
+    expect(fixture.nativeElement.textContent).toContain('Choose an encaissement received from this cedent. All pairing statuses are available.');
+    expect(fixture.nativeElement.textContent).toContain('BR-31');
+    expect(fixture.nativeElement.textContent).toContain('Unpaired');
+    const action = Array.from(fixture.nativeElement.querySelectorAll('button'))
+      .find((button: any) => button.textContent.includes('Create Cedent Refund')) as HTMLButtonElement;
+    expect(action.disabled).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain(receipt.eligibilityFailureReason);
+    expect(workflowService.refundAvoir).not.toHaveBeenCalled();
+  });
+
+  it('uses the backend Avoir document number, type and signed amount in the general invoice list', () => {
+    routeData.next({ role: 'back-office', page: 'invoices' });
+    createComponent();
+    const component = fixture.componentInstance;
+    const avoir = {
+      idInvoice: 12,
+      invoiceId: 12,
+      invoiceType: 'AVOIR',
+      isAvoir: true,
+      invoiceNumber: 'AV-2026-000012',
+      documentNumber: 'AV-2026-000012',
+      invoiceAmount: 50,
+      grossAmount: 50,
+      signedAmount: -50,
+      currencyCode: 'TND'
+    } as any;
+
+    expect(component.getInvoiceDocumentNumber(avoir)).toBe('AV-2026-000012');
+    expect(component.getInvoiceTypeLabel(avoir.invoiceType)).toBe('Avoir');
+    expect(component.getInvoicePrimaryAmount(avoir)).toBe(-50);
+  });
+
   it('downloads the selected invoice and only disables its row without navigating', () => {
     routeData.next({ role: 'back-office', page: 'invoices' });
     createComponent();
@@ -244,22 +416,54 @@ describe('FinancialWorkspacePageComponent', () => {
     const second = { ...first, idInvoice: 92, invoiceNumber: 'INV-92' };
     component.invoices.set([first, second]);
     const request = new Subject<any>();
-    workflowService.downloadPremiumDebitNote.mockReturnValue(request);
+    workflowService.downloadInvoicePdf.mockReturnValue(request);
     const save = vi.spyOn(component as any, 'saveDownloadedFile').mockImplementation(() => {});
     fixture.detectChanges();
     getButtonsByText('Download Invoice')[0].click();
     component.downloadListedInvoice(first);
     fixture.detectChanges();
-    expect(workflowService.downloadPremiumDebitNote).toHaveBeenCalledExactlyOnceWith(91);
+    expect(workflowService.downloadInvoicePdf).toHaveBeenCalledExactlyOnceWith(91);
     expect(getButtonsByText('Downloading...')[0].disabled).toBe(true);
     expect(getButtonsByText('Download Invoice')[0].disabled).toBe(false);
     const file = { blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), fileName: 'Backend-Invoice-91.pdf', contentType: 'application/pdf' };
     request.next(file);
     fixture.detectChanges();
-    expect(save).toHaveBeenCalledWith(file, 'invoice-91.pdf');
+    expect(save).toHaveBeenCalledWith(file, 'Facture_INV-91.pdf');
     expect(component.downloadingInvoiceIds().size).toBe(0);
     expect(getButtonsByText('Download Invoice')).toHaveLength(2);
     expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('shows Download Avoir and calls only the Avoir PDF endpoint with the Avoir ID', () => {
+    routeData.next({ role: 'back-office', page: 'invoices' });
+    createComponent();
+    const component = fixture.componentInstance;
+    const avoir = {
+      idInvoice: 12,
+      invoiceId: 12,
+      invoiceType: 'AVOIR',
+      invoiceNumber: 'AV-2026-000012',
+      documentNumber: 'AV-2026-000012'
+    } as any;
+    component.invoices.set([avoir]);
+    const request = new Subject<any>();
+    workflowService.downloadAvoirPdf.mockReturnValue(request);
+    const save = vi.spyOn(component as any, 'saveDownloadedFile').mockImplementation(() => {});
+
+    fixture.detectChanges();
+    expect(getButtonsByText('Download Avoir')).toHaveLength(1);
+    getButtonsByText('Download Avoir')[0].click();
+
+    expect(workflowService.downloadAvoirPdf).toHaveBeenCalledExactlyOnceWith(12);
+    expect(workflowService.downloadInvoicePdf).not.toHaveBeenCalled();
+    request.next({
+      blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
+      fileName: '',
+      contentType: 'application/pdf'
+    });
+
+    expect(save).toHaveBeenCalledWith(expect.anything(), 'Avoir_AV-2026-000012.pdf');
+    expect(component.downloadingInvoiceIds().size).toBe(0);
   });
 
   it('shows download failures without hiding invoices and re-enables the row', () => {
@@ -268,14 +472,14 @@ describe('FinancialWorkspacePageComponent', () => {
     const component = fixture.componentInstance;
     const invoice = { idInvoice: 91, invoiceNumber: 'INV-91' } as any;
     component.invoices.set([invoice]);
-    workflowService.downloadPremiumDebitNote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    workflowService.downloadInvoicePdf.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
     component.downloadListedInvoice(invoice);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('PDF generation failed on the backend.');
     expect(component.invoices()).toEqual([invoice]);
     expect(getButtonsByText('Download Invoice')[0].disabled).toBe(false);
     const save = vi.spyOn(component as any, 'saveDownloadedFile');
-    workflowService.downloadPremiumDebitNote.mockReturnValue(of({ blob: new Blob(['error'], { type: 'application/json' }), contentType: 'application/json' }));
+    workflowService.downloadInvoicePdf.mockReturnValue(of({ blob: new Blob(['error'], { type: 'application/json' }), contentType: 'application/json' }));
     component.downloadListedInvoice(invoice);
     expect(component.errorMessage()).toContain('not a PDF');
     expect(save).not.toHaveBeenCalled();
@@ -325,7 +529,6 @@ describe('FinancialWorkspacePageComponent', () => {
         allocatedAmount: 0,
         pairingStatus: 'Unpaired',
         settlementMethod: 'BANK_TRANSFER',
-        collectionType: 'PREMIUM',
         bankReference: 'BR-44',
         settlementLabel: 'Premium'
       }],
@@ -353,7 +556,7 @@ describe('FinancialWorkspacePageComponent', () => {
     createComponent();
 
     expect(workflowService.getFinanceReceipts).toHaveBeenCalledTimes(1);
-    expect(workflowService.getDisbursementQueue).toHaveBeenCalledTimes(1);
+    expect(workflowService.getFinanceClosingQueue).toHaveBeenCalledTimes(1);
     expect(workflowService.getInvoices).not.toHaveBeenCalled();
   });
 
@@ -626,7 +829,6 @@ describe('FinancialWorkspacePageComponent', () => {
       allocatedAmount: 0,
       pairingStatus: 'Unpaired',
       settlementMethod: 'BANK_TRANSFER',
-      collectionType: 'PREMIUM',
       bankReference: 'BNK-9',
       settlementLabel: 'Affaire A1'
     }));
@@ -639,7 +841,6 @@ describe('FinancialWorkspacePageComponent', () => {
       receiptMonth: '2026-09',
       amountReceived: 1250.1234,
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium'
     });
     fixture.detectChanges();
 
@@ -666,7 +867,6 @@ describe('FinancialWorkspacePageComponent', () => {
       receiptMonth: '2026-09',
       amountReceived: 1250.1234,
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium'
     });
     expect(workflowService.getBackOfficeReceipts).not.toHaveBeenCalled();
     expect(fixture.componentInstance.successMessage()).toBe('Encaissement created and sent to the Back Officer for pairing.');
@@ -731,7 +931,6 @@ describe('FinancialWorkspacePageComponent', () => {
       receiptMonth: '2026-09',
       amountReceived: 15000,
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium'
     });
     fixture.componentInstance.createReceipt();
 
@@ -740,11 +939,10 @@ describe('FinancialWorkspacePageComponent', () => {
       receiptMonth: '2026-09',
       amountReceived: 15000,
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium'
     });
   });
 
-  it('pairs a Back Officer encaissement with selected invoices only', () => {
+  it('pairs partially, displays backend remittance lines, closes the modal, and opens Outgoing Remittances', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const receipt = {
       idBankReceipt: 99,
@@ -761,7 +959,6 @@ describe('FinancialWorkspacePageComponent', () => {
       allocatedAmount: 0,
       pairingStatus: 'Unpaired',
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium',
       bankReference: 'REF',
       settlementLabel: ''
     };
@@ -818,21 +1015,55 @@ describe('FinancialWorkspacePageComponent', () => {
     }));
     workflowService.allocateReceiptInvoices.mockReturnValue(of({
       ...receipt,
-      pairingStatus: 'Paired',
-      availableAmount: 0,
-      allocatedAmount: 50000,
-      generatedRemittances: [
+      pairingStatus: 'Partially Paired',
+      availableAmount: 49500,
+      allocatedAmount: 500,
+      createdRemittances: [
         {
           remittanceRef: 77,
+          remittanceReference: '77',
           receiptAllocationId: 33,
           disbursementId: null,
           panelId: 501,
           counterpartyId: 88,
           counterpartyName: 'Example Reinsurer',
+          reinsurerId: 88,
+          reinsurerName: 'Example Reinsurer',
+          cedentName: 'Example Cedent',
+          invoiceNumber: 'INV-2026-000001',
+          invoiceLabel: 'Premium invoice',
+          contractName: 'SODIG 2025',
+          umr: 'IT26-F-PD-0001',
           signedSharePct: 40,
           allocatedAmount: 6000,
           netPremiumDue: 6000,
           netPayableAmount: 5400,
+          signedNetPayableAmount: 5400,
+          currencyId: 3,
+          currencyCode: 'TND',
+          status: 'Draft',
+          description: 'Generated from contract encaissement allocation'
+        },
+        {
+          remittanceRef: 78,
+          remittanceReference: '78',
+          receiptAllocationId: 33,
+          disbursementId: null,
+          panelId: 502,
+          counterpartyId: 89,
+          counterpartyName: 'Second Reinsurer',
+          reinsurerId: 89,
+          reinsurerName: 'Second Reinsurer',
+          cedentName: 'Example Cedent',
+          invoiceNumber: 'INV-2026-000001',
+          invoiceLabel: 'Premium invoice',
+          contractName: 'SODIG 2025',
+          umr: 'IT26-F-PD-0001',
+          signedSharePct: 60,
+          allocatedAmount: 9000,
+          netPremiumDue: 9000,
+          netPayableAmount: 8100,
+          signedNetPayableAmount: 8100,
           currencyId: 3,
           currencyCode: 'TND',
           status: 'Draft',
@@ -857,7 +1088,7 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Panel 501');
 
     fixture.componentInstance.selectInvoice(fixture.componentInstance.filteredEligibleInvoices()[0]);
-    fixture.componentInstance.pairingForm.controls.allocatedAmount.setValue('50000' as unknown as number);
+    fixture.componentInstance.pairingForm.controls.allocatedAmount.setValue('500' as unknown as number);
     fixture.componentInstance.allocateReceipt();
     fixture.detectChanges();
 
@@ -866,15 +1097,65 @@ describe('FinancialWorkspacePageComponent', () => {
       allocations: [
         {
           invoiceId: 2001,
-          allocatedAmount: 50000
+          allocatedAmount: 500
         }
       ]
     });
     expect(workflowService.markNotificationRead).toHaveBeenCalledWith(5);
     expect(fixture.componentInstance.successMessage()).toBe('Encaissement paired successfully.');
+    expect(fixture.componentInstance.selectedReceipt()?.allocatedAmount).toBe(500);
+    expect(fixture.componentInstance.selectedReceipt()?.availableAmount).toBe(49500);
+    expect(fixture.componentInstance.selectedReceipt()?.pairingStatus).toBe('Partially Paired');
+    expect(fixture.componentInstance.modal()).toBeNull();
+    expect(fixture.componentInstance.generatedRemittances().map(item => item.remittanceRef)).toEqual([77, 78]);
+    expect(fixture.componentInstance.remittances().map(item => item.remittanceRef)).toEqual([77, 78]);
+    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/back-officer/outgoing-remittances']);
+
+    workflowService.getBackOfficeRemittances.mockReturnValue(of({
+      items: fixture.componentInstance.generatedRemittances(), pageNumber: 1, pageSize: 20, totalCount: 2, totalPages: 1
+    }));
+    routeData.next({ role: 'back-office', page: 'remittances' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('INV-2026-000001');
+    expect(fixture.nativeElement.textContent).toContain('Premium invoice');
+    expect(fixture.nativeElement.textContent).toContain('SODIG 2025');
+    expect(fixture.nativeElement.textContent).toContain('IT26-F-PD-0001');
     expect(fixture.nativeElement.textContent).toContain('Example Reinsurer');
-    expect(fixture.nativeElement.textContent).toContain('40%');
+    expect(fixture.nativeElement.textContent).toContain('Second Reinsurer');
     expect(fixture.nativeElement.textContent).toContain('Draft');
+  });
+
+  it('blocks duplicate pairing submits and warns when the backend returns no created remittances', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const receipt = {
+      idBankReceipt: 99, bankAccountId: 44, counterpartyId: 22, counterpartyName: 'ami',
+      receptionDate: '2026-09-01', operationDate: '2026-09-01', amountReceived: 50000,
+      currencyId: 3, currencyCode: 'TND', appliedExchangeRate: null, availableAmount: 50000,
+      allocatedAmount: 0, pairingStatus: 'Unpaired', settlementMethod: 'BankTransfer',
+      bankReference: 'REF', settlementLabel: ''
+    };
+    const allocation = new Subject<any>();
+    workflowService.getEligibleInvoices.mockReturnValue(of({ status: 200, items: [{
+      invoiceId: 2001, invoiceNumber: 'INV-1', label: 'Premium', contractId: 1, cedentId: 22,
+      cedentName: 'ami', contractName: 'Contract', umr: 'UMR-1', grossAmount: 50000,
+      alreadyPairedAmount: 0, outstandingAmount: 50000, currencyCode: 'TND', paymentStatus: 'Unsettled'
+    }] }));
+    workflowService.allocateReceiptInvoices.mockReturnValue(allocation.asObservable());
+    routeData.next({ role: 'back-office', page: 'receipts' });
+    createComponent();
+    fixture.componentInstance.openPairingModal(receipt);
+    fixture.componentInstance.selectInvoice(fixture.componentInstance.filteredEligibleInvoices()[0]);
+    fixture.componentInstance.pairingForm.controls.allocatedAmount.setValue(500);
+
+    fixture.componentInstance.allocateReceipt();
+    fixture.componentInstance.allocateReceipt();
+    expect(workflowService.allocateReceiptInvoices).toHaveBeenCalledTimes(1);
+
+    allocation.next({ ...receipt, allocatedAmount: 500, availableAmount: 49500, pairingStatus: 'Partially Paired', createdRemittances: [] });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.modal()).toBeNull();
+    expect(fixture.componentInstance.pairingWarningMessage()).toContain('backend returned no createdRemittances');
+    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/back-officer/outgoing-remittances']);
   });
 
   it('shows a failed invoice-load state instead of the empty-invoice state', () => {
@@ -893,7 +1174,6 @@ describe('FinancialWorkspacePageComponent', () => {
       allocatedAmount: 0,
       pairingStatus: 'Unpaired',
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium',
       bankReference: 'REF',
       settlementLabel: ''
     };
@@ -962,7 +1242,6 @@ describe('FinancialWorkspacePageComponent', () => {
       allocatedAmount: 0,
       pairingStatus: 'Unpaired',
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium',
       bankReference: 'REF',
       settlementLabel: ''
     };
@@ -996,7 +1275,6 @@ describe('FinancialWorkspacePageComponent', () => {
       allocatedAmount: 0,
       pairingStatus: 'Unpaired',
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium',
       bankReference: 'REF',
       settlementLabel: ''
     };
@@ -1069,7 +1347,6 @@ describe('FinancialWorkspacePageComponent', () => {
       allocatedAmount: 0,
       pairingStatus: 'Unpaired',
       settlementMethod: 'BankTransfer',
-      collectionType: 'Premium',
       bankReference: 'REF',
       settlementLabel: ''
     };
@@ -1169,7 +1446,7 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Confirm this remittance for Finance disbursement?');
-    expect(fixture.nativeElement.textContent).toContain('Reinsurer:');
+    expect(fixture.nativeElement.textContent).toContain('Beneficiary:');
     expect(fixture.nativeElement.textContent).toContain('AMI');
     expect(fixture.nativeElement.textContent).toContain('Net payable:');
     expect(fixture.nativeElement.textContent).toContain('TND');
@@ -1179,6 +1456,11 @@ describe('FinancialWorkspacePageComponent', () => {
 
     const submitButton = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
       .find(button => button.textContent?.trim() === 'Confirm for disbursement')!;
+    workflowService.confirmRemittance.mockReturnValueOnce(of({ status: 'AwaitingFinanceDisbursement' }));
+    workflowService.getBackOfficeRemittances.mockReturnValueOnce(of({
+      items: [{ remittanceRef: 77, status: 'AwaitingFinanceDisbursement', currencyCode: 'TND' }],
+      pageNumber: 1, pageSize: 20, totalCount: 1, totalPages: 1
+    }));
     submitButton.click();
     fixture.detectChanges();
 
@@ -1318,6 +1600,7 @@ describe('FinancialWorkspacePageComponent', () => {
     };
     workflowService.getDisbursementContext.mockReturnValue(of({
       remittanceId: 2,
+      remittanceReference: '2',
       reinsurerId: 22,
       reinsurerName: 'AMI',
       netPayableAmount: 1620,
@@ -1350,6 +1633,126 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(workflowService.getDisbursementContext).toHaveBeenCalledTimes(1);
     expect(workflowService.getDisbursementContext).toHaveBeenCalledWith(2);
     expect(workflowService.getBankAccounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses remittance reference 8 for an Avoir refund and the cedent Credit Note workflow', () => {
+    const remittance = {
+      remittanceId: 88,
+      remittanceRef: 88,
+      remittanceReference: '8',
+      receiptAllocationId: 54,
+      sourceType: 'AVOIR_REFUND',
+      sourceInvoiceId: 71,
+      sourceInvoiceNumber: 'AV-2026-000008',
+      beneficiaryType: 'CEDENT',
+      counterpartyId: 42,
+      counterpartyName: 'Cedent SA',
+      contractId: 12,
+      contractName: 'Property Contract',
+      umr: 'IT26-F-PD-0008',
+      netPremiumDue: 10,
+      netPayableAmount: 10,
+      currencyId: 3,
+      currencyCode: 'TND',
+      status: 'AwaitingFinanceDisbursement',
+      description: 'Cedent Avoir refund',
+      panelId: 99,
+      disbursementId: null
+    };
+    const creditNoteUrl = '/api/finance/remittances/8/credit-note';
+    workflowService.getDisbursementContext.mockReturnValue(of({
+      remittanceId: 88,
+      remittanceReference: '8',
+      sourceType: 'AVOIR_REFUND',
+      beneficiaryType: 'CEDENT',
+      beneficiaryId: 42,
+      beneficiaryName: 'Cedent SA',
+      avoirId: 71,
+      avoirNumber: 'AV-2026-000008',
+      encaissementReference: 'ENC-45',
+      contractId: 12,
+      contractName: 'Property Contract',
+      umr: 'IT26-F-PD-0008',
+      cedentName: 'Cedent SA',
+      netPayableAmount: 10,
+      currency: 'TND',
+      currencyCode: 'TND',
+      status: 'AwaitingFinanceDisbursement',
+      canStartPayment: true,
+      canConfirmTransfer: false,
+      creditNoteDownloadUrl: creditNoteUrl,
+      defaultBankAccount: {
+        idBankAccount: 501,
+        bankName: 'Cedent Bank',
+        bankCity: 'Tunis',
+        bankCountry: 'Tunisia',
+        iban: 'TN5900000000000000000000',
+        swiftBic: 'CEDNTNTT',
+        correspondentBankName: null,
+        correspondentSwiftBic: null,
+        isDefault: false
+      }
+    }));
+    workflowService.getBankAccounts.mockReturnValue(of([{
+      idBankAccount: 501,
+      idCounterparty: 42,
+      counterpartyId: 42,
+      beneficiaryName: 'Cedent SA',
+      beneficiaryAddress: null,
+      beneficiaryCity: 'Tunis',
+      beneficiaryCountry: 'Tunisia',
+      currencyId: 3,
+      currencyCode: 'TND',
+      bankName: 'Cedent Bank',
+      bankCity: 'Tunis',
+      bankCountry: 'Tunisia',
+      agencyCode: null,
+      rib: null,
+      iban: 'TN5900000000000000000000',
+      maskedIban: 'TN****0000',
+      swiftBic: 'CEDNTNTT',
+      hasCorrespondentBank: false,
+      correspondentBankName: null,
+      correspondentSwiftBic: null,
+      accountLabel: null,
+      isDefault: false,
+      isActive: true
+    }]));
+    workflowService.startDisbursement.mockReturnValue(of({
+      status: 'PaymentInProgress', remittanceId: 88, disbursementId: 303, invoiceId: 909
+    }));
+    workflowService.confirmTransfer.mockReturnValue(of({
+      status: 'Closed', remittanceId: 88, disbursementId: 303, invoiceId: 909
+    }));
+    routeData.next({ role: 'finance', page: 'disbursements' });
+    createComponent();
+
+    fixture.componentInstance.openDisbursementModal(remittance);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.getNumericRemittanceReference({ ...remittance, remittanceReference: null })).toBeNull();
+    expect(workflowService.getDisbursementContext).toHaveBeenCalledTimes(1);
+    expect(workflowService.getDisbursementContext).toHaveBeenCalledWith(8);
+    expect(workflowService.getBankAccounts).toHaveBeenCalledWith(42);
+    expect(fixture.nativeElement.textContent).toContain('Beneficiary type');
+    expect(fixture.nativeElement.textContent).toContain('Cedent');
+    expect(fixture.nativeElement.textContent).toContain('Cedent SA');
+    expect(fixture.nativeElement.textContent).toContain('IT26-F-PD-0008');
+    expect(fixture.nativeElement.textContent).toContain('AV-2026-000008');
+    expect(fixture.nativeElement.textContent).toContain('ENC-45');
+    expect(fixture.nativeElement.textContent).toContain(fixture.componentInstance.formatMoney(10, 'TND'));
+    expect(fixture.nativeElement.textContent).toContain('Cedent Bank');
+    expect(fixture.nativeElement.textContent).toContain('Download Credit Note');
+    expect(fixture.nativeElement.textContent).not.toContain('Download Invoice');
+
+    fixture.componentInstance.startDisbursement();
+    expect(workflowService.startDisbursement).toHaveBeenCalledWith(8);
+    expect(workflowService.downloadDocumentUrl).toHaveBeenCalledWith(creditNoteUrl);
+    expect(workflowService.downloadDisbursementInvoice).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.disbursementContext()?.status).toBe('PaymentInProgress');
+
+    fixture.componentInstance.confirmTransfer();
+    expect(workflowService.confirmTransfer).toHaveBeenCalledWith(303);
   });
 
   it('uses one context response and ignores later emissions from the same request', () => {
@@ -1611,7 +2014,7 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(fixture.componentInstance.selectedRemittance()?.status).toBe('Closed');
     expect(fixture.componentInstance.successMessage()).toBe('The amount transfer was confirmed successfully.');
     expect(fixture.componentInstance.isTransferConfirmationOpen()).toBe(false);
-    expect(workflowService.getDisbursementQueue).toHaveBeenCalledTimes(2);
+    expect(workflowService.getFinanceClosingQueue).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the transfer confirmation open and the status unchanged when confirmation fails', () => {
@@ -2004,50 +2407,10 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(workflowService.startDisbursement).not.toHaveBeenCalled();
   });
 
-  it('shows Make Disbursement for remittances awaiting Finance disbursement', () => {
-    workflowService.getDisbursementQueue.mockReturnValue(of([
-      {
-        remittanceRef: 1,
-        receiptAllocationId: 10,
-        disbursementId: null,
-        panelId: 100,
-        counterpartyId: 22,
-        counterpartyName: 'Draft Reinsurer',
-        netPremiumDue: 1000,
-        netPayableAmount: 900,
-        currencyId: 3,
-        currencyCode: 'TND',
-        status: 'Draft',
-        description: 'Draft remittance'
-      },
-      {
-        remittanceRef: 2,
-        receiptAllocationId: 11,
-        disbursementId: null,
-        panelId: 101,
-        counterpartyId: 23,
-        counterpartyName: 'Ready Reinsurer',
-        netPremiumDue: 1500,
-        netPayableAmount: 1400,
-        currencyId: 3,
-        currencyCode: 'TND',
-        status: 'AwaitingFinanceDisbursement',
-        description: 'Ready remittance'
-      },
-      {
-        remittanceRef: 3,
-        receiptAllocationId: 12,
-        disbursementId: 44,
-        panelId: 102,
-        counterpartyId: 24,
-        counterpartyName: 'Paid Reinsurer',
-        netPremiumDue: 2000,
-        netPayableAmount: 1900,
-        currencyId: 3,
-        currencyCode: 'TND',
-        status: 'Disbursed',
-        description: 'Paid remittance'
-      }
+  it('shows one Finance queue row per closing and uses the closing ID for actions', () => {
+    workflowService.getFinanceClosingQueue.mockReturnValue(of([
+      { closingId: 20, closingReference: 'CL-20', reinsurerName: 'Ready Reinsurer', lineCount: 2, premiumTotal: 1500, avoirTotal: -100, netPayableAmount: 1400, currencyCode: 'TND', issueDate: '2026-10-20', status: 'AwaitingFinanceDisbursement' },
+      { closingId: 21, closingReference: 'CL-21', reinsurerName: 'Paid Reinsurer', lineCount: 1, premiumTotal: 1900, avoirTotal: 0, netPayableAmount: 1900, currencyCode: 'TND', issueDate: '2026-10-19', status: 'Closed' }
     ]));
     routeData.next({ role: 'finance', page: 'disbursements' });
     createComponent();
@@ -2058,14 +2421,239 @@ describe('FinancialWorkspacePageComponent', () => {
 
     expect(actionButtons).toHaveLength(1);
     expect(fixture.nativeElement.textContent).toContain('Ready Reinsurer');
-    expect(fixture.nativeElement.textContent).toContain('Draft Reinsurer');
     expect(fixture.nativeElement.textContent).toContain('Paid Reinsurer');
-
     const rows = Array.from(fixture.nativeElement.querySelectorAll('tbody tr') as NodeListOf<HTMLTableRowElement>);
-    rows[1].click();
+    expect(rows).toHaveLength(2);
+    actionButtons[0].click();
+    expect(workflowService.getClosingDisbursementContext).toHaveBeenCalledWith(20);
+    expect(workflowService.getDisbursementContext).not.toHaveBeenCalled();
+  });
+
+  it('selects compatible Draft remittances with null workflow IDs and confirms them in one batch', () => {
+    const drafts = [
+      { remittanceRef: 9, remittanceReference: 'REM-9', reinsurerId: 22, counterpartyId: 22, beneficiaryId: 22, counterpartyName: 'AMI', beneficiaryType: 'Reinsurer', sourceType: 'Premium', currencyCode: 'TND', netPayableAmount: 0.1, signedNetPayableAmount: 0.1, status: 'Draft', disbursementId: null, panelId: null, closingEligible: false },
+      { remittanceRef: 10, remittanceReference: 'REM-10', reinsurerId: 22, counterpartyId: 22, beneficiaryId: 22, counterpartyName: 'AMI', beneficiaryType: 'Reinsurer', sourceType: 'PREMIUM', currencyCode: 'TND', netPayableAmount: 0.2, signedNetPayableAmount: 0.2, status: ' DRAFT ', disbursementId: null, closingEligible: false },
+      { remittanceRef: 11, remittanceReference: 'REM-11', reinsurerId: 23, counterpartyId: 23, beneficiaryId: 23, counterpartyName: 'Other', beneficiaryType: 'Reinsurer', currencyCode: 'TND', netPayableAmount: 9, signedNetPayableAmount: 9, status: 'Draft' },
+      { remittanceRef: 12, remittanceReference: 'REM-12', counterpartyId: 22, beneficiaryId: 22, counterpartyName: 'AMI', beneficiaryType: 'Reinsurer', currencyCode: 'TND', netPayableAmount: 4, status: 'Closed' },
+      { remittanceRef: 13, remittanceReference: 'REM-13', counterpartyId: 22, beneficiaryId: 22, counterpartyName: 'AMI', beneficiaryType: 'Reinsurer', currencyCode: 'TND', netPayableAmount: 5, status: 'Paid' }
+    ];
+    workflowService.getBackOfficeRemittances
+      .mockReturnValueOnce(of({ items: drafts, pageNumber: 1, pageSize: 20, totalCount: 5, totalPages: 1 }))
+      .mockReturnValueOnce(of({ items: drafts.map(row => row.remittanceRef === 9 || row.remittanceRef === 10 ? { ...row, status: 'AwaitingFinanceDisbursement' } : row), pageNumber: 1, pageSize: 20, totalCount: 5, totalPages: 1 }));
+    workflowService.confirmRemittancesForDisbursement.mockReturnValueOnce(of({ items: [
+      { remittanceId: 9, status: 'AwaitingFinanceDisbursement' },
+      { remittanceId: 10, status: 'AwaitingFinanceDisbursement' }
+    ], signedPremiumTotal: 0.3, signedAvoirTotal: 0, netBalance: 0.3, settlementMode: 'PAYABLE', amountToDisburse: 0.3, remainingAvoirCredit: null }));
+    routeData.next({ role: 'back-office', page: 'remittances' });
+    createComponent();
     fixture.detectChanges();
 
-    expect(fixture.componentInstance.selectedRemittance()?.remittanceRef).toBe(2);
-    expect(fixture.nativeElement.textContent).toContain('Make Disbursement');
+    const checkboxes = Array.from(fixture.nativeElement.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[];
+    expect(checkboxes[0].disabled).toBe(false);
+    expect(checkboxes[1].disabled).toBe(false);
+    expect(checkboxes[2].disabled).toBe(false);
+    expect(checkboxes[3].disabled).toBe(true);
+    expect(checkboxes[4].disabled).toBe(true);
+    checkboxes[0].click();
+    fixture.detectChanges();
+    const header = fixture.nativeElement.querySelector('thead input[type="checkbox"]') as HTMLInputElement;
+    expect(header.indeterminate).toBe(true);
+    checkboxes[1].click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.selectedRemittanceIds()).toEqual(new Set([9, 10]));
+    expect(fixture.componentInstance.selectedRemittanceTotal()).toBe(0.3);
+    expect(fixture.nativeElement.textContent).toContain('2 selected');
+
+    expect(header.checked).toBe(true);
+    const action = getButtonsByText('Confirm for Disbursement')[0];
+    expect(action.disabled).toBe(false);
+    action.click();
+    action.click();
+    fixture.detectChanges();
+    expect(workflowService.confirmRemittancesForDisbursement).toHaveBeenCalledTimes(1);
+    expect(workflowService.confirmRemittancesForDisbursement).toHaveBeenCalledWith([9, 10]);
+    expect(fixture.componentInstance.selectedRemittanceIds().size).toBe(0);
+    expect(fixture.componentInstance.remittances().find(row => row.remittanceRef === 9)?.status).toBe('AwaitingFinanceDisbursement');
+    expect(fixture.componentInstance.successMessage()).toContain('Amount to disburse');
+    expect(fixture.componentInstance.lastRemittanceConfirmation()?.amountToDisburse).toBe(0.3);
+  });
+
+  it('allows same-reinsurer Premium and Avoir rows and displays backend signed totals', () => {
+    const rows = [
+      { remittanceRef: 16, remittanceReference: 'REM-16', reinsurerId: 501, counterpartyId: 501, beneficiaryId: 501, beneficiaryType: 'Cedent', cedentName: 'STAR Assurances', reinsurerName: 'STAR Assurances', sourceType: 'avoir', currencyCode: 'TND', netPayableAmount: 2.5, signedNetPayableAmount: -2.5, status: 'Draft', panelId: 71 },
+      { remittanceRef: 15, remittanceReference: 'REM-15', reinsurerId: 501, counterpartyId: 501, beneficiaryId: 501, beneficiaryType: 'Reinsurer', reinsurerName: 'STAR Assurances', counterpartyName: 'STAR Assurances', sourceType: ' premium ', currencyCode: 'TND', netPayableAmount: 5, signedNetPayableAmount: 5, status: 'Draft', panelId: 72 }
+    ];
+    workflowService.getBackOfficeRemittances.mockReturnValueOnce(of({ items: rows, pageNumber: 1, pageSize: 20, totalCount: 2, totalPages: 1 }));
+    workflowService.confirmRemittancesForDisbursement.mockReturnValueOnce(of({
+      items: [
+        { remittanceId: 16, status: 'AwaitingFinanceDisbursement' },
+        { remittanceId: 15, status: 'AwaitingFinanceDisbursement' }
+      ],
+      signedPremiumTotal: 5,
+      signedAvoirTotal: -10,
+      netBalance: -5,
+      settlementMode: 'CREDIT',
+      amountToDisburse: 0,
+      remainingAvoirCredit: 0
+    }));
+    routeData.next({ role: 'back-office', page: 'remittances' });
+    createComponent();
+    fixture.detectChanges();
+
+    const checkboxes = Array.from(fixture.nativeElement.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[];
+    checkboxes[0].click();
+    checkboxes[1].click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selectedRemittanceIds()).toEqual(new Set([16, 15]));
+    expect(fixture.componentInstance.remittanceSelectionError()).toBe('');
+    expect(fixture.componentInstance.selectedPremiumTotal()).toBe(5);
+    expect(fixture.componentInstance.selectedAvoirTotal()).toBe(-2.5);
+    expect(fixture.componentInstance.selectedRemittanceTotal()).toBe(2.5);
+    const summary = fixture.nativeElement.textContent;
+    expect(summary).toContain('2 selected');
+    expect(summary).toContain(`Premium total: ${fixture.componentInstance.formatSignedRemittanceTotal(5, 'TND')}`);
+    expect(summary).toContain('Reinsurer: STAR Assurances');
+    expect(summary).toContain(`Avoir total: ${fixture.componentInstance.formatSignedRemittanceTotal(-2.5, 'TND')}`);
+    expect(summary).toContain(`Net balance: ${fixture.componentInstance.formatSignedRemittanceTotal(2.5, 'TND')}`);
+    expect(fixture.componentInstance.getRemittanceSourceLabel(rows[0] as any)).toBe('Avoir');
+    expect(fixture.componentInstance.getRemittanceSourceLabel(rows[1] as any)).toBe('Premium');
+    expect(summary).not.toContain('Beneficiary type');
+    expect(summary).toContain('Cedent');
+    expect(summary).toContain('Reinsurer');
+    expect(summary).toContain(fixture.componentInstance.formatMoney(-2.5, 'TND'));
+
+    getButtonsByText('Confirm for Disbursement')[0].click();
+    fixture.detectChanges();
+    expect(workflowService.confirmRemittancesForDisbursement).toHaveBeenCalledWith([16, 15]);
+    expect(fixture.componentInstance.successMessage()).toContain('Net credit balance');
+    expect(fixture.componentInstance.successMessage()).toContain('Net amount:');
+    expect(fixture.componentInstance.successMessage()).toContain('No positive disbursement was created');
+    expect(fixture.componentInstance.lastRemittanceConfirmation()?.amountToDisburse).toBe(0);
+    expect(fixture.nativeElement.textContent).toContain('Settlement mode: CREDIT');
+  });
+
+  it('confirms REM-13 and REM-22 by ID when reinsurer and currency match despite different origins', () => {
+    const rows = [
+      { remittanceRef: 13, remittanceId: 13, remittanceReference: 'REM-13', reinsurerId: 501, counterpartyId: 501, reinsurerName: 'STAR Assurances', beneficiaryType: 'Cedent', sourceType: 'AVOIR', contractId: 4, paymentOrigin: 'Avoir direct', currencyCode: 'TND', signedNetPayableAmount: -10, status: 'Draft' },
+      { remittanceRef: 22, remittanceId: 22, remittanceReference: 'REM-22', reinsurerId: 501, counterpartyId: 501, reinsurerName: 'STAR Assurances', beneficiaryType: 'Reinsurer', sourceType: 'Premium', contractId: 9, paymentOrigin: 'Encaissement', currencyCode: 'TND', signedNetPayableAmount: 15, status: 'Draft' }
+    ];
+    workflowService.getBackOfficeRemittances
+      .mockReturnValueOnce(of({ items: rows, pageNumber: 1, pageSize: 20, totalCount: 2, totalPages: 1 }))
+      .mockReturnValueOnce(of({ items: rows.map(row => ({ ...row, status: 'AwaitingFinanceDisbursement' })), pageNumber: 1, pageSize: 20, totalCount: 2, totalPages: 1 }));
+    workflowService.confirmRemittancesForDisbursement.mockReturnValueOnce(of({
+      items: [
+        { remittanceId: 13, status: 'AwaitingFinanceDisbursement' },
+        { remittanceId: 22, status: 'AwaitingFinanceDisbursement' }
+      ],
+      signedPremiumTotal: 15,
+      signedAvoirTotal: -10,
+      netBalance: 5,
+      settlementMode: 'PAYABLE',
+      amountToDisburse: 5
+    }));
+    routeData.next({ role: 'back-office', page: 'remittances' });
+    createComponent();
+
+    const checkboxes = Array.from(fixture.nativeElement.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[];
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes.every(checkbox => !checkbox.disabled)).toBe(true);
+    checkboxes[0].click();
+    checkboxes[1].click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.selectedRemittanceIds()).toEqual(new Set([13, 22]));
+    expect(fixture.componentInstance.remittanceSelectionError()).toBe('');
+
+    getButtonsByText('Confirm for Disbursement')[0].click();
+    fixture.detectChanges();
+    expect(workflowService.confirmRemittancesForDisbursement).toHaveBeenCalledTimes(1);
+    expect(workflowService.confirmRemittancesForDisbursement).toHaveBeenCalledWith([13, 22]);
+    expect(workflowService.getBackOfficeRemittances).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.selectedRemittanceIds().size).toBe(0);
+    expect(fixture.componentInstance.remittances().filter(row => [13, 22].includes(row.remittanceRef)).every(row => row.status === 'AwaitingFinanceDisbursement')).toBe(true);
+    expect(fixture.componentInstance.successMessage()).toContain(`Net amount: ${fixture.componentInstance.formatSignedRemittanceTotal(5, 'TND')}`);
+    expect(fixture.componentInstance.successMessage()).toContain('Amount to disburse:');
+    expect(fixture.componentInstance.remittances().filter(row => [13, 22].includes(row.remittanceRef)).some(row => ['Paid', 'Closed'].includes(row.status))).toBe(false);
+  });
+
+  it('shows the exact backend conflict and affected references while preserving selection', () => {
+    const rows = [
+      { remittanceRef: 13, remittanceReference: 'REM-13', reinsurerId: 501, reinsurerName: 'STAR Assurances', sourceType: 'AVOIR', contractId: 4, currencyCode: 'TND', signedNetPayableAmount: -10, status: 'Draft' },
+      { remittanceRef: 22, remittanceReference: 'REM-22', reinsurerId: 501, reinsurerName: 'STAR Assurances', sourceType: 'Premium', contractId: 9, currencyCode: 'TND', signedNetPayableAmount: 15, status: 'Draft' }
+    ];
+    routeData.next({ role: 'back-office', page: 'remittances' });
+    createComponent();
+    fixture.componentInstance.remittances.set(rows as any);
+    workflowService.confirmRemittancesForDisbursement.mockReturnValueOnce(throwError(() => new HttpErrorResponse({
+      status: 409,
+      statusText: 'Conflict',
+      error: {
+        code: 'REMITTANCE_STATE_CONFLICT',
+        message: 'One or more remittances are no longer Draft.',
+        traceId: 'batch-trace-409',
+        affectedRemittanceReferences: ['REM-13', 'REM-22']
+      }
+    })));
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    fixture.componentInstance.toggleRemittanceSelection(rows[0] as any, true);
+    fixture.componentInstance.toggleRemittanceSelection(rows[1] as any, true);
+
+    fixture.componentInstance.confirmSelectedRemittancesForDisbursement();
+    fixture.detectChanges();
+
+    expect(workflowService.confirmRemittancesForDisbursement).toHaveBeenCalledWith([13, 22]);
+    expect(fixture.componentInstance.selectedRemittanceIds()).toEqual(new Set([13, 22]));
+    expect(fixture.componentInstance.isSubmitting()).toBe(false);
+    expect(fixture.componentInstance.errorMessage()).toContain('One or more remittances are no longer Draft.');
+    expect(fixture.componentInstance.errorMessage()).toContain('REM-13, REM-22');
+    expect(fixture.nativeElement.textContent).toContain('One or more remittances are no longer Draft.');
+    expect(warning).toHaveBeenCalledWith('Remittance batch confirmation conflict.', {
+      code: 'REMITTANCE_STATE_CONFLICT',
+      traceId: 'batch-trace-409'
+    });
+    warning.mockRestore();
+  });
+
+  it('keeps the valid selection and explains reinsurer incompatibility', () => {
+    routeData.next({ role: 'back-office', page: 'remittances' });
+    createComponent();
+    const first = { remittanceRef: 9, reinsurerId: 22, counterpartyId: 22, counterpartyName: 'AMI', beneficiaryType: 'Reinsurer', currencyCode: 'TND', status: 'Draft' } as any;
+    const incompatible = { ...first, remittanceRef: 10, reinsurerId: 23, counterpartyId: 23, beneficiaryId: 23, counterpartyName: 'Other' } as any;
+    fixture.componentInstance.remittances.set([first, incompatible]);
+    fixture.componentInstance.toggleRemittanceSelection(first, true);
+    fixture.componentInstance.toggleRemittanceSelection(incompatible, true);
+    expect(fixture.componentInstance.selectedRemittanceIds()).toEqual(new Set([9]));
+    expect(fixture.componentInstance.remittanceSelectionError()).toBe('Select remittances for the same reinsurer and currency.');
+  });
+
+  it('renders each backend Avoir panel allocation as its own signed row', () => {
+    routeData.next({ role: 'back-office', page: 'remittances' });
+    createComponent();
+    fixture.componentInstance.remittances.set([
+      { remittanceRef: 25, reinsurerId: 22, reinsurerName: 'AMI', cedentName: 'Cedent SA', sourceType: 'AVOIR', invoiceNumber: 'AV-2026-000005', currencyCode: 'TND', signedNetPayableAmount: -2.25, netPayableAmount: 2.25, status: 'Draft' } as any,
+      { remittanceRef: 26, reinsurerId: 23, reinsurerName: 'STAR Assurances', cedentName: 'Cedent SA', sourceType: 'AVOIR', invoiceNumber: 'AV-2026-000005', currencyCode: 'TND', signedNetPayableAmount: -2.5, netPayableAmount: 2.5, status: 'Draft' } as any
+    ]);
+    fixture.detectChanges();
+
+    const rows = Array.from(fixture.nativeElement.querySelectorAll('tbody tr')) as HTMLTableRowElement[];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('Avoir');
+    expect(rows[0].textContent).toContain('AMI');
+    expect(rows[0].textContent).toContain(fixture.componentInstance.formatMoney(-2.25, 'TND'));
+    expect(rows[1].textContent).toContain('STAR Assurances');
+    expect(rows[1].textContent).toContain(fixture.componentInstance.formatMoney(-2.5, 'TND'));
+    expect(fixture.nativeElement.textContent).not.toContain('Avoir Refund');
+  });
+
+  it('rejects a selected remittance with a different currency', () => {
+    routeData.next({ role: 'back-office', page: 'remittances' });
+    createComponent();
+    const first = { remittanceRef: 9, reinsurerId: 22, counterpartyId: 22, sourceType: 'Premium', currencyCode: 'TND', netPayableAmount: 10, signedNetPayableAmount: 10, status: 'Draft' } as any;
+    const incompatible = { ...first, remittanceRef: 10, currencyCode: 'USD' } as any;
+    fixture.componentInstance.remittances.set([first, incompatible]);
+    fixture.componentInstance.toggleRemittanceSelection(first, true);
+    fixture.componentInstance.toggleRemittanceSelection(incompatible, true);
+    expect(fixture.componentInstance.selectedRemittanceIds()).toEqual(new Set([9]));
+    expect(fixture.componentInstance.remittanceSelectionError()).toBe('Select remittances for the same reinsurer and currency.');
   });
 });

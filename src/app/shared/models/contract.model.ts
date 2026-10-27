@@ -183,7 +183,9 @@ export interface ContractPanelItem {
   premiumRatePct: number | null;
   grossPremium: number | null;
   brokeragePct: number | null;
+  otherDeductionsPercentage?: number | null;
   otherDeductions: number | null;
+  otherDeductionsAmount?: number | null;
   netPremium: number | null;
   premiumReference: string | null;
   status: string;
@@ -199,7 +201,8 @@ export interface CreateContractPanelRequest {
   premiumRatePct: number | null;
   grossPremium: number | null;
   brokeragePct: number | null;
-  otherDeductions: number | null;
+  otherDeductionsPercentage?: number | null;
+  otherDeductions?: number | null;
   premiumReference: string | null;
 }
 
@@ -209,25 +212,24 @@ export interface UpdateContractPanelRequest extends CreateContractPanelRequest {
 }
 
 export interface UpsertFacultativeContractRequest {
-  name: string;
-  counterpartyId: number;
-  currencyId: number;
-  coverageSelection: CoverageSelectionPayload;
+  name: string | null;
+  counterpartyId: number | null;
+  currencyId: number | null;
+  coverageSelection: CoverageSelectionPayload | null;
   receptionDate: string | null;
-  inceptionDate: string;
-  expiryDate: string;
+  inceptionDate: string | null;
+  expiryDate: string | null;
   writtenSharePct: number | null;
   signedSharePct: number | null;
   fees: number | null;
-  isHighPriority: boolean;
+  isHighPriority: boolean | null;
   sumInsured: number | null;
   limitOfLiability: number | null;
   deductible: number | null;
   premiumRate: number | null;
-  grossPremium: number | null;
   cedentCommissionPct: number | null;
   cedentPremiumReference: string | null;
-  isFronting: boolean;
+  isFronting: boolean | null;
   frontingReference: string | null;
   memoText: string | null;
 }
@@ -235,25 +237,28 @@ export interface UpsertFacultativeContractRequest {
 export interface FacultativeContractResponse {
   contractId: number;
   status: ContractStatus | string;
+  hasAvoir?: boolean | null;
+  contractDocumentType?: string | null;
+  contractDocumentDownloadUrl?: string | null;
   allowedActions: string[];
   netPremiumCedent: number | null;
-  umr: string;
-  name: string;
+  umr: string | null;
+  name: string | null;
   contractType?: string | null;
-  counterpartyId: number;
+  counterpartyId: number | null;
   counterpartyName?: string | null;
-  currencyId: number;
+  currencyId: number | null;
   currencyCode?: string | null;
   currencySymbol?: string | null;
   currencyDecimalPlaces?: number | null;
   coverageSelection?: CoverageSelectionResponse | null;
   receptionDate: string | null;
-  inceptionDate: string;
-  expiryDate: string;
+  inceptionDate: string | null;
+  expiryDate: string | null;
   writtenSharePct: number | null;
   signedSharePct: number | null;
   fees: number | null;
-  isHighPriority: boolean;
+  isHighPriority: boolean | null;
   sumInsured: number | null;
   limitOfLiability?: number | null;
   deductible: number | null;
@@ -263,7 +268,7 @@ export interface FacultativeContractResponse {
   cedentCommission?: number | null;
   netPremium?: number | null;
   cedentPremiumReference: string | null;
-  isFronting: boolean;
+  isFronting: boolean | null;
   frontingReference: string | null;
   memoText: string | null;
   createdBy?: string | null;

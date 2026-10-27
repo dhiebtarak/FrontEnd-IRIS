@@ -14,7 +14,7 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { catchError, debounceTime, distinctUntilChanged, finalize, forkJoin, map, merge, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, finalize, forkJoin, map, merge, of, startWith, Subject, switchMap, take, tap } from 'rxjs';
 import { ContractCreationStepperComponent } from '../contract-creation-stepper/contract-creation-stepper.component';
 import {
   CedentReference,
@@ -77,19 +77,13 @@ const optionalNonNegativeValidator: ValidatorFn = (control: AbstractControl): Va
   return Number(control.value) >= 0 ? null : { nonNegative: true };
 };
 
-const nonEmptyNumberArrayValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
-  return Array.isArray(control.value) && control.value.some(value => Number.isInteger(value) && value > 0)
-    ? null
-    : { required: true };
-};
-
 const coverageSelectionValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
   const group = control as FacultativeFormGroup['controls']['coverageSelection'];
   const primaryMainCoverId = group.controls.primaryMainCoverId.value;
   const coverageIds = group.controls.coverageIds.value;
 
   if (!coverageIds.length) {
-    return { coverageRequired: true };
+    return null;
   }
 
   if (primaryMainCoverId == null) {
@@ -234,6 +228,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   readonly generatedUmr = signal('');
   readonly backendNetPremium = signal<number | null>(null);
   readonly generalError = signal('');
+  readonly serverFieldErrors = signal<Record<string, string[]>>({});
   readonly cedentLookupError = signal(false);
   readonly mainCoverLookupError = signal(false);
   readonly sectionsError = signal('');
@@ -328,19 +323,19 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   });
 
   readonly form: FacultativeFormGroup = this.fb.group({
-    name: this.fb.nonNullable.control('', [Validators.required, Validators.maxLength(255)]),
-    counterpartyId: this.fb.control<number | null>(null, [Validators.required]),
-    currencyId: this.fb.control<number | null>(null, [Validators.required]),
+    name: this.fb.nonNullable.control('', [Validators.maxLength(255)]),
+    counterpartyId: this.fb.control<number | null>(null),
+    currencyId: this.fb.control<number | null>(null),
     coverageSelection: this.fb.group({
-      primaryMainCoverId: this.fb.control<number | null>(null, [Validators.required]),
-      coverageIds: this.fb.nonNullable.control<number[]>([], [nonEmptyNumberArrayValidator]),
-      mainCoverId: this.fb.control<number | null>(null, [Validators.required]),
+      primaryMainCoverId: this.fb.control<number | null>(null),
+      coverageIds: this.fb.nonNullable.control<number[]>([]),
+      mainCoverId: this.fb.control<number | null>(null),
       sectionIds: this.fb.nonNullable.control<number[]>([]),
       extensionIds: this.fb.nonNullable.control<number[]>([])
     }, { validators: [coverageSelectionValidator] }),
     receptionDate: this.fb.nonNullable.control(''),
-    inceptionDate: this.fb.nonNullable.control('', [Validators.required]),
-    expiryDate: this.fb.nonNullable.control('', [Validators.required]),
+    inceptionDate: this.fb.nonNullable.control(''),
+    expiryDate: this.fb.nonNullable.control(''),
     writtenSharePct: this.fb.control<number | null>(null, [Validators.min(0), Validators.max(100)]),
     signedSharePct: this.fb.control<number | null>(null, [Validators.min(0), Validators.max(100)]),
     fees: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
@@ -365,6 +360,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private lastSavedSnapshot = this.createEmptySnapshot();
   private readonly cedentOpenRequests = new Subject<void>();
   private readonly mainCoverOpenRequests = new Subject<void>();
+  private pendingFocusField = this.route.snapshot.queryParamMap.get('focusField');
   @ViewChild('coveragePicker') coveragePicker?: ElementRef<HTMLElement>;
 
   ngOnInit(): void {
@@ -782,14 +778,9 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
 
     this.retrySaveMode.set(null);
     this.generalError.set('');
+    this.serverFieldErrors.set({});
     this.clearServerErrors();
-    this.markDraftFieldsTouched();
     this.normalizeFormValues();
-
-    if (!this.isDraftReady()) {
-      return;
-    }
-
     void this.persist('draft');
   }
 
@@ -800,15 +791,9 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
 
     this.retrySaveMode.set(null);
     this.generalError.set('');
+    this.serverFieldErrors.set({});
     this.clearServerErrors();
-    this.form.markAllAsTouched();
     this.normalizeFormValues();
-
-    if (this.form.invalid || !this.hasSelectedCedent()) {
-      this.syncCedentValidation();
-      return;
-    }
-
     void this.persist('continue');
   }
 
@@ -821,6 +806,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
 
     this.retrySaveMode.set(null);
     this.generalError.set('');
+    this.serverFieldErrors.set({});
     this.clearServerErrors();
     void this.persist(mode);
   }
@@ -828,6 +814,10 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   hasError(path: string, errorName: string): boolean {
     const control = this.form.get(path);
     return !!control && control.hasError(errorName) && (control.touched || control.dirty);
+  }
+
+  serverFieldErrorEntries(): Array<{ field: string; messages: string[] }> {
+    return Object.entries(this.serverFieldErrors()).map(([field, messages]) => ({ field, messages }));
   }
 
   formatMoney(value: number | null): string {
@@ -1031,10 +1021,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     ).subscribe(isFronting => {
       const control = this.form.controls.frontingReference;
 
-      if (isFronting) {
-        control.addValidators([Validators.required]);
-      } else {
-        control.removeValidators([Validators.required]);
+      if (!isFronting) {
         control.setValue('', { emitEvent: false });
       }
 
@@ -1056,15 +1043,9 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       switchMap(({ currencies, mainCovers, contract }) => {
         this.currencies.set(currencies);
         this.coverageCatalog.set(mainCovers);
-        const defaultCurrency = currencies.find(currency => currency.isDefault) ?? currencies[0];
-
         if (contract) {
           this.applyLoadedContract(contract, contractId);
           return this.hydrateLoadedCoverage(contract);
-        }
-
-        if (defaultCurrency && this.form.controls.currencyId.value == null) {
-          this.form.controls.currencyId.setValue(defaultCurrency.id);
         }
 
         return of(null);
@@ -1078,6 +1059,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       next: () => {
         this.lastSavedSnapshot = this.createSnapshot();
         this.form.markAsPristine();
+        this.focusPendingField();
       },
       error: () => {
         this.generalError.set(contractId == null
@@ -1244,28 +1226,28 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
 
   private applyLoadedContract(contract: FacultativeContractResponse, fallbackContractId: number | null): void {
     this.contractId.set(this.getPositiveId(contract.contractId) ?? fallbackContractId);
-    this.generatedUmr.set(contract.umr);
+    this.generatedUmr.set(contract.umr ?? '');
     this.backendNetPremium.set(contract.netPremiumCedent);
     this.form.patchValue({
-      name: contract.name,
+      name: contract.name ?? '',
       counterpartyId: contract.counterpartyId,
       currencyId: contract.currencyId,
       receptionDate: contract.receptionDate ?? '',
-      inceptionDate: contract.inceptionDate,
-      expiryDate: contract.expiryDate,
+      inceptionDate: contract.inceptionDate ?? '',
+      expiryDate: contract.expiryDate ?? '',
       writtenSharePct: contract.writtenSharePct,
       signedSharePct: contract.signedSharePct,
       fees: contract.fees,
-      isHighPriority: contract.isHighPriority,
+      isHighPriority: contract.isHighPriority ?? false,
       sumInsured: contract.sumInsured,
       limitOfLiability: contract.limitOfLiability ?? null,
       deductible: contract.deductible,
-      premiumRate: contract.premiumRate,
+      premiumRate: contract.premiumRate == null ? null : contract.premiumRate * 100,
       grossPremium: contract.grossPremium,
       cedentCommissionPct: contract.cedentCommissionPct,
       netPremium: contract.netPremium ?? contract.netPremiumCedent,
       cedentPremiumReference: contract.cedentPremiumReference ?? '',
-      isFronting: contract.isFronting,
+      isFronting: contract.isFronting ?? false,
       frontingReference: contract.frontingReference ?? '',
       memoText: contract.memoText ?? ''
     });
@@ -1277,7 +1259,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     this.selectedCedentName = contract.counterpartyName?.trim() ?? '';
     this.cedentSearchControl.setValue(this.selectedCedentName, { emitEvent: false });
 
-    if (contract.counterpartyId > 0 && this.selectedCedentName) {
+    if (contract.counterpartyId != null && contract.counterpartyId > 0 && this.selectedCedentName) {
       this.cedentResults.set([{
         id: contract.counterpartyId,
         name: this.selectedCedentName,
@@ -1287,8 +1269,38 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     }
   }
 
+  private focusPendingField(): void {
+    const field = this.pendingFocusField;
+    if (!field) return;
+
+    const targetIds: Record<string, string> = {
+      name: 'contractName',
+      counterpartyId: 'cedentSearch',
+      currencyId: 'currencyId',
+      inceptionDate: 'inceptionDate',
+      expiryDate: 'expiryDate',
+      coverageSelection: 'mainCoverSearch',
+      sumInsured: 'sumInsured',
+      premiumRate: 'premiumRate',
+      cedentCommissionPct: 'cedentCommissionPct',
+      writtenSharePct: 'writtenSharePct',
+      signedSharePct: 'signedSharePct',
+      frontingReference: 'frontingReference'
+    };
+    const root = this.elementRef.nativeElement as HTMLElement;
+    const element = root.querySelector<HTMLElement>(`#${targetIds[field] ?? 'contractName'}`);
+    this.pendingFocusField = null;
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    element?.focus({ preventScroll: true });
+  }
+
   private async persist(mode: 'draft' | 'continue'): Promise<void> {
     if (this.isSaving()) {
+      return;
+    }
+
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
       return;
     }
 
@@ -1308,12 +1320,19 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       : this.contractsService.updateFacultativeContract(contractId, this.buildRequest());
 
     request.pipe(
+      take(1),
       finalize(() => {
         this.isSaving.set(false);
         this.saveMode.set(null);
       })
     ).subscribe({
       next: response => {
+        if (isCreating && this.getPositiveId(response.contractId) == null) {
+          const message = 'The server did not return the new contract ID. The contract was not opened in Overview.';
+          this.generalError.set(message);
+          this.snackBar.open(message, 'Dismiss', { duration: 4500, horizontalPosition: 'end', verticalPosition: 'top' });
+          return;
+        }
         this.applySaveResponse(response);
         this.snackBar.open(this.getSaveSuccessMessage(response, isCreating), 'Dismiss', {
           duration: 3000,
@@ -1322,7 +1341,8 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
         });
 
         if (mode === 'continue') {
-          this.navigateToOverview(this.getCurrentContractId());
+          const savedContractId = this.getCurrentContractId();
+          if (savedContractId != null) this.navigateToOverview(savedContractId);
         }
       },
       error: (error: HttpErrorResponse) => {
@@ -1338,7 +1358,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       this.contractId.set(responseContractId);
     }
 
-    this.generatedUmr.set(response.umr);
+    this.generatedUmr.set(response.umr ?? '');
     this.backendNetPremium.set(response.netPremiumCedent);
     this.form.patchValue({
       fees: response.fees ?? this.form.controls.fees.value,
@@ -1355,7 +1375,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private getSaveSuccessMessage(response: FacultativeContractResponse, isCreating: boolean): string {
-    const umr = response.umr.trim();
+    const umr = response.umr?.trim() ?? '';
     const message = isCreating ? 'Contract created successfully.' : 'Contract saved successfully.';
 
     return umr
@@ -1368,8 +1388,8 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     const coverageIds = this.uniquePositiveNumberArray(raw.coverageSelection.coverageIds)
       .filter(id => this.mainCovers().some(option => option.id === id));
     const primaryMainCoverId = coverageIds.includes(raw.coverageSelection.primaryMainCoverId ?? 0)
-      ? raw.coverageSelection.primaryMainCoverId!
-      : coverageIds[0]!;
+      ? raw.coverageSelection.primaryMainCoverId
+      : coverageIds[0] ?? null;
     const availableSectionIds = new Set(this.availableSections().map(section => section.id));
     const availableExtensionIds = new Set(this.availableExtensions().map(extension => extension.id));
     const sectionIds = this.uniquePositiveNumberArray(raw.coverageSelection.sectionIds)
@@ -1378,31 +1398,30 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       .filter(id => availableExtensionIds.has(id));
 
     return {
-      name: raw.name.trim(),
-      counterpartyId: raw.counterpartyId!,
-      currencyId: raw.currencyId!,
-      coverageSelection: {
+      name: this.toNullableText(raw.name),
+      counterpartyId: this.toFiniteNumber(raw.counterpartyId),
+      currencyId: this.toFiniteNumber(raw.currencyId),
+      coverageSelection: primaryMainCoverId == null ? null : {
         primaryMainCoverId,
         coverageIds,
         mainCoverId: primaryMainCoverId,
         sectionIds,
         extensionIds
       },
-      receptionDate: this.toNullableText(raw.receptionDate),
-      inceptionDate: raw.inceptionDate,
-      expiryDate: raw.expiryDate,
-      writtenSharePct: raw.writtenSharePct,
-      signedSharePct: raw.signedSharePct,
-      fees: raw.fees,
-      isHighPriority: raw.isHighPriority,
-      sumInsured: raw.sumInsured,
-      limitOfLiability: raw.limitOfLiability,
-      deductible: raw.deductible,
-      premiumRate: toFiniteNumber(raw.premiumRate),
-      grossPremium: raw.grossPremium,
-      cedentCommissionPct: raw.cedentCommissionPct,
+      receptionDate: this.toDateOnlyOrNull(raw.receptionDate),
+      inceptionDate: this.toDateOnlyOrNull(raw.inceptionDate),
+      expiryDate: this.toDateOnlyOrNull(raw.expiryDate),
+      writtenSharePct: this.toFiniteNumber(raw.writtenSharePct),
+      signedSharePct: this.toFiniteNumber(raw.signedSharePct),
+      fees: this.toFiniteNumber(raw.fees),
+      isHighPriority: raw.isHighPriority ? true : this.form.controls.isHighPriority.dirty ? false : null,
+      sumInsured: this.toFiniteNumber(raw.sumInsured),
+      limitOfLiability: this.toFiniteNumber(raw.limitOfLiability),
+      deductible: this.toFiniteNumber(raw.deductible),
+      premiumRate: this.toFiniteNumber(raw.premiumRate) == null ? null : this.toFiniteNumber(raw.premiumRate)! / 100,
+      cedentCommissionPct: this.toFiniteNumber(raw.cedentCommissionPct),
       cedentPremiumReference: this.toNullableText(raw.cedentPremiumReference),
-      isFronting: raw.isFronting,
+      isFronting: raw.isFronting ? true : this.form.controls.isFronting.dirty ? false : null,
       frontingReference: raw.isFronting ? this.toNullableText(raw.frontingReference) : null,
       memoText: this.toNullableText(raw.memoText)
     };
@@ -1426,51 +1445,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     }
   }
 
-  private isDraftReady(): boolean {
-    const requiredControls = [
-      this.form.controls.name,
-      this.form.controls.counterpartyId,
-      this.form.controls.currencyId,
-      this.form.controls.coverageSelection.controls.coverageIds,
-      this.form.controls.coverageSelection.controls.primaryMainCoverId,
-      this.form.controls.inceptionDate,
-      this.form.controls.expiryDate
-    ];
-
-    this.syncCedentValidation();
-    this.form.updateValueAndValidity({ emitEvent: false });
-
-    return requiredControls.every(control => control.valid)
-      && !this.form.hasError('expiryBeforeInception')
-      && !this.form.hasError('commissionsExceedGrossPremium');
-  }
-
-  private markDraftFieldsTouched(): void {
-    this.form.controls.name.markAsTouched();
-    this.form.controls.counterpartyId.markAsTouched();
-    this.form.controls.currencyId.markAsTouched();
-    this.form.controls.coverageSelection.controls.coverageIds.markAsTouched();
-    this.form.controls.coverageSelection.controls.primaryMainCoverId.markAsTouched();
-    this.form.controls.inceptionDate.markAsTouched();
-    this.form.controls.expiryDate.markAsTouched();
-  }
-
   private syncCedentValidation(): void {
-    if (this.hasSelectedCedent()) {
-      if (this.form.controls.counterpartyId.hasError('invalidSelection')) {
-        this.clearCedentSelectionError();
-      }
-      return;
-    }
-
-    if (this.cedentSearchControl.value.trim()) {
-      this.form.controls.counterpartyId.setErrors({
-        ...(this.form.controls.counterpartyId.errors ?? {}),
-        invalidSelection: true
-      });
-      return;
-    }
-
     this.clearCedentSelectionError();
   }
 
@@ -1650,6 +1625,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     }
 
     const { fieldErrors, generalErrors } = this.extractBackendErrors(error.error);
+    this.serverFieldErrors.set(fieldErrors);
 
     for (const [backendField, messages] of Object.entries(fieldErrors)) {
       const controlPath = this.mapBackendField(backendField);
@@ -1682,6 +1658,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private clearServerErrors(): void {
+    this.serverFieldErrors.set({});
     this.clearServerErrorsRecursive(this.form);
   }
 
@@ -1736,7 +1713,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private mapBackendField(fieldName: string): string | null {
-    const normalizedField = fieldName.toLowerCase();
+    const normalizedField = fieldName.replace(/\[(\d+)\]/g, '').toLowerCase();
     const map: Record<string, string> = {
       name: 'name',
       counterpartyid: 'counterpartyId',
@@ -1748,7 +1725,9 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       coverageids: 'coverageSelection.coverageIds',
       'coverageselection.maincoverid': 'coverageSelection.mainCoverId',
       maincoverid: 'coverageSelection.mainCoverId',
+      'coverageselection.sectionids': 'coverageSelection.sectionIds',
       sectionids: 'coverageSelection.sectionIds',
+      'coverageselection.extensionids': 'coverageSelection.extensionIds',
       extensionids: 'coverageSelection.extensionIds',
       receptiondate: 'receptionDate',
       inceptiondate: 'inceptionDate',
@@ -1899,6 +1878,15 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private toNullableText(value: string): string | null {
     const trimmedValue = value.trim();
     return trimmedValue ? trimmedValue : null;
+  }
+
+  private toFiniteNumber(value: number | string | null | undefined): number | null {
+    return toFiniteNumber(value);
+  }
+
+  private toDateOnlyOrNull(value: string): string | null {
+    const date = value.trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
   }
 
   private uniquePositiveNumberArray(values: number[]): number[] {

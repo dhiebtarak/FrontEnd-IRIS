@@ -127,8 +127,8 @@ describe('FacultativeInformationComponent', () => {
     fixture.detectChanges();
   }
 
-  it('selects the default currency returned by the API', () => {
-    expect(component.form.controls.currencyId.value).toBe(1);
+  it('does not invent a currency when creating an incomplete draft', () => {
+    expect(component.form.controls.currencyId.value).toBeNull();
   });
 
   it('uses the cedent autocomplete API', async () => {
@@ -138,16 +138,31 @@ describe('FacultativeInformationComponent', () => {
     expect(component.cedentSearchControl.value).toBe('Acme Cedent');
   });
 
-  it('requires at least one coverage and one Primary Main Cover before saving', async () => {
-    fillRequiredFields();
-    await selectCedent();
-
-    component.saveDraft();
+  it('continues to overview with an incomplete Draft and sends missing values as null', () => {
+    component.continueToOverview();
     fixture.detectChanges();
 
-    expect(component.form.controls.coverageSelection.controls.coverageIds.hasError('required')).toBe(true);
-    expect(component.form.controls.coverageSelection.controls.primaryMainCoverId.hasError('required')).toBe(true);
-    expect(component.form.controls.coverageSelection.controls.coverageIds.touched).toBe(true);
+    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual(expect.objectContaining({
+      name: null,
+      counterpartyId: null,
+      currencyId: null,
+      coverageSelection: null,
+      inceptionDate: null,
+      expiryDate: null,
+      writtenSharePct: null,
+      signedSharePct: null,
+      isFronting: null
+    }));
+
+    request.flush({ id: 321, status: 'DRAFT', umr: null, name: null });
+    fixture.detectChanges();
+
+    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/front-officer/contracts/new/overview'], {
+      queryParams: { contractId: 321 }
+    });
+    expect(component.generatedUmr()).toBe('');
   });
 
   function typeCoverageSearch(value: string): void {
@@ -408,15 +423,16 @@ describe('FacultativeInformationComponent', () => {
     expect(component.form.controls.signedSharePct.hasError('max')).toBe(true);
   });
 
-  it('requires a fronting reference when fronting is enabled', () => {
+  it('does not require a fronting reference during Draft editing', () => {
     component.form.controls.isFronting.setValue(true);
     component.form.controls.frontingReference.markAsTouched();
     fixture.detectChanges();
 
-    expect(component.form.controls.frontingReference.hasError('required')).toBe(true);
+    expect(component.form.controls.frontingReference.hasError('required')).toBe(false);
   });
 
   it('calculates the net premium preview using the selected currency metadata', () => {
+    component.form.controls.currencyId.setValue(1);
     component.form.patchValue({
       sumInsured: 100000,
       premiumRate: 2,
@@ -522,10 +538,10 @@ describe('FacultativeInformationComponent', () => {
     const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
     expect(request.request.body).toEqual(expect.objectContaining({
       sumInsured: 100000,
-      premiumRate: 2,
-      grossPremium: 2000,
+      premiumRate: 0.02,
       cedentCommissionPct: 5
     }));
+    expect(request.request.body.grossPremium).toBeUndefined();
     expect(request.request.body.netPremium).toBeUndefined();
 
     request.flush({
@@ -554,6 +570,7 @@ describe('FacultativeInformationComponent', () => {
     fillRequiredFields();
     await selectCedent();
     selectMainCover();
+    component.form.controls.currencyId.setValue(1);
 
     expect(component.form.contains('umr')).toBe(false);
     expect(fixture.nativeElement.querySelector('#umr')).toBeNull();
@@ -571,6 +588,15 @@ describe('FacultativeInformationComponent', () => {
     expect(request.request.body.status).toBeUndefined();
     expect(request.request.body.umr).toBeUndefined();
     expect(request.request.body.counterpartyId).toBe(99);
+    expect(request.request.body.currencyId).toBe(1);
+    expect(request.request.body.inceptionDate).toBe('2026-08-19');
+    expect(request.request.body.expiryDate).toBe('2026-12-31');
+    expect(request.request.body.receptionDate).toBeNull();
+    expect(request.request.body.sumInsured).toBeNull();
+    expect(request.request.body.limitOfLiability).toBeNull();
+    expect(request.request.body.deductible).toBeNull();
+    expect(request.request.body.premiumRate).toBeNull();
+    expect(Object.values(request.request.body).some(value => typeof value === 'number' && !Number.isFinite(value))).toBe(false);
     expect(request.request.body.coverageSelection).toEqual({
       primaryMainCoverId: 1,
       coverageIds: [1],
@@ -656,6 +682,47 @@ describe('FacultativeInformationComponent', () => {
     });
 
     consoleError.mockRestore();
+  });
+
+  it('maps validation errors to controls and keeps the create form open', async () => {
+    fillRequiredFields();
+    await selectCedent();
+    selectMainCover();
+
+    component.continueToOverview();
+    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    request.flush({
+      message: 'Contract validation failed.',
+      errors: {
+        premiumRate: ['premiumRate must be between 0 and 1.'],
+        'coverageSelection.sectionIds': ['A selected section is invalid.']
+      }
+    }, { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+
+    expect(component.form.controls.premiumRate.hasError('serverError')).toBe(true);
+    expect(component.form.controls.premiumRate.errors?.['serverError']).toBe('premiumRate must be between 0 and 1.');
+    expect(component.form.controls.coverageSelection.controls.sectionIds.hasError('serverError')).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('premiumRate must be between 0 and 1.');
+    expect(fixture.nativeElement.textContent).toContain('A selected section is invalid.');
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(component.isSaving()).toBe(false);
+  });
+
+  it('does not open overview if a successful create response omits the new contract id', async () => {
+    fillRequiredFields();
+    await selectCedent();
+    selectMainCover();
+
+    component.continueToOverview();
+    httpMock.expectOne('http://localhost:5151/api/contracts/facultative').flush({
+      umr: 'IT26-F-PD-0001', status: 'Draft', name: 'FAC 2026'
+    });
+    fixture.detectChanges();
+
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(component.contractId()).toBeNull();
+    expect(component.generalError()).toContain('did not return the new contract ID');
   });
 
   it('uses PUT after a contract ID exists', async () => {
@@ -880,7 +947,7 @@ describe('FacultativeInformationComponent existing contract', () => {
   it('loads the selected draft into the existing form and keeps subsequent saves on PUT', () => {
     flushExistingContract({
       fees: 200,
-      premiumRate: 2,
+      premiumRate: 0.02,
       grossPremium: 2000,
       cedentCommissionPct: 5,
       netPremium: 1900,
@@ -914,11 +981,11 @@ describe('FacultativeInformationComponent existing contract', () => {
     expect(update.request.method).toBe('PUT');
     expect(update.request.body).toEqual(expect.objectContaining({
       sumInsured: 200000,
-      premiumRate: 2,
+      premiumRate: 0.02,
       fees: 200,
-      grossPremium: 4000,
       cedentCommissionPct: 5
     }));
+    expect(update.request.body.grossPremium).toBeUndefined();
     expect(update.request.body.coverageSelection).toEqual({
       primaryMainCoverId: 1,
       coverageIds: [1],
@@ -937,7 +1004,7 @@ describe('FacultativeInformationComponent existing contract', () => {
       currencyId: 1,
       fees: 200,
       sumInsured: 200000,
-      premiumRate: 2,
+      premiumRate: 0.02,
       grossPremium: 4000,
       cedentCommissionPct: 5,
       netPremium: 3800,
