@@ -139,7 +139,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly downloadingInvoiceIds = signal<Set<number>>(new Set());
   readonly isSubmitting = signal(false);
   readonly isDownloadingInvoice = signal(false);
-  readonly isGeneratingClosing = signal(false);
   readonly isDownloadingClosing = signal(false);
   readonly isConfirmingTransfer = signal(false);
   readonly isLoadingContext = signal(false);
@@ -1906,11 +1905,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
     }
   }
 
-  canPrintSelectedClosing(): boolean {
-    const rows = this.selectedRemittanceRows();
-    return rows.length > 0 && rows.length === this.selectedRemittanceIds().size && rows.every(row => this.isOutgoingClosingEligible(row));
-  }
-
   confirmSelectedRemittancesForDisbursement(): void {
     const rows = this.selectedRemittanceRows();
     const ids = rows.map(row => this.getRemittanceId(row));
@@ -1966,41 +1960,18 @@ export class FinancialWorkspacePageComponent implements OnInit {
     });
   }
 
-  printSelectedClosing(): void {
-    const ids = [...this.selectedRemittanceIds()];
-    if (!ids.length || this.isGeneratingClosing()) {
-      return;
-    }
-
-    this.isGeneratingClosing.set(true);
-    this.errorMessage.set('');
-    this.successMessage.set('');
-    this.workflowService.createOutgoingClosing({ remittanceIds: ids }).pipe(
-      finalize(() => this.isGeneratingClosing.set(false))
-    ).subscribe({
-      next: file => {
-        this.saveDownloadedFile(file, 'outgoing-closing.pdf');
-        this.successMessage.set('Closing generated successfully.');
-        this.clearRemittanceSelection();
-        this.loadRemittances();
-        this.refreshNotifications();
-      },
-      error: (error: HttpErrorResponse) => this.setDownloadError(error, 'Closing could not be generated.')
-    });
-  }
-
   downloadClosing(remittance: RemittanceResponse): void {
-    const closingId = this.getPositiveId(remittance.closingId);
-    if (closingId == null || this.isDownloadingClosing()) {
+    const remittanceId = this.getPositiveId(remittance.remittanceRef);
+    if (remittanceId == null || this.isDownloadingClosing()) {
       return;
     }
 
     this.isDownloadingClosing.set(true);
     this.errorMessage.set('');
-    this.workflowService.downloadOutgoingClosing(closingId).pipe(
+    this.workflowService.downloadRemittanceClosing(remittanceId).pipe(
       finalize(() => this.isDownloadingClosing.set(false))
     ).subscribe({
-      next: file => this.saveDownloadedFile(file, `closing-${remittance.closingReference ?? closingId}.pdf`),
+      next: file => this.saveDownloadedFile(file, `Closing_${this.getRemittanceReference(remittance)}.pdf`),
       error: (error: HttpErrorResponse) => this.setDownloadError(error, 'Closing document could not be downloaded.')
     });
   }

@@ -82,6 +82,18 @@ describe('FinancialWorkflowService', () => {
     request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Avoir-AV-2026-000001.pdf"' } });
   });
 
+  it('downloads a Credit Note from the selected Avoir endpoint', () => {
+    const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+    service.downloadCreditNotePdf(93).subscribe(file => {
+      expect(file.blob).toBe(blob);
+      expect(file.fileName).toBe('Credit_Note_AV-2026-000012.pdf');
+    });
+    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/avoirs/93/credit-note/pdf');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Credit_Note_AV-2026-000012.pdf"' } });
+  });
+
   it('downloads the persisted closing PDF with the server filename', () => {
     service.downloadFinanceClosing(1).subscribe(result => expect(result.fileName).toBe('IRIS-CL-1.pdf'));
     const request = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/pdf');
@@ -89,6 +101,15 @@ describe('FinancialWorkflowService', () => {
     request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), {
       headers: { 'Content-Disposition': 'attachment; filename=IRIS-CL-1.pdf' }
     });
+  });
+
+  it('downloads a closing PDF using the selected remittance ID', () => {
+    const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+    service.downloadRemittanceClosing(22).subscribe(result => expect(result.blob).toBe(blob));
+    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/remittances/22/closing/pdf');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename=Closing_REM-22.pdf' } });
   });
 
   it('loads Finance Officer incoming remittances from the finance receipt endpoint', () => {

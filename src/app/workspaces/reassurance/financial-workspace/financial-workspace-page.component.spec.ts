@@ -132,6 +132,7 @@ describe('FinancialWorkspacePageComponent', () => {
     startClosingDisbursement: ReturnType<typeof vi.fn>;
     confirmClosingTransfer: ReturnType<typeof vi.fn>;
     downloadFinanceClosing: ReturnType<typeof vi.fn>;
+    downloadRemittanceClosing: ReturnType<typeof vi.fn>;
     createDisbursement: ReturnType<typeof vi.fn>;
     startDisbursement: ReturnType<typeof vi.fn>;
     confirmTransfer: ReturnType<typeof vi.fn>;
@@ -208,6 +209,7 @@ describe('FinancialWorkspacePageComponent', () => {
       startClosingDisbursement: vi.fn().mockReturnValue(of({})),
       confirmClosingTransfer: vi.fn().mockReturnValue(of({})),
       downloadFinanceClosing: vi.fn().mockReturnValue(of({})),
+      downloadRemittanceClosing: vi.fn().mockReturnValue(of({ blob: new Blob(['pdf'], { type: 'application/pdf' }), fileName: 'Closing_REM-1.pdf', contentType: 'application/pdf' })),
       createDisbursement: vi.fn().mockReturnValue(of({})),
       startDisbursement: vi.fn().mockReturnValue(of({})),
       confirmTransfer: vi.fn().mockReturnValue(of({})),
@@ -464,6 +466,21 @@ describe('FinancialWorkspacePageComponent', () => {
 
     expect(save).toHaveBeenCalledWith(expect.anything(), 'Avoir_AV-2026-000012.pdf');
     expect(component.downloadingInvoiceIds().size).toBe(0);
+  });
+
+  it('downloads a Closing by the remittance ID instead of its closing ID', () => {
+    createComponent();
+    const component = fixture.componentInstance;
+    const remittance = { remittanceRef: 22, remittanceReference: 'REM-22', closingId: 7 } as any;
+    const request = new Subject<any>();
+    workflowService.downloadRemittanceClosing.mockReturnValue(request);
+    const save = vi.spyOn(component as any, 'saveDownloadedFile').mockImplementation(() => {});
+
+    component.downloadClosing(remittance);
+
+    expect(workflowService.downloadRemittanceClosing).toHaveBeenCalledExactlyOnceWith(22);
+    request.next({ blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), fileName: 'Closing_REM-22.pdf' });
+    expect(save).toHaveBeenCalledWith(expect.anything(), 'Closing_REM-22.pdf');
   });
 
   it('shows download failures without hiding invoices and re-enables the row', () => {

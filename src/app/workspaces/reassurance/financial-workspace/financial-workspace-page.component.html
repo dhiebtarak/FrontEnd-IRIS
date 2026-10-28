@@ -288,11 +288,6 @@
                 {{ isSubmitting() ? 'Confirming...' : 'Confirm for Disbursement' }}
               </button>
             }
-            @if (canPrintSelectedClosing()) {
-              <button type="button" (click)="printSelectedClosing()" [disabled]="isGeneratingClosing()" class="rounded-xl border border-iris-border px-5 py-3 text-sm font-bold text-iris-navy hover:border-iris-teal disabled:opacity-50">
-                {{ isGeneratingClosing() ? 'Generating...' : 'Print Closing (' + selectedRemittanceIds().size + ')' }}
-              </button>
-            }
             <button type="button" (click)="clearRemittanceSelection()" [disabled]="isSubmitting()" class="rounded-xl border border-iris-border px-4 py-3 text-sm font-bold text-iris-slate">Clear selection</button>
           </div>
         </div>
@@ -370,7 +365,7 @@
                   <td class="px-3 py-3">{{ remittance.currencyCode }}</td>
                   <td class="px-3 py-3"><span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getStatusClasses(remittance.status)">{{ getRemittanceStatusLabel(remittance.status) }}</span></td>
                   <td class="px-3 py-3">
-                    @if (remittance.closingId) {
+                    @if (remittance.closingId || isOutgoingClosingEligible(remittance)) {
                       <button type="button" (click)="downloadClosing(remittance)" [disabled]="isDownloadingClosing()" class="font-bold text-iris-teal hover:text-iris-navy disabled:opacity-50">Download Closing</button>
                     } @else if (canConfirmRemittance(remittance)) {
                       <button type="button" (click)="confirmRemittance(remittance)" [disabled]="isSubmitting()" class="font-bold text-iris-teal hover:text-iris-navy disabled:opacity-50">Confirm</button>

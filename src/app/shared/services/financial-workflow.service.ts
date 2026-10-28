@@ -33,7 +33,6 @@ import {
   InvoiceRequest,
   InvoiceResponse,
   NotificationItem,
-  OutgoingClosingRequest,
   PairEncaissementBatchRequest,
   PairInvoiceAllocationBatchRequest,
   PremiumDebitNoteAllocation,
@@ -268,15 +267,8 @@ export class FinancialWorkflowService {
     return this.httpClient.post<RemittanceBatchConfirmationResponse>(`${this.baseUrl}/back-office/remittances/confirm-for-disbursement/batch`, { remittanceIds });
   }
 
-  createOutgoingClosing(request: OutgoingClosingRequest): Observable<BackendFileDownload> {
-    return this.httpClient.post(`${this.baseUrl}/back-office/remittances/closings`, request, {
-      observe: 'response',
-      responseType: 'blob'
-    }).pipe(map(response => this.mapFileDownload(response)));
-  }
-
-  downloadOutgoingClosing(closingId: number): Observable<BackendFileDownload> {
-    return this.httpClient.get(`${this.baseUrl}/back-office/remittances/closings/${closingId}/document`, {
+  downloadRemittanceClosing(remittanceId: number): Observable<BackendFileDownload> {
+    return this.httpClient.get(`${this.baseUrl}/back-office/remittances/${remittanceId}/closing/pdf`, {
       observe: 'response',
       responseType: 'blob'
     }).pipe(map(response => this.mapFileDownload(response)));
@@ -532,6 +524,13 @@ export class FinancialWorkflowService {
 
   downloadAvoirCreditNote(avoirId: number): Observable<BackendFileDownload> {
     return this.downloadAvoirPdf(avoirId);
+  }
+
+  downloadCreditNotePdf(avoirId: number): Observable<BackendFileDownload> {
+    return this.httpClient.get(this.baseUrl + '/back-office/avoirs/' + avoirId + '/credit-note/pdf', {
+      observe: 'response',
+      responseType: 'blob'
+    }).pipe(map(response => this.mapFileDownload(response)));
   }
 
   createCedentClosing(contractId: number, request: CedentClosingRequest): Observable<CedentClosingResponse> {

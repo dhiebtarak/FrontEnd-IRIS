@@ -674,7 +674,3 @@ export interface CedentClosingResponse {
   closingInformation: string;
   operationDate: string | null;
 }
-
-export interface OutgoingClosingRequest {
-  remittanceIds: number[];
-}

@@ -1690,26 +1690,47 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Create an invoice first');
   });
 
-  it('downloads the contract Credit Note using the contract ID, independent of invoice history', () => {
+  it('keeps the contract Debit Note when Avoir history exists', () => {
     enableBackOfficeMode();
     flushContract(123, {
       ...contractResponse,
       status: 'Bound',
       hasAvoir: true,
-      contractDocumentType: 'CREDIT_NOTE',
+      contractDocumentType: 'DEBIT_NOTE',
       contractDocumentDownloadUrl: '/api/back-office/contracts/123/financial-note/pdf'
     });
     flushInvoiceContextAndHistory(invoiceContextResponse, []);
-    expect(component.contractDocumentActionLabel()).toBe('Download Credit Note');
+    expect(component.contractDocumentActionLabel()).toBe('Download Debit Note');
     component.downloadContractFinancialNote();
     const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/financial-note/pdf');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), { headers: {
-      'Content-Disposition': 'attachment; filename="CreditNote_CN-IT26-F-PD-0001.pdf"',
-      'Content-Type': 'application/pdf', 'X-Financial-Note-Type': 'CREDIT_NOTE',
-      'X-Financial-Note-Reference': 'CN-IT26-F-PD-0001'
+      'Content-Disposition': 'attachment; filename="DebitNote_DN-IT26-F-PD-0001.pdf"',
+      'Content-Type': 'application/pdf', 'X-Financial-Note-Type': 'DEBIT_NOTE',
+      'X-Financial-Note-Reference': 'DN-IT26-F-PD-0001'
     } });
+  });
+
+  it('downloads a Credit Note using only the selected Avoir ID', () => {
+    flushContract(123, { ...contractResponse, status: 'Bound' });
+    const downloadBlob = vi.spyOn(
+      component as unknown as { downloadBlob: (blob: Blob, filename: string) => void },
+      'downloadBlob'
+    );
+    const avoir = { ...invoiceResponse, invoiceId: 92, invoiceType: 'AVOIR', invoiceNumber: 'AV-2026-000011', documentNumber: 'AV-2026-000011' };
+
+    component.downloadCreditNoteDocument(avoir);
+    component.downloadCreditNoteDocument(avoir);
+
+    const request = httpMock.expectOne('http://localhost:5151/api/back-office/avoirs/92/credit-note/pdf');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(new Blob(['%PDF-1.7'], { type: 'application/pdf' }), {
+      headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Credit_Note_AV-2026-000011.pdf"' }
+    });
+
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'Credit_Note_AV-2026-000011.pdf');
   });
 
   it('downloads a contract Debit Note without reading or selecting Invoice History', () => {

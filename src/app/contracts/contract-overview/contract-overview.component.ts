@@ -104,6 +104,7 @@ export class ContractOverviewComponent implements OnInit {
   readonly isLoadingInvoicePreview = signal(false);
   readonly isSubmittingInvoice = signal(false);
   readonly downloadingDebitNoteInvoiceId = signal<number | null>(null);
+  readonly downloadingCreditNoteAvoirId = signal<number | null>(null);
   readonly isDownloadingFinancialNote = signal(false);
   readonly invoiceError = signal('');
   readonly invoiceApiErrorDetails = signal<InvoiceApiErrorDetails | null>(null);
@@ -112,6 +113,7 @@ export class ContractOverviewComponent implements OnInit {
   readonly invoiceSuccessMessage = signal('');
   readonly invoiceDownloadError = signal('');
   readonly invoiceRowDownloadErrors = signal<Record<number, string>>({});
+  readonly creditNoteDownloadErrors = signal<Record<number, string>>({});
   readonly invoiceContext = signal<InvoiceContext | null>(null);
   readonly invoiceHistory = signal<PremiumDebitNoteResponse[]>([]);
   readonly avoirHistory = signal<PremiumDebitNoteResponse[]>([]);
@@ -854,9 +856,7 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   contractDocumentActionLabel(): string {
-    const type = this.contract()?.contractDocumentType?.trim().toUpperCase();
-    const hasAvoir = type === 'CREDIT_NOTE' || this.contract()?.hasAvoir === true;
-    return hasAvoir ? 'Download Credit Note' : 'Download Debit Note';
+    return 'Download Debit Note';
   }
 
   isContractBound(): boolean {
@@ -939,20 +939,13 @@ export class ContractOverviewComponent implements OnInit {
     this.isDownloadingFinancialNote.set(true);
     this.invoiceDownloadError.set('');
     this.financialWorkflowService.downloadContractFinancialNote(contractId).pipe(
-      switchMap(download => !download.fileName?.trim() || !download.documentType
+      switchMap(download => !download.fileName?.trim() || download.documentType !== 'DEBIT_NOTE'
         ? throwError(() => new Error('The financial-note response is missing its document type or filename.'))
         : of(download)),
       switchMap(download => this.validatePdfDownload(download)),
       finalize(() => this.isDownloadingFinancialNote.set(false))
     ).subscribe({
-      next: download => {
-        this.contract.update(current => current ? {
-          ...current,
-          contractDocumentType: download.documentType,
-          hasAvoir: download.documentType === 'CREDIT_NOTE'
-        } : current);
-        this.downloadBlob(download.blob, download.fileName!);
-      },
+      next: download => this.downloadBlob(download.blob, download.fileName!),
       error: error => { void this.handleFinancialNoteDownloadError(error); }
     });
   }
@@ -1260,7 +1253,7 @@ export class ContractOverviewComponent implements OnInit {
       return next;
     });
     const request = isAvoir
-      ? this.financialWorkflowService.downloadAvoirCreditNote(invoiceId)
+      ? this.financialWorkflowService.downloadAvoirPdf(invoiceId)
       : this.financialWorkflowService.downloadPremiumDebitNote(invoiceId);
 
     request.pipe(
@@ -1274,6 +1267,62 @@ export class ContractOverviewComponent implements OnInit {
       next: download => this.downloadBlob(download.blob, this.getInvoiceDocumentFilename(invoice, download)),
       error: error => { void this.handleInvoiceDocumentDownloadError(invoice, error); }
     });
+  }
+
+  downloadCreditNoteDocument(avoir: PremiumDebitNoteResponse): void {
+    const avoirId = this.getPositiveId(avoir.invoiceId);
+    if (avoirId == null || this.downloadingCreditNoteAvoirId() != null) return;
+
+    this.downloadingCreditNoteAvoirId.set(avoirId);
+    this.creditNoteDownloadErrors.update(errors => {
+      const next = { ...errors };
+      delete next[avoirId];
+      return next;
+    });
+
+    this.financialWorkflowService.downloadCreditNotePdf(avoirId).pipe(
+      switchMap(download => from(download.blob.slice(0, 5).text()).pipe(
+        switchMap(signature => signature === '%PDF-'
+          ? of(download)
+          : throwError(() => new InvalidPdfResponseError(download)))
+      )),
+      finalize(() => this.downloadingCreditNoteAvoirId.set(null))
+    ).subscribe({
+      next: download => {
+        const number = avoir.documentNumber || avoir.invoiceNumber || String(avoirId);
+        this.downloadBlob(download.blob, download.fileName?.trim() || ('Credit_Note_' + number + '.pdf'));
+      },
+      error: error => { void this.handleCreditNoteDownloadError(avoir, error); }
+    });
+  }
+
+  private async handleCreditNoteDownloadError(avoir: PremiumDebitNoteResponse, error: unknown): Promise<void> {
+    const invalidPdf = error instanceof InvalidPdfResponseError;
+    const httpError = error instanceof HttpErrorResponse ? error : null;
+    let payload: unknown = invalidPdf ? error.response.blob : httpError?.error;
+    if (payload instanceof Blob) {
+      const text = await payload.text();
+      try { payload = JSON.parse(text) as unknown; } catch { payload = text; }
+    }
+
+    const parsedError = new HttpErrorResponse({
+      status: httpError?.status ?? 502,
+      statusText: httpError?.statusText ?? 'Invalid PDF response',
+      error: payload
+    });
+    const backendMessage = this.getBackendMessage(parsedError);
+    const message = backendMessage && !/^\s*</.test(backendMessage)
+      ? backendMessage
+      : invalidPdf ? 'The server response was not a valid Credit Note PDF.' : 'Credit Note PDF could not be downloaded.';
+    const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const traceId = body['traceId'] ?? body['traceID'] ?? body['requestId'];
+    const avoirId = this.getPositiveId(avoir.invoiceId);
+    if (avoirId != null) {
+      this.creditNoteDownloadErrors.update(errors => ({
+        ...errors,
+        [avoirId]: typeof traceId === 'string' && traceId.trim() ? (message + ' (Trace ID: ' + traceId.trim() + ')') : message
+      }));
+    }
   }
 
   private getInvoiceDocumentFilename(invoice: PremiumDebitNoteResponse, download: BackendFileDownload): string {
