@@ -53,7 +53,7 @@ describe('ContractsService', () => {
       result = summary;
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/dashboard-summary');
+    const request = httpTesting.expectOne('/api/contracts/dashboard-summary');
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
 
@@ -85,7 +85,7 @@ describe('ContractsService', () => {
     });
 
     const request = httpTesting.expectOne(
-      'http://localhost:5151/api/contracts?PageNumber=1&PageSize=20&SortBy=updatedAt&SortDirection=desc'
+      '/api/contracts?PageNumber=1&PageSize=20&SortBy=updatedAt&SortDirection=desc'
     );
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
@@ -111,7 +111,7 @@ describe('ContractsService', () => {
       sortDirection: 'asc'
     }).subscribe();
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/contracts');
+    const request = httpTesting.expectOne(req => req.url === '/api/contracts');
     expect(request.request.params.keys().sort()).toEqual([
       'ContractType',
       'CounterpartyId',
@@ -160,7 +160,7 @@ describe('ContractsService', () => {
       sortDirection: 'desc'
     }).subscribe();
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/contracts');
+    const request = httpTesting.expectOne(req => req.url === '/api/contracts');
     expect(request.request.params.keys()).toEqual(['PageNumber', 'PageSize', 'SortBy', 'SortDirection']);
     request.flush({ items: [], pageNumber: 1, page: 1, pageSize: 20, totalCount: 0, totalPages: 0 });
   });
@@ -172,7 +172,7 @@ describe('ContractsService', () => {
       result = types;
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/reference-data/contract-types');
+    const request = httpTesting.expectOne('/api/reference-data/contract-types');
     request.flush([
       {
         code: 'FACULTATIVE',
@@ -235,7 +235,7 @@ describe('ContractsService', () => {
       ]);
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/coverage-catalog/main-covers');
+    const request = httpTesting.expectOne('/api/coverage-catalog/main-covers');
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
     request.flush([
@@ -284,7 +284,7 @@ describe('ContractsService', () => {
     });
 
     const request = httpTesting.expectOne(req =>
-      req.url === 'http://localhost:5151/api/coverage-catalog/1/children'
+      req.url === '/api/coverage-catalog/1/children'
       && req.params.get('level') === 'SECTION'
     );
     expect(request.request.method).toBe('GET');
@@ -347,7 +347,7 @@ describe('ContractsService', () => {
       ]);
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/facultative/7');
+    const request = httpTesting.expectOne('/api/contracts/facultative/7');
     request.flush({
       id: 7,
       status: 'Draft',
@@ -404,7 +404,7 @@ describe('ContractsService', () => {
       expect(result.netPremium).toBeNull();
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/7/overview');
+    const request = httpTesting.expectOne('/api/contracts/7/overview');
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
     request.flush({
@@ -446,7 +446,7 @@ describe('ContractsService', () => {
       ]);
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels');
+    const request = httpTesting.expectOne('/api/contracts/123/panels');
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
     request.flush([
@@ -493,7 +493,7 @@ describe('ContractsService', () => {
       expect(result.panels?.[0].netPremium).toBe(46740);
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels');
+    const request = httpTesting.expectOne('/api/contracts/123/panels');
     expect(request.request.method).toBe('POST');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
     expect(request.request.body).toEqual({
@@ -560,7 +560,7 @@ describe('ContractsService', () => {
       expect(result.panels?.[0].status).toBe('Confirmed');
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels/3');
+    const request = httpTesting.expectOne('/api/contracts/123/panels/3');
     expect(request.request.method).toBe('PUT');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
     expect(request.request.body).toEqual({
@@ -614,7 +614,7 @@ describe('ContractsService', () => {
       expect(result.status).toBe('Confirmed');
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels/3/confirm');
+    const request = httpTesting.expectOne('/api/contracts/123/panels/3/confirm');
     expect(request.request.method).toBe('POST');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
     request.flush({
@@ -632,7 +632,7 @@ describe('ContractsService', () => {
       expect(result.status).toBe('Bound');
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/start-binding');
+    const request = httpTesting.expectOne('/api/contracts/123/start-binding');
     expect(request.request.method).toBe('POST');
     expect(request.request.headers.get('Authorization')).toBe('Bearer dashboard-token');
     request.flush({
@@ -656,7 +656,7 @@ describe('ContractsService', () => {
       expect(result.blob?.size).toBeGreaterThan(0);
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/slips');
+    const request = httpTesting.expectOne('/api/contracts/123/slips');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(new Blob(['docx'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), {
@@ -671,7 +671,7 @@ describe('ContractsService', () => {
       expect(result.filename).toBeNull();
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/contracts/123/slips');
+    const request = httpTesting.expectOne('/api/contracts/123/slips');
     request.flush(new Blob([]));
   });
 });

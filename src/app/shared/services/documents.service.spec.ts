@@ -25,7 +25,7 @@ describe('DocumentsService', () => {
     };
 
     service.uploadDocument({ scope: 'contract', contractId: 123 }, request).subscribe();
-    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/contracts/123/documents');
+    const httpRequest = httpTesting.expectOne('/api/contracts/123/documents');
 
     expect(httpRequest.request.method).toBe('POST');
     expect(httpRequest.request.body).toEqual(request);
@@ -35,7 +35,7 @@ describe('DocumentsService', () => {
 
   it('uses both contract and panel IDs for placement documents', () => {
     service.getDocuments({ scope: 'placement', contractId: 123, panelId: 45 }).subscribe();
-    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/contracts/123/panels/45/documents');
+    const httpRequest = httpTesting.expectOne('/api/contracts/123/panels/45/documents');
 
     expect(httpRequest.request.method).toBe('GET');
     httpRequest.flush([]);
@@ -49,7 +49,7 @@ describe('DocumentsService', () => {
     };
 
     service.uploadDocument({ scope: 'receipt', receiptId: 99 }, request).subscribe();
-    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/bank-receipts/99/attachments');
+    const httpRequest = httpTesting.expectOne('/api/bank-receipts/99/attachments');
 
     expect(httpRequest.request.method).toBe('POST');
     expect(httpRequest.request.body).toEqual(request);
@@ -59,7 +59,7 @@ describe('DocumentsService', () => {
   it('requests document downloads as Blobs and reads the server filename', () => {
     let result: { blob: Blob; fileName: string | null } | undefined;
     service.downloadDocument(7).subscribe(value => result = value);
-    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/documents/7/download');
+    const httpRequest = httpTesting.expectOne('/api/documents/7/download');
 
     expect(httpRequest.request.responseType).toBe('blob');
     httpRequest.flush(new Blob(['file'], { type: 'application/pdf' }), {
@@ -72,7 +72,7 @@ describe('DocumentsService', () => {
 
   it('passes the receipt ID when downloading a receipt attachment', () => {
     service.downloadDocument(7, { scope: 'receipt', receiptId: 99 }).subscribe();
-    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/bank-receipts/99/attachments/7/download');
+    const httpRequest = httpTesting.expectOne('/api/bank-receipts/99/attachments/7/download');
 
     expect(httpRequest.request.responseType).toBe('blob');
     httpRequest.flush(new Blob(['file'], { type: 'application/pdf' }));
@@ -80,7 +80,7 @@ describe('DocumentsService', () => {
 
   it('archives a document through the document-owned route', () => {
     service.archiveDocument(7).subscribe();
-    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/documents/7');
+    const httpRequest = httpTesting.expectOne('/api/documents/7');
 
     expect(httpRequest.request.method).toBe('DELETE');
     expect(httpRequest.request.body).toBeNull();
@@ -89,7 +89,7 @@ describe('DocumentsService', () => {
 
   it('passes the receipt ID when archiving a receipt attachment', () => {
     service.archiveDocument(7, { scope: 'receipt', receiptId: 99 }).subscribe();
-    const httpRequest = httpTesting.expectOne('http://localhost:5151/api/bank-receipts/99/attachments/7');
+    const httpRequest = httpTesting.expectOne('/api/bank-receipts/99/attachments/7');
 
     expect(httpRequest.request.method).toBe('DELETE');
     expect(httpRequest.request.body).toBeNull();

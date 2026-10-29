@@ -28,7 +28,7 @@ describe('CounterpartiesService', () => {
       isActive: true
     }).subscribe();
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/counterparties');
+    const request = httpTesting.expectOne(req => req.url === '/api/counterparties');
 
     expect(request.request.method).toBe('GET');
     expect(request.request.params.get('pageNumber')).toBe('2');
@@ -61,7 +61,7 @@ describe('CounterpartiesService', () => {
       ]);
     });
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/counterparties');
+    const request = httpTesting.expectOne(req => req.url === '/api/counterparties');
     expect(request.request.method).toBe('GET');
 
     request.flush({
@@ -97,7 +97,7 @@ describe('CounterpartiesService', () => {
       }
     });
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/counterparties');
+    const request = httpTesting.expectOne(req => req.url === '/api/counterparties');
     request.flush({
       items: [
         {

@@ -25,7 +25,7 @@ describe('FinancialWorkflowService', () => {
 
   it('retrieves the closing context using the closing ID', () => {
     service.getClosingDisbursementContext(1).subscribe(result => expect(result.closingId).toBe(1));
-    const request = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/disbursement-context');
+    const request = httpTesting.expectOne('/api/finance/closings/1/disbursement-context');
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer finance-token');
     request.flush({ closingId: 1, lines: [{ remittanceRef: 6, signedNetPayableAmount: -0.45 }], totalClosingAmount: 21.25, isConsistent: true, calculatedTotal: 21.25, difference: 0 });
@@ -35,25 +35,25 @@ describe('FinancialWorkflowService', () => {
     service.getFinanceClosingQueue().subscribe(rows => expect(rows).toEqual([
       expect.objectContaining({ closingId: 8, closingReference: 'CL-8', lineCount: 2, premiumTotal: 200, avoirTotal: 0.45, netPayableAmount: 199.55 })
     ]));
-    const request = httpTesting.expectOne('http://localhost:5151/api/finance/disbursement-queue');
+    const request = httpTesting.expectOne('/api/finance/disbursement-queue');
     expect(request.request.method).toBe('GET');
     request.flush([{ closingId: 8, closingReference: 'CL-8', lineCount: 2, premiumTotal: 200, avoirTotal: 0.45, netPayableAmount: 199.55, currencyCode: 'TND', status: 'AwaitingFinanceDisbursement' }]);
   });
 
   it('starts and confirms the batch using the closing ID', () => {
     service.startClosingDisbursement(1).subscribe();
-    const started = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/start-disbursement');
+    const started = httpTesting.expectOne('/api/finance/closings/1/start-disbursement');
     expect(started.request.method).toBe('POST');
     started.flush({ closingId: 1, status: 'PaymentInProgress' });
     service.confirmClosingTransfer(1).subscribe();
-    const confirmed = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/confirm-transfer');
+    const confirmed = httpTesting.expectOne('/api/finance/closings/1/confirm-transfer');
     expect(confirmed.request.method).toBe('POST');
     confirmed.flush({ closingId: 1, status: 'Closed' });
   });
 
   it('confirms selected remittance primary IDs with one Back Officer batch request', () => {
     service.confirmRemittancesForDisbursement([9, 10]).subscribe(result => expect(result.items).toHaveLength(2));
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/remittances/confirm-for-disbursement/batch');
+    const request = httpTesting.expectOne('/api/back-office/remittances/confirm-for-disbursement/batch');
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({ remittanceIds: [9, 10] });
     request.flush({ items: [{ remittanceId: 9, status: 'AwaitingFinanceDisbursement' }, { remittanceId: 10, status: 'AwaitingFinanceDisbursement' }] });
@@ -65,7 +65,7 @@ describe('FinancialWorkflowService', () => {
       expect(file.blob).toBe(blob);
       expect(file.fileName).toBe('Invoice-91.pdf');
     });
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/invoices/91/pdf');
+    const request = httpTesting.expectOne('/api/back-office/invoices/91/pdf');
     expect(request.request.responseType).toBe('blob');
     request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Invoice-91.pdf"' } });
   });
@@ -76,7 +76,7 @@ describe('FinancialWorkflowService', () => {
       expect(file.blob).toBe(blob);
       expect(file.fileName).toBe('Avoir-AV-2026-000001.pdf');
     });
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/avoirs/92/pdf');
+    const request = httpTesting.expectOne('/api/back-office/avoirs/92/pdf');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Avoir-AV-2026-000001.pdf"' } });
@@ -88,7 +88,7 @@ describe('FinancialWorkflowService', () => {
       expect(file.blob).toBe(blob);
       expect(file.fileName).toBe('Credit_Note_AV-2026-000012.pdf');
     });
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/avoirs/93/credit-note/pdf');
+    const request = httpTesting.expectOne('/api/back-office/avoirs/93/credit-note/pdf');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Credit_Note_AV-2026-000012.pdf"' } });
@@ -96,7 +96,7 @@ describe('FinancialWorkflowService', () => {
 
   it('downloads the persisted closing PDF with the server filename', () => {
     service.downloadFinanceClosing(1).subscribe(result => expect(result.fileName).toBe('IRIS-CL-1.pdf'));
-    const request = httpTesting.expectOne('http://localhost:5151/api/finance/closings/1/pdf');
+    const request = httpTesting.expectOne('/api/finance/closings/1/pdf');
     expect(request.request.responseType).toBe('blob');
     request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), {
       headers: { 'Content-Disposition': 'attachment; filename=IRIS-CL-1.pdf' }
@@ -106,7 +106,7 @@ describe('FinancialWorkflowService', () => {
   it('downloads a closing PDF using the selected remittance ID', () => {
     const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
     service.downloadRemittanceClosing(22).subscribe(result => expect(result.blob).toBe(blob));
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/remittances/22/closing/pdf');
+    const request = httpTesting.expectOne('/api/back-office/remittances/22/closing/pdf');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename=Closing_REM-22.pdf' } });
@@ -125,7 +125,7 @@ describe('FinancialWorkflowService', () => {
       expect(result.totalCount).toBe(0);
     });
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/finance/bank-receipts');
+    const request = httpTesting.expectOne(req => req.url === '/api/finance/bank-receipts');
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer finance-token');
     expect(request.request.params.get('pageNumber')).toBe('1');
@@ -144,7 +144,7 @@ describe('FinancialWorkflowService', () => {
       expect(result.pageNumber).toBe(2);
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/bank-receipts?pageNumber=2&pageSize=10');
+    const request = httpTesting.expectOne('/api/back-office/bank-receipts?pageNumber=2&pageSize=10');
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer finance-token');
     request.flush({ items: [], pageNumber: 2, page: 2, pageSize: 10, totalCount: 0, totalPages: 0 });
@@ -160,7 +160,7 @@ describe('FinancialWorkflowService', () => {
 
     service.createReceipt(payload).subscribe();
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/finance/bank-receipts');
+    const request = httpTesting.expectOne('/api/finance/bank-receipts');
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual(payload);
     request.flush({ ...payload, idBankReceipt: 9, counterpartyName: 'Cedent', currencyCode: 'USD', availableAmount: 1500, allocatedAmount: 0, pairingStatus: 'Unpaired' });
@@ -172,7 +172,7 @@ describe('FinancialWorkflowService', () => {
       expect(result).toEqual({ items: [], status: 200 });
     });
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/bank-receipts/9/eligible-invoices');
+    const request = httpTesting.expectOne(req => req.url === '/api/back-office/bank-receipts/9/eligible-invoices');
     expect(request.request.method).toBe('GET');
     expect(request.request.params.get('search')).toBe('ami');
     expect(request.request.headers.get('Authorization')).toBe('Bearer back-officer-token');
@@ -189,7 +189,7 @@ describe('FinancialWorkflowService', () => {
         isEligibleForRefund: false, eligibilityFailureReason: 'A cedent refund requires this encaissement to be fully paired.'
       }]);
     });
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/invoices/25/eligible-refund-receipts');
+    const request = httpTesting.expectOne('/api/back-office/invoices/25/eligible-refund-receipts');
     expect(request.request.method).toBe('GET');
     request.flush([{
       bankReceiptId: 2, receiptReference: 'BR-2', receptionDate: '2026-10-01', operationDate: '2026-09-01', receiptAmount: 45, allocatedAmount: 10, remainingAmount: 35, pairingStatus: 'PartiallyPaired',
@@ -202,7 +202,7 @@ describe('FinancialWorkflowService', () => {
   it('posts Avoir refund fields using the selected receipt id', () => {
     const payload = { avoirInvoiceId: 25, amount: 10, idempotencyKey: 'refund-25-2' };
     service.refundAvoir(2, payload).subscribe(result => expect(result.remittanceId).toBe(7));
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/bank-receipts/2/invoice-allocations/avoir-refund');
+    const request = httpTesting.expectOne('/api/back-office/bank-receipts/2/invoice-allocations/avoir-refund');
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual(payload);
     request.flush({ remittanceId: 7 });
@@ -239,7 +239,7 @@ describe('FinancialWorkflowService', () => {
       ]);
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/bank-receipts/9/eligible-invoices');
+    const request = httpTesting.expectOne('/api/back-office/bank-receipts/9/eligible-invoices');
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.get('Authorization')).toBe('Bearer back-officer-token');
     request.flush({
@@ -284,7 +284,7 @@ describe('FinancialWorkflowService', () => {
         currencyCode: 'TND'
       }));
     });
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/bank-receipts/9/eligible-invoices');
+    const request = httpTesting.expectOne('/api/back-office/bank-receipts/9/eligible-invoices');
     request.flush({ items: [{
       invoiceId: 13,
       documentNumber: 'AV-2026-000013',
@@ -304,7 +304,7 @@ describe('FinancialWorkflowService', () => {
       exchangeRate: 1
     } as unknown as { invoiceId: number; allocatedAmount: number }).subscribe();
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/bank-receipts/9/invoice-allocations');
+    const request = httpTesting.expectOne('/api/back-office/bank-receipts/9/invoice-allocations');
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({
       invoiceId: 34,
@@ -329,18 +329,18 @@ describe('FinancialWorkflowService', () => {
       settlementMethod: 'BANK_TRANSFER'
     }).subscribe();
 
-    const remittancesRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/remittances' && req.method === 'GET');
+    const remittancesRequest = httpTesting.expectOne(req => req.url === '/api/back-office/remittances' && req.method === 'GET');
     expect(remittancesRequest.request.method).toBe('GET');
     expect(remittancesRequest.request.params.get('pageNumber')).toBe('1');
     expect(remittancesRequest.request.params.get('pageSize')).toBe('20');
-    const confirmRequest = httpTesting.expectOne('http://localhost:5151/api/back-office/remittances/77/confirm');
+    const confirmRequest = httpTesting.expectOne('/api/back-office/remittances/77/confirm');
     expect(confirmRequest.request.method).toBe('POST');
-    const invoiceListRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/invoices' && req.method === 'GET');
+    const invoiceListRequest = httpTesting.expectOne(req => req.url === '/api/back-office/invoices' && req.method === 'GET');
     expect(invoiceListRequest.request.method).toBe('GET');
     expect(invoiceListRequest.request.params.get('contractId')).toBe('12');
     expect(invoiceListRequest.request.params.get('paymentStatus')).toBe('Unsettled');
     expect(invoiceListRequest.request.params.get('search')).toBe('cedent');
-    const createInvoiceRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/invoices' && req.method === 'POST');
+    const createInvoiceRequest = httpTesting.expectOne(req => req.url === '/api/back-office/invoices' && req.method === 'POST');
     expect(createInvoiceRequest.request.method).toBe('POST');
     expect(createInvoiceRequest.request.body.remittanceRef).toBe(77);
 
@@ -368,7 +368,7 @@ describe('FinancialWorkflowService', () => {
       signedAmount = response.items[0]?.signedNetPayableAmount;
     });
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/remittances' && req.method === 'GET');
+    const request = httpTesting.expectOne(req => req.url === '/api/back-office/remittances' && req.method === 'GET');
     request.flush({
       items: [{ remittanceRef: 77, sourceDocumentId: 21, invoiceAvoirNumber: 'AV-2026-000011', label: 'test avoir', invoiceLabel: 'Premium invoice label', beneficiaryCounterpartyId: 501, reinsurerId: 501, cedentName: 'Cedent SA', signedNetPayableAmount: -2.5 }],
       pageNumber: 1,
@@ -400,7 +400,7 @@ describe('FinancialWorkflowService', () => {
       expect(response.pageNumber).toBe(1);
     });
 
-    const request = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/back-office/invoices');
+    const request = httpTesting.expectOne(req => req.url === '/api/back-office/invoices');
     expect(request.request.params.has('invoiceType')).toBe(false);
     expect(request.request.params.has('paymentStatus')).toBe(false);
     expect(request.request.params.has('currencyId')).toBe(false);
@@ -529,9 +529,9 @@ describe('FinancialWorkflowService', () => {
     }).subscribe();
     service.setBankAccountStatus(22, 44, false).subscribe();
 
-    const queueRequest = httpTesting.expectOne('http://localhost:5151/api/finance/disbursement-queue');
+    const queueRequest = httpTesting.expectOne('/api/finance/disbursement-queue');
     expect(queueRequest.request.method).toBe('GET');
-    const disbursementRequest = httpTesting.expectOne('http://localhost:5151/api/finance/disbursements');
+    const disbursementRequest = httpTesting.expectOne('/api/finance/disbursements');
     expect(disbursementRequest.request.method).toBe('POST');
     expect(disbursementRequest.request.body).toEqual({
       remittanceRef: 77,
@@ -541,21 +541,21 @@ describe('FinancialWorkflowService', () => {
       bankReference: 'TR-77',
       description: 'Settlement'
     });
-    const documentRequest = httpTesting.expectOne('http://localhost:5151/api/documents/9001/download');
+    const documentRequest = httpTesting.expectOne('/api/documents/9001/download');
     expect(documentRequest.request.method).toBe('GET');
-    const startRequest = httpTesting.expectOne('http://localhost:5151/api/finance/remittances/77/start-disbursement');
+    const startRequest = httpTesting.expectOne('/api/finance/remittances/77/start-disbursement');
     expect(startRequest.request.method).toBe('POST');
     expect(startRequest.request.body).toEqual({});
-    const contextRequest = httpTesting.expectOne('http://localhost:5151/api/finance/remittances/77/disbursement-context');
+    const contextRequest = httpTesting.expectOne('/api/finance/remittances/77/disbursement-context');
     expect(contextRequest.request.method).toBe('GET');
-    const confirmTransferRequest = httpTesting.expectOne('http://localhost:5151/api/finance/disbursements/501/confirm-transfer');
+    const confirmTransferRequest = httpTesting.expectOne('/api/finance/disbursements/501/confirm-transfer');
     expect(confirmTransferRequest.request.method).toBe('POST');
     expect(confirmTransferRequest.request.body).toEqual({});
-    const invoiceRequest = httpTesting.expectOne('http://localhost:5151/api/finance/disbursements/501/invoice');
+    const invoiceRequest = httpTesting.expectOne('/api/finance/disbursements/501/invoice');
     expect(invoiceRequest.request.method).toBe('GET');
-    const getAccountsRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/counterparties/22/bank-accounts' && req.method === 'GET');
+    const getAccountsRequest = httpTesting.expectOne(req => req.url === '/api/counterparties/22/bank-accounts' && req.method === 'GET');
     expect(getAccountsRequest.request.method).toBe('GET');
-    const createAccountRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/counterparties/22/bank-accounts' && req.method === 'POST');
+    const createAccountRequest = httpTesting.expectOne(req => req.url === '/api/counterparties/22/bank-accounts' && req.method === 'POST');
     expect(createAccountRequest.request.method).toBe('POST');
     expect(createAccountRequest.request.body).toEqual({
       counterpartyId: 22,
@@ -574,12 +574,12 @@ describe('FinancialWorkflowService', () => {
       isDefault: true,
       isActive: true
     });
-    const updateAccountRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/counterparties/22/bank-accounts/44' && req.method === 'PUT');
+    const updateAccountRequest = httpTesting.expectOne(req => req.url === '/api/counterparties/22/bank-accounts/44' && req.method === 'PUT');
     expect(updateAccountRequest.request.method).toBe('PUT');
     expect(updateAccountRequest.request.body.hasCorrespondentBank).toBe(false);
     expect(updateAccountRequest.request.body.correspondentBankName).toBeNull();
     expect(updateAccountRequest.request.body.correspondentSwiftBic).toBeNull();
-    const statusRequest = httpTesting.expectOne('http://localhost:5151/api/counterparties/22/bank-accounts/44/status');
+    const statusRequest = httpTesting.expectOne('/api/counterparties/22/bank-accounts/44/status');
     expect(statusRequest.request.method).toBe('PATCH');
     expect(statusRequest.request.body).toEqual({ isActive: false });
 
@@ -633,7 +633,7 @@ describe('FinancialWorkflowService', () => {
       expect(items[0].sourceType).toBe('AVOIR_REFUND');
       expect(items[0].beneficiaryType).toBe('CEDENT');
     });
-    const queue = httpTesting.expectOne('http://localhost:5151/api/finance/disbursement-queue');
+    const queue = httpTesting.expectOne('/api/finance/disbursement-queue');
     queue.flush([{
       remittanceId: 0,
       remittanceRef: 8,
@@ -655,7 +655,7 @@ describe('FinancialWorkflowService', () => {
       expect(context.beneficiaryName).toBe('STAR Assurances');
       expect(context.netPayableAmount).toBe(10);
     });
-    const context = httpTesting.expectOne('http://localhost:5151/api/finance/remittances/8/disbursement-context');
+    const context = httpTesting.expectOne('/api/finance/remittances/8/disbursement-context');
     context.flush({
       remittanceId: 8,
       remittanceReference: '8',
@@ -680,7 +680,7 @@ describe('FinancialWorkflowService', () => {
       expect(file.blob).toBe(blob);
       expect(file.fileName).toBe('CreditNote-AV-2026-000001.pdf');
     });
-    const request = httpTesting.expectOne('http://localhost:5151/api/finance/remittances/8/credit-note');
+    const request = httpTesting.expectOne('/api/finance/remittances/8/credit-note');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(blob, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="CreditNote-AV-2026-000001.pdf"' } });
@@ -714,17 +714,17 @@ describe('FinancialWorkflowService', () => {
       expect(context.remainingInvoiceableAmount).toBe(135);
     });
 
-    const notificationsRequest = httpTesting.expectOne(req => req.url === 'http://localhost:5151/api/notifications');
+    const notificationsRequest = httpTesting.expectOne(req => req.url === '/api/notifications');
     expect(notificationsRequest.request.params.get('unreadOnly')).toBe('true');
-    const countRequest = httpTesting.expectOne('http://localhost:5151/api/notifications/unread-count');
+    const countRequest = httpTesting.expectOne('/api/notifications/unread-count');
     expect(countRequest.request.method).toBe('GET');
-    const readRequest = httpTesting.expectOne('http://localhost:5151/api/notifications/5/read');
+    const readRequest = httpTesting.expectOne('/api/notifications/5/read');
     expect(readRequest.request.method).toBe('PATCH');
-    const readAllRequest = httpTesting.expectOne('http://localhost:5151/api/notifications/read-all');
+    const readAllRequest = httpTesting.expectOne('/api/notifications/read-all');
     expect(readAllRequest.request.method).toBe('PATCH');
-    const historyRequest = httpTesting.expectOne('http://localhost:5151/api/contracts/12/financial-history');
+    const historyRequest = httpTesting.expectOne('/api/contracts/12/financial-history');
     expect(historyRequest.request.method).toBe('GET');
-    const invoiceContextRequest = httpTesting.expectOne('http://localhost:5151/api/back-office/contracts/12/invoice-context');
+    const invoiceContextRequest = httpTesting.expectOne('/api/back-office/contracts/12/invoice-context');
     expect(invoiceContextRequest.request.method).toBe('GET');
 
     notificationsRequest.flush([]);
@@ -771,7 +771,7 @@ describe('FinancialWorkflowService', () => {
       label: null
     }).subscribe(value => preview = value);
 
-    httpTesting.expectOne('http://localhost:5151/api/back-office/contracts/12/invoices/preview').flush({
+    httpTesting.expectOne('/api/back-office/contracts/12/invoices/preview').flush({
       contractId: 12,
       invoiceableGrossPremium: 50,
       alreadyInvoicedAmount: 0,
@@ -818,7 +818,7 @@ describe('FinancialWorkflowService', () => {
       invoiceDate: '2026-10-05',
       label: null
     }).subscribe({ error: error => mappingError = error });
-    httpTesting.expectOne('http://localhost:5151/api/back-office/contracts/12/invoices/preview').flush({
+    httpTesting.expectOne('/api/back-office/contracts/12/invoices/preview').flush({
       contractId: 12,
       allocations: [{ panelId: 1, grossPremium: 50 }]
     });
@@ -838,7 +838,7 @@ describe('FinancialWorkflowService', () => {
       expect(invoices[0].allocations[0].irisBrokerageAmount).toBe(4.445);
     });
 
-    const request = httpTesting.expectOne('http://localhost:5151/api/back-office/contracts/12/invoices');
+    const request = httpTesting.expectOne('/api/back-office/contracts/12/invoices');
     expect(request.request.method).toBe('GET');
     request.flush([{
       invoiceId: 41,

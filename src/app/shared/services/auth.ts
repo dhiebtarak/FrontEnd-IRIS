@@ -45,7 +45,7 @@ export class Auth {
   private readonly tokenStorageKey = 'iris_auth_token';
   private readonly userStorageKey = 'iris_auth_user';
   private readonly workspaceStorageKey = 'iris_auth_workspace';
-  readonly baseUrl = 'http://localhost:5151/api';
+  readonly baseUrl = '/api';
 
   constructor(private httpClient: HttpClient) { }
 

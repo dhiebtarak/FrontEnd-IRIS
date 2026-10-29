@@ -56,8 +56,8 @@ describe('FacultativeInformationComponent', () => {
     httpMock = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
 
-    httpMock.expectOne('http://localhost:5151/api/reference-data/currencies').flush(currenciesResponse);
-    httpMock.expectOne('http://localhost:5151/api/coverage-catalog/main-covers').flush([
+    httpMock.expectOne('/api/reference-data/currencies').flush(currenciesResponse);
+    httpMock.expectOne('/api/coverage-catalog/main-covers').flush([
       ...mainCoversResponse,
       sectionsResponse[0],
       directExtensionsResponse[0]
@@ -71,7 +71,7 @@ describe('FacultativeInformationComponent', () => {
 
   function expectCedentLookup(search: string | null) {
     return httpMock.expectOne(req =>
-      req.url === 'http://localhost:5151/api/reference-data/cedents'
+      req.url === '/api/reference-data/cedents'
       && req.params.get('page') === '1'
       && req.params.get('pageSize') === '20'
       && req.params.get('search') === search
@@ -109,7 +109,7 @@ describe('FacultativeInformationComponent', () => {
 
   function expectCoverageChildren(parentId: number, level: 'SECTION' | 'EXTENSION') {
     return httpMock.expectOne(req =>
-      req.url === `http://localhost:5151/api/coverage-catalog/${parentId}/children`
+      req.url === `/api/coverage-catalog/${parentId}/children`
       && req.params.get('level') === level
     );
   }
@@ -142,7 +142,7 @@ describe('FacultativeInformationComponent', () => {
     component.continueToOverview();
     fixture.detectChanges();
 
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    const request = httpMock.expectOne('/api/contracts/facultative');
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual(expect.objectContaining({
       name: null,
@@ -519,7 +519,7 @@ describe('FacultativeInformationComponent', () => {
 
     expect(component.form.hasError('commissionsExceedGrossPremium')).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Cedent commission cannot exceed the gross premium.');
-    expect(httpMock.match('http://localhost:5151/api/contracts/facultative')).toHaveLength(0);
+    expect(httpMock.match('/api/contracts/facultative')).toHaveLength(0);
   });
 
   it('submits the calculated financial values and replaces them with the backend response', async () => {
@@ -535,7 +535,7 @@ describe('FacultativeInformationComponent', () => {
     component.saveDraft();
     fixture.detectChanges();
 
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    const request = httpMock.expectOne('/api/contracts/facultative');
     expect(request.request.body).toEqual(expect.objectContaining({
       sumInsured: 100000,
       premiumRate: 0.02,
@@ -580,7 +580,7 @@ describe('FacultativeInformationComponent', () => {
     component.saveDraft();
     fixture.detectChanges();
 
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    const request = httpMock.expectOne('/api/contracts/facultative');
     expect(request.request.method).toBe('POST');
     expect(request.request.body.netPremiumCedent).toBeUndefined();
     expect(request.request.body.cedentName).toBeUndefined();
@@ -636,7 +636,7 @@ describe('FacultativeInformationComponent', () => {
     component.continueToOverview();
     fixture.detectChanges();
 
-    const requests = httpMock.match('http://localhost:5151/api/contracts/facultative');
+    const requests = httpMock.match('/api/contracts/facultative');
     expect(requests).toHaveLength(1);
     expect(requests[0].request.method).toBe('POST');
     expect(component.isSaving()).toBe(true);
@@ -663,13 +663,13 @@ describe('FacultativeInformationComponent', () => {
     selectMainCover();
 
     component.continueToOverview();
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    const request = httpMock.expectOne('/api/contracts/facultative');
     request.flush({
       message: 'System.InvalidOperationException: sequence failed'
     }, { status: 500, statusText: 'Server Error' });
     fixture.detectChanges();
 
-    expect(httpMock.match('http://localhost:5151/api/contracts/facultative')).toHaveLength(0);
+    expect(httpMock.match('/api/contracts/facultative')).toHaveLength(0);
     expect(component.form.controls.name.value).toBe('FAC 2026');
     expect(component.form.controls.coverageSelection.controls.coverageIds.value).toEqual([1]);
     expect(component.retrySaveMode()).toBe('continue');
@@ -690,7 +690,7 @@ describe('FacultativeInformationComponent', () => {
     selectMainCover();
 
     component.continueToOverview();
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    const request = httpMock.expectOne('/api/contracts/facultative');
     request.flush({
       message: 'Contract validation failed.',
       errors: {
@@ -715,7 +715,7 @@ describe('FacultativeInformationComponent', () => {
     selectMainCover();
 
     component.continueToOverview();
-    httpMock.expectOne('http://localhost:5151/api/contracts/facultative').flush({
+    httpMock.expectOne('/api/contracts/facultative').flush({
       umr: 'IT26-F-PD-0001', status: 'Draft', name: 'FAC 2026'
     });
     fixture.detectChanges();
@@ -731,7 +731,7 @@ describe('FacultativeInformationComponent', () => {
     selectMainCover();
 
     component.saveDraft();
-    httpMock.expectOne('http://localhost:5151/api/contracts/facultative').flush({
+    httpMock.expectOne('/api/contracts/facultative').flush({
       contractId: 123,
       umr: 'IT26-F-PD-0001',
       status: 'DRAFT',
@@ -749,7 +749,7 @@ describe('FacultativeInformationComponent', () => {
     component.saveDraft();
     fixture.detectChanges();
 
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/123');
+    const request = httpMock.expectOne('/api/contracts/facultative/123');
     expect(request.request.method).toBe('PUT');
     expect(request.request.body.umr).toBeUndefined();
     request.flush({
@@ -773,7 +773,7 @@ describe('FacultativeInformationComponent', () => {
     selectMainCover();
 
     component.saveDraft();
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    const request = httpMock.expectOne('/api/contracts/facultative');
     request.flush({
       title: 'Validation failed',
       errors: {
@@ -793,7 +793,7 @@ describe('FacultativeInformationComponent', () => {
     selectMainCover();
 
     component.saveDraft();
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    const request = httpMock.expectOne('/api/contracts/facultative');
     request.flush({
       title: 'Validation failed',
       errors: {
@@ -813,7 +813,7 @@ describe('FacultativeInformationComponent', () => {
     selectMainCover();
 
     component.continueToOverview();
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/facultative');
+    const request = httpMock.expectOne('/api/contracts/facultative');
     request.flush({
       contractId: 123,
       umr: 'IT26-F-PD-0001',
@@ -885,11 +885,11 @@ describe('FacultativeInformationComponent existing contract', () => {
   });
 
   function flushExistingContract(overrides: Record<string, unknown> = {}): void {
-    httpMock.expectOne('http://localhost:5151/api/reference-data/currencies').flush([
+    httpMock.expectOne('/api/reference-data/currencies').flush([
       { id: 1, code: 'TND', name: 'Tunisian Dinar', symbol: 'DT', decimalPlaces: 3, isDefault: true }
     ]);
-    httpMock.expectOne('http://localhost:5151/api/coverage-catalog/main-covers').flush(mainCoversResponse);
-    httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2').flush({
+    httpMock.expectOne('/api/coverage-catalog/main-covers').flush(mainCoversResponse);
+    httpMock.expectOne('/api/contracts/facultative/2').flush({
       contractId: 2,
       status: 'Draft',
       netPremiumCedent: 112500,
@@ -926,19 +926,19 @@ describe('FacultativeInformationComponent existing contract', () => {
       ...overrides
     });
     httpMock.expectOne(req =>
-      req.url === 'http://localhost:5151/api/coverage-catalog/1/children'
+      req.url === '/api/coverage-catalog/1/children'
       && req.params.get('level') === 'SECTION'
     ).flush(sectionsResponse);
     httpMock.expectOne(req =>
-      req.url === 'http://localhost:5151/api/coverage-catalog/1/children'
+      req.url === '/api/coverage-catalog/1/children'
       && req.params.get('level') === 'EXTENSION'
     ).flush(directExtensionsResponse);
     httpMock.expectOne(req =>
-      req.url === 'http://localhost:5151/api/coverage-catalog/2/children'
+      req.url === '/api/coverage-catalog/2/children'
       && req.params.get('level') === 'EXTENSION'
     ).flush([]);
     httpMock.expectOne(req =>
-      req.url === 'http://localhost:5151/api/coverage-catalog/3/children'
+      req.url === '/api/coverage-catalog/3/children'
       && req.params.get('level') === 'EXTENSION'
     ).flush([]);
     fixture.detectChanges();
@@ -977,7 +977,7 @@ describe('FacultativeInformationComponent existing contract', () => {
     expect(component.form.controls.grossPremium.value).toBe(4000);
     expect(component.form.controls.netPremium.value).toBe(3800);
     component.saveDraft();
-    const update = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2');
+    const update = httpMock.expectOne('/api/contracts/facultative/2');
     expect(update.request.method).toBe('PUT');
     expect(update.request.body).toEqual(expect.objectContaining({
       sumInsured: 200000,
@@ -1037,7 +1037,7 @@ describe('FacultativeInformationComponent existing contract', () => {
     component.saveDraft();
     fixture.detectChanges();
 
-    const update = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2');
+    const update = httpMock.expectOne('/api/contracts/facultative/2');
     expect(update.request.method).toBe('PUT');
     expect(update.request.body.panels).toBeUndefined();
     expect(update.request.body.placementPanels).toBeUndefined();
@@ -1065,7 +1065,7 @@ describe('FacultativeInformationComponent existing contract', () => {
     component.saveDraft();
     fixture.detectChanges();
 
-    const update = httpMock.expectOne('http://localhost:5151/api/contracts/facultative/2');
+    const update = httpMock.expectOne('/api/contracts/facultative/2');
     update.flush({ message: 'Coverage selection already exists for this contract.' }, { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
 

@@ -184,8 +184,8 @@ describe('ContractOverviewComponent', () => {
     response: Record<string, unknown> = contractResponse,
     panels: Record<string, unknown>[] = panelsResponse
   ): void {
-    httpMock.expectOne(`http://localhost:5151/api/contracts/${contractId}/overview`).flush(response);
-    httpMock.expectOne(`http://localhost:5151/api/contracts/${contractId}/panels`).flush(panels);
+    httpMock.expectOne(`/api/contracts/${contractId}/overview`).flush(response);
+    httpMock.expectOne(`/api/contracts/${contractId}/panels`).flush(panels);
     fixture.detectChanges();
   }
 
@@ -207,8 +207,8 @@ describe('ContractOverviewComponent', () => {
     context: Record<string, unknown> = invoiceContextResponse,
     history: Record<string, unknown>[] = []
   ): void {
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoice-context').flush(context);
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices').flush(history);
+    httpMock.expectOne('/api/back-office/contracts/123/invoice-context').flush(context);
+    httpMock.expectOne('/api/back-office/contracts/123/invoices').flush(history);
   }
 
   it('loads and renders the saved contract overview from the draft contract ID', () => {
@@ -248,17 +248,17 @@ describe('ContractOverviewComponent', () => {
 
     component.markReadyForPlacement();
     component.markReadyForPlacement();
-    const completeRequest = httpMock.expectOne('http://localhost:5151/api/contracts/123/complete');
+    const completeRequest = httpMock.expectOne('/api/contracts/123/complete');
     expect(completeRequest.request.method).toBe('POST');
     expect(completeRequest.request.body).toEqual({});
     expect(component.isMarkingReady()).toBe(true);
     completeRequest.flush({ ...contractResponse, status: 'READY_FOR_PLACEMENT' });
 
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush({
+    httpMock.expectOne('/api/contracts/123/overview').flush({
       ...contractResponse,
       status: 'READY_FOR_PLACEMENT'
     });
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([]);
+    httpMock.expectOne('/api/contracts/123/panels').flush([]);
     fixture.detectChanges();
 
     expect(component.contract()?.status).toBe('READY_FOR_PLACEMENT');
@@ -273,7 +273,7 @@ describe('ContractOverviewComponent', () => {
     flushContract(123, { ...contractResponse, status: 'DRAFT', isFronting: null }, []);
 
     component.markReadyForPlacement();
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/complete').flush({
+    httpMock.expectOne('/api/contracts/123/complete').flush({
       message: 'Contract validation failed.',
       errors: { isFronting: ['Select whether this contract is fronting before placement.'] }
     }, { status: 400, statusText: 'Bad Request' });
@@ -290,7 +290,7 @@ describe('ContractOverviewComponent', () => {
     flushContract(123, { ...contractResponse, status: 'DRAFT', name: null, currencyId: null }, []);
 
     component.markReadyForPlacement();
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/complete').flush({
+    httpMock.expectOne('/api/contracts/123/complete').flush({
       message: 'Contract validation failed.',
       errors: {
         name: ['Contract name is required before placement.'],
@@ -315,7 +315,7 @@ describe('ContractOverviewComponent', () => {
     flushContract(123, { ...contractResponse, status: 'Draft' }, []);
 
     component.markReadyForPlacement();
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/complete').flush(
+    httpMock.expectOne('/api/contracts/123/complete').flush(
       { message: 'Front Officer permission is required.' },
       { status: 403, statusText: 'Forbidden' }
     );
@@ -434,7 +434,7 @@ describe('ContractOverviewComponent', () => {
     flushContract();
 
     queryParamMapSubject.next(convertToParamMap({ contractId: '456' }));
-    httpMock.expectOne('http://localhost:5151/api/contracts/456/overview').flush({
+    httpMock.expectOne('/api/contracts/456/overview').flush({
       ...contractResponse,
       id: 456,
       contractId: 456,
@@ -445,7 +445,7 @@ describe('ContractOverviewComponent', () => {
       netPremium: 1900,
       netPremiumCedent: null
     });
-    httpMock.expectOne('http://localhost:5151/api/contracts/456/panels').flush([{
+    httpMock.expectOne('/api/contracts/456/panels').flush([{
       ...panelsResponse[0],
       idPanel: 77,
       idContract: 456,
@@ -476,7 +476,7 @@ describe('ContractOverviewComponent', () => {
 
     component.openReinsurerForm();
     const reinsurerLookup = httpMock.expectOne(req =>
-      req.url === 'http://localhost:5151/api/counterparties'
+      req.url === '/api/counterparties'
       && req.params.get('type') === 'Reinsurer'
       && req.params.get('pageNumber') === '1'
       && req.params.get('pageSize') === '20'
@@ -504,7 +504,7 @@ describe('ContractOverviewComponent', () => {
     });
 
     component.submitReinsurerPanel();
-    const createPanel = httpMock.expectOne('http://localhost:5151/api/contracts/123/panels');
+    const createPanel = httpMock.expectOne('/api/contracts/123/panels');
     expect(createPanel.request.method).toBe('POST');
     expect(createPanel.request.body).toEqual({
       idCounterparty: 10,
@@ -527,7 +527,7 @@ describe('ContractOverviewComponent', () => {
         { idPanel: 45, idContract: 123, idCounterparty: 9, reinsurerName: 'Global Re', role: 'Follower', status: 'Draft' }
       ]
     });
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([
+    httpMock.expectOne('/api/contracts/123/panels').flush([
       ...panelsResponse,
       { idPanel: 45, idContract: 123, idCounterparty: 9, reinsurerName: 'Global Re', role: 'Follower', status: 'Draft' }
     ]);
@@ -553,7 +553,7 @@ describe('ContractOverviewComponent', () => {
 
     component.openReinsurerForm();
     httpMock.expectOne(req =>
-      req.url === 'http://localhost:5151/api/counterparties'
+      req.url === '/api/counterparties'
       && req.params.get('type') === 'Reinsurer'
     ).flush({ items: [], pageNumber: 1, pageSize: 20, totalCount: 0, totalPages: 0 });
     fixture.detectChanges();
@@ -624,7 +624,7 @@ describe('ContractOverviewComponent', () => {
     });
     component.submitReinsurerPanel();
 
-    const updateRequest = httpMock.expectOne('http://localhost:5151/api/contracts/123/panels/44');
+    const updateRequest = httpMock.expectOne('/api/contracts/123/panels/44');
     expect(updateRequest.request.method).toBe('PUT');
     expect(updateRequest.request.body).toEqual(expect.objectContaining({
       idCounterparty: 9,
@@ -643,7 +643,7 @@ describe('ContractOverviewComponent', () => {
         { ...panelsResponse[0], signedSharePct: 46, netPremium: 53000, status: 'Confirmed' }
       ]
     });
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([
+    httpMock.expectOne('/api/contracts/123/panels').flush([
       { ...panelsResponse[0], signedSharePct: 46, netPremium: 53000, status: 'Confirmed' }
     ]);
     fixture.detectChanges();
@@ -675,8 +675,8 @@ describe('ContractOverviewComponent', () => {
       cedent: { id: 2, name: 'STAR Assurances' },
       panels: panelsResponse
     };
-    httpMock.expectOne('http://localhost:5151/api/contracts/456/overview').flush(contractB);
-    httpMock.expectOne('http://localhost:5151/api/contracts/456/panels').flush([]);
+    httpMock.expectOne('/api/contracts/456/overview').flush(contractB);
+    httpMock.expectOne('/api/contracts/456/panels').flush([]);
     fixture.detectChanges();
 
     expect(component.contract()?.contractId).toBe(456);
@@ -699,8 +699,8 @@ describe('ContractOverviewComponent', () => {
       counterpartyId: 2,
       cedent: { id: 2, name: 'STAR Assurances' }
     };
-    httpMock.expectOne('http://localhost:5151/api/contracts/456/overview').flush(contractB);
-    httpMock.expectOne('http://localhost:5151/api/contracts/456/panels').flush([
+    httpMock.expectOne('/api/contracts/456/overview').flush(contractB);
+    httpMock.expectOne('/api/contracts/456/panels').flush([
       { ...panelsResponse[0], idPanel: 77, idContract: 456, reinsurerName: 'Same Cedent Re' }
     ]);
     fixture.detectChanges();
@@ -712,8 +712,8 @@ describe('ContractOverviewComponent', () => {
   });
 
   it('cancels stale contract loads when the route ID changes before the previous response returns', () => {
-    const oldOverview = httpMock.expectOne('http://localhost:5151/api/contracts/123/overview');
-    httpMock.expectNone('http://localhost:5151/api/contracts/123/panels');
+    const oldOverview = httpMock.expectOne('/api/contracts/123/overview');
+    httpMock.expectNone('/api/contracts/123/panels');
 
     queryParamMapSubject.next(convertToParamMap({ contractId: '456' }));
     fixture.detectChanges();
@@ -722,14 +722,14 @@ describe('ContractOverviewComponent', () => {
     expect(component.panels()).toEqual([]);
     expect(component.activePanelId()).toBeNull();
 
-    httpMock.expectOne('http://localhost:5151/api/contracts/456/overview').flush({
+    httpMock.expectOne('/api/contracts/456/overview').flush({
       ...contractResponse,
       id: 456,
       contractId: 456,
       umr: 'IT26-F-PD-0002',
       name: 'Property Facultative Contract STAR B'
     });
-    httpMock.expectOne('http://localhost:5151/api/contracts/456/panels').flush([]);
+    httpMock.expectOne('/api/contracts/456/panels').flush([]);
     fixture.detectChanges();
 
     expect(component.contract()?.contractId).toBe(456);
@@ -738,16 +738,16 @@ describe('ContractOverviewComponent', () => {
   });
 
   it('does not issue duplicate overview requests for the same route contract ID', () => {
-    const overview = httpMock.expectOne('http://localhost:5151/api/contracts/123/overview');
+    const overview = httpMock.expectOne('/api/contracts/123/overview');
 
     queryParamMapSubject.next(convertToParamMap({ contractId: '123' }));
     paramMapSubject.next(convertToParamMap({}));
     fixture.detectChanges();
 
-    httpMock.expectNone('http://localhost:5151/api/contracts/123/overview');
+    httpMock.expectNone('/api/contracts/123/overview');
 
     overview.flush(contractResponse);
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush(panelsResponse);
+    httpMock.expectOne('/api/contracts/123/panels').flush(panelsResponse);
     fixture.detectChanges();
 
     expect(component.contract()?.contractId).toBe(123);
@@ -756,8 +756,8 @@ describe('ContractOverviewComponent', () => {
   it('rejects a panels response that belongs to a different contract', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush(contractResponse);
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([
+    httpMock.expectOne('/api/contracts/123/overview').flush(contractResponse);
+    httpMock.expectOne('/api/contracts/123/panels').flush([
       { ...panelsResponse[0], idContract: 999 }
     ]);
     fixture.detectChanges();
@@ -779,11 +779,11 @@ describe('ContractOverviewComponent', () => {
 
     component.confirmReinsurer(panel);
 
-    const confirmRequest = httpMock.expectOne('http://localhost:5151/api/contracts/123/panels/44/confirm');
+    const confirmRequest = httpMock.expectOne('/api/contracts/123/panels/44/confirm');
     expect(confirmRequest.request.method).toBe('POST');
     confirmRequest.flush({ ...panel, status: 'Confirmed' });
 
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([
+    httpMock.expectOne('/api/contracts/123/panels').flush([
       { ...panel, status: 'Confirmed' }
     ]);
     fixture.detectChanges();
@@ -798,12 +798,12 @@ describe('ContractOverviewComponent', () => {
   });
 
   it('shows the backend message when no confirmed reinsurer can start binding', () => {
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/overview').flush({
+    httpMock.expectOne('/api/contracts/123/overview').flush({
       ...contractResponse,
       status: 'PlacementInProgress',
       allowedActions: ['ModifyContract', 'AddReinsurer', 'CancelContract', 'StartBinding', 'EditPlacement']
     });
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/panels').flush([]);
+    httpMock.expectOne('/api/contracts/123/panels').flush([]);
     fixture.detectChanges();
 
     component.startBindingPhase();
@@ -817,13 +817,13 @@ describe('ContractOverviewComponent', () => {
     component.contractPanels.set([{ ...panelsResponse[0], status: 'Confirmed' }]);
 
     component.startBindingPhase();
-    const request = httpMock.expectOne('http://localhost:5151/api/contracts/123/slips');
+    const request = httpMock.expectOne('/api/contracts/123/slips');
     expect(request.request.method).toBe('GET');
     request.flush(new Blob(['docx'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), {
       headers: { 'Content-Disposition': 'attachment; filename="slip.docx"' }
     });
 
-    const bindingRequest = httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding');
+    const bindingRequest = httpMock.expectOne('/api/contracts/123/start-binding');
     expect(bindingRequest.request.method).toBe('POST');
     bindingRequest.flush({
       ...contractResponse,
@@ -848,8 +848,8 @@ describe('ContractOverviewComponent', () => {
     component.contractPanels.set([{ ...panelsResponse[0], status: 'Confirmed' }]);
 
     component.startBindingPhase();
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/slips').flush(new Blob([]));
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding').flush({
+    httpMock.expectOne('/api/contracts/123/slips').flush(new Blob([]));
+    httpMock.expectOne('/api/contracts/123/start-binding').flush({
       ...contractResponse,
       status: 'Bound',
       allowedActions: [],
@@ -871,11 +871,11 @@ describe('ContractOverviewComponent', () => {
     component.contractPanels.set([{ ...panelsResponse[0], status: 'Confirmed' }]);
 
     component.startBindingPhase();
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/slips').flush(new Blob(['server error']), {
+    httpMock.expectOne('/api/contracts/123/slips').flush(new Blob(['server error']), {
       status: 500,
       statusText: 'Server Error'
     });
-    httpMock.expectOne('http://localhost:5151/api/contracts/123/start-binding').flush({
+    httpMock.expectOne('/api/contracts/123/start-binding').flush({
       ...contractResponse,
       status: 'Bound',
       allowedActions: [],
@@ -896,7 +896,7 @@ describe('ContractOverviewComponent', () => {
     fixture.detectChanges();
 
     component.invoiceForm.controls.invoiceType.setValue('INVOICE');
-    const invoicePreview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    const invoicePreview = httpMock.expectOne('/api/back-office/contracts/123/invoices/preview');
     expect(invoicePreview.request.body).not.toHaveProperty('processingMode');
     invoicePreview.flush({
       contractId: 123,
@@ -909,7 +909,7 @@ describe('ContractOverviewComponent', () => {
     expect(component.invoiceForm.controls.amount.value).toBe(1250);
     component.invoiceForm.controls.amount.setValue(500);
     await flushPreviewDebounce();
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceableGrossPremium: 1500,
       alreadyInvoicedAmount: 250,
@@ -944,7 +944,7 @@ describe('ContractOverviewComponent', () => {
     expect(component.invoicePreviewAllocations()[0].cedentCommissionPct).toBe(10);
     expect(component.invoicePreviewAllocations()[0].cedentCommissionAmount).toBe(55.556);
 
-    const createInvoiceRequest = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices');
+    const createInvoiceRequest = httpMock.expectOne('/api/back-office/contracts/123/invoices');
     expect(createInvoiceRequest.request.method).toBe('POST');
     expect(createInvoiceRequest.request.body).toEqual(expect.objectContaining({
       invoiceType: 'INVOICE',
@@ -1013,7 +1013,7 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('INV-2026-000001');
     expect(fixture.nativeElement.textContent).toContain('View Allocation');
     expect(fixture.nativeElement.textContent).not.toContain('Create an invoice to generate its debit note.');
-    httpMock.expectNone('http://localhost:5151/api/back-office/invoices/91/document');
+    httpMock.expectNone('/api/back-office/invoices/91/document');
   });
 
   it('renders gross, cedent commission, net and brokerage from backend allocation fields', () => {
@@ -1222,7 +1222,7 @@ describe('ContractOverviewComponent', () => {
 
     expect(component.invoiceForm.controls.invoiceType.hasError('required')).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Invoice type is required.');
-    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+    httpMock.expectNone('/api/back-office/contracts/123/invoices');
   });
 
   it('allows an Avoir when fully invoiced and uses the backend credit balance', async () => {
@@ -1246,7 +1246,7 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Pair with an encaissement');
     expect(fixture.nativeElement.textContent).toContain('Generate reinsurer remittances without pairing');
     expect(component.isInvoiceSubmitDisabled()).toBe(true);
-    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    httpMock.expectNone('/api/back-office/contracts/123/invoices/preview');
     component.setAvoirProcessingMode('PAIR_WITH_ENCAISSEMENT');
     fixture.detectChanges();
     expect(component.invoiceForm.controls.amount.value).toBe(45);
@@ -1254,7 +1254,7 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('No outgoing remittances will be generated until it is paired.');
     expect(component.availableAvoirAmount()).toBe(45);
     expect(component.invoiceUnaffectedAmount()).toBe(0);
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceType: 'AVOIR',
       grossAmount: 45,
@@ -1266,12 +1266,12 @@ describe('ContractOverviewComponent', () => {
     });
     component.invoiceForm.controls.amount.setValue(10);
     await flushPreviewDebounce();
-    const amountPreview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    const amountPreview = httpMock.expectOne('/api/back-office/contracts/123/invoices/preview');
     component.invoiceForm.controls.invoiceDate.setValue('2026-10-19');
     component.invoiceForm.controls.label.setValue('retour sur contrat');
     await flushPreviewDebounce();
     expect(amountPreview.cancelled).toBe(true);
-    const updatedPreviewRequest = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    const updatedPreviewRequest = httpMock.expectOne('/api/back-office/contracts/123/invoices/preview');
     expect(updatedPreviewRequest.request.body).toEqual(expect.objectContaining({
       invoiceType: 'AVOIR',
       processingMode: 'PAIR_WITH_ENCAISSEMENT',
@@ -1299,13 +1299,13 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('TND -2,800');
     const submitButton = fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement;
     expect(submitButton.disabled).toBe(false);
-    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    httpMock.expectNone('/api/back-office/contracts/123/invoices/preview');
 
     submitButton.click();
     fixture.detectChanges();
-    const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices');
+    const request = httpMock.expectOne('/api/back-office/contracts/123/invoices');
     component.createInvoice();
-    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+    httpMock.expectNone('/api/back-office/contracts/123/invoices');
     expect(request.request.body).toEqual(expect.objectContaining({
       invoiceType: 'AVOIR',
       processingMode: 'PAIR_WITH_ENCAISSEMENT',
@@ -1357,7 +1357,7 @@ describe('ContractOverviewComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('No encaissement will be required.');
-    const preview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    const preview = httpMock.expectOne('/api/back-office/contracts/123/invoices/preview');
     expect(preview.request.body.processingMode).toBe('DIRECT_TO_REMITTANCES');
     expect(preview.request.body.idempotencyKey).toEqual(expect.any(String));
     preview.flush({
@@ -1375,7 +1375,7 @@ describe('ContractOverviewComponent', () => {
     expect(component.isInvoiceSubmitDisabled()).toBe(false);
 
     component.createInvoice();
-    const create = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices');
+    const create = httpMock.expectOne('/api/back-office/contracts/123/invoices');
     expect(component.invoiceForm.controls.processingMode.enabled).toBe(true);
     expect(component.invoiceForm.controls.amount.disabled).toBe(true);
     expect(create.request.body.processingMode).toBe('DIRECT_TO_REMITTANCES');
@@ -1384,7 +1384,7 @@ describe('ContractOverviewComponent', () => {
     expect(create.request.body).not.toHaveProperty('allocations');
     expect(create.request.body.idempotencyKey).toEqual(preview.request.body.idempotencyKey);
     component.createInvoice();
-    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+    httpMock.expectNone('/api/back-office/contracts/123/invoices');
     const remittance = {
       remittanceId: 81,
       remittanceRef: 81,
@@ -1441,7 +1441,7 @@ describe('ContractOverviewComponent', () => {
     expect(component.isInvoiceSubmitDisabled()).toBe(true);
     component.invoiceForm.controls.amount.setValue(10);
     component.createInvoice();
-    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+    httpMock.expectNone('/api/back-office/contracts/123/invoices');
   });
 
   it('keeps invoice history visible, filters other contracts, and offers invoice debit-note actions', () => {
@@ -1598,7 +1598,7 @@ describe('ContractOverviewComponent', () => {
     flushInvoiceContextAndHistory();
     component.invoiceContext.set(invoiceContextResponse as any);
     component.invoiceForm.controls.invoiceType.setValue('INVOICE');
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceableGrossPremium: 1500,
       alreadyInvoicedAmount: 250,
@@ -1608,7 +1608,7 @@ describe('ContractOverviewComponent', () => {
     });
     component.invoiceForm.controls.amount.setValue(50);
     await flushPreviewDebounce();
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceableGrossPremium: 1500,
       alreadyInvoicedAmount: 250,
@@ -1618,7 +1618,7 @@ describe('ContractOverviewComponent', () => {
     });
 
     component.createInvoice();
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices').flush({
       invoiceId: 93,
       contractId: 123,
       invoiceNumber: 'INV-2026-000003',
@@ -1635,8 +1635,8 @@ describe('ContractOverviewComponent', () => {
       label: '',
       allocations: []
     });
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoice-context').flush(invoiceContextResponse);
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoice-context').flush(invoiceContextResponse);
+    httpMock.expectOne('/api/back-office/contracts/123/invoices').flush({
       message: 'Unable to reload invoices.'
     }, {
       status: 500,
@@ -1702,7 +1702,7 @@ describe('ContractOverviewComponent', () => {
     flushInvoiceContextAndHistory(invoiceContextResponse, []);
     expect(component.contractDocumentActionLabel()).toBe('Download Debit Note');
     component.downloadContractFinancialNote();
-    const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/financial-note/pdf');
+    const request = httpMock.expectOne('/api/back-office/contracts/123/financial-note/pdf');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), { headers: {
@@ -1723,7 +1723,7 @@ describe('ContractOverviewComponent', () => {
     component.downloadCreditNoteDocument(avoir);
     component.downloadCreditNoteDocument(avoir);
 
-    const request = httpMock.expectOne('http://localhost:5151/api/back-office/avoirs/92/credit-note/pdf');
+    const request = httpMock.expectOne('/api/back-office/avoirs/92/credit-note/pdf');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     request.flush(new Blob(['%PDF-1.7'], { type: 'application/pdf' }), {
@@ -1743,7 +1743,7 @@ describe('ContractOverviewComponent', () => {
     expect(component.contractDocumentActionLabel()).toBe('Download Debit Note');
     component.downloadContractFinancialNote();
     component.downloadContractFinancialNote();
-    const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/financial-note/pdf');
+    const request = httpMock.expectOne('/api/back-office/contracts/123/financial-note/pdf');
     expect(request.request.responseType).toBe('blob');
     request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), { headers: {
       'Content-Type': 'application/pdf',
@@ -1775,7 +1775,7 @@ describe('ContractOverviewComponent', () => {
     component.downloadInvoiceDocument(invoice);
     component.downloadInvoiceDocument(invoice);
 
-    const request = httpMock.expectOne('http://localhost:5151/api/back-office/invoices/91/pdf');
+    const request = httpMock.expectOne('/api/back-office/invoices/91/pdf');
     expect(request.request.method).toBe('GET');
     expect(request.request.responseType).toBe('blob');
     expect(component.downloadingDebitNoteInvoiceId()).toBe(91);
@@ -1797,7 +1797,7 @@ describe('ContractOverviewComponent', () => {
     const avoir = { ...invoiceResponse, invoiceId: 92, invoiceType: 'AVOIR', invoiceNumber: 'AV-2026-000001' };
     component.downloadInvoiceDocument(avoir);
 
-    const request = httpMock.expectOne('http://localhost:5151/api/back-office/avoirs/92/pdf');
+    const request = httpMock.expectOne('/api/back-office/avoirs/92/pdf');
     expect(request.request.responseType).toBe('blob');
     request.flush(new Blob([JSON.stringify({ message: 'Credit note is unavailable.', traceId: 'trace-avoir-92' })], { type: 'application/problem+json' }), {
       status: 500,
@@ -1816,7 +1816,7 @@ describe('ContractOverviewComponent', () => {
       'downloadBlob'
     );
     component.downloadInvoiceDocument({ ...invoiceResponse, invoiceId: 93, invoiceType: 'INVOICE' });
-    const request = httpMock.expectOne('http://localhost:5151/api/back-office/invoices/93/pdf');
+    const request = httpMock.expectOne('/api/back-office/invoices/93/pdf');
     request.flush(new Blob(['<html>not a PDF</html>'], { type: 'text/html' }), {
       headers: { 'Content-Type': 'text/html' }
     });
@@ -1836,7 +1836,7 @@ describe('ContractOverviewComponent', () => {
       .find(item => item.textContent?.trim() === 'Download Debit Note');
     expect(button?.disabled).toBe(false);
     component.downloadContractFinancialNote();
-    const request = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/financial-note/pdf');
+    const request = httpMock.expectOne('/api/back-office/contracts/123/financial-note/pdf');
     request.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }), { headers: {
       'Content-Type': 'application/pdf', 'X-Financial-Note-Type': 'DEBIT_NOTE',
       'Content-Disposition': 'attachment; filename="DebitNote_DN-IT26-F-PD-0001.pdf"'
@@ -1847,8 +1847,8 @@ describe('ContractOverviewComponent', () => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound' }, [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
     component.openInvoiceModal();
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices').flush([]);
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoice-context').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices').flush([]);
+    httpMock.expectOne('/api/back-office/contracts/123/invoice-context').flush({
       message: 'Unable to calculate invoiceable amount.'
     }, {
       status: 500,
@@ -1862,7 +1862,7 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Retry');
 
     component.retryInvoiceContext();
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoice-context').flush(invoiceContextResponse);
+    httpMock.expectOne('/api/back-office/contracts/123/invoice-context').flush(invoiceContextResponse);
   });
 
   it('disables invoice creation when the contract is fully invoiced', () => {
@@ -1888,7 +1888,7 @@ describe('ContractOverviewComponent', () => {
     component.openInvoiceModal();
     flushInvoiceContextAndHistory();
     component.invoiceForm.controls.invoiceType.setValue('INVOICE');
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceableGrossPremium: 1500,
       alreadyInvoicedAmount: 250,
@@ -1898,7 +1898,7 @@ describe('ContractOverviewComponent', () => {
     });
     component.invoiceForm.controls.amount.setValue(1000);
     await flushPreviewDebounce();
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceableGrossPremium: 1500,
       alreadyInvoicedAmount: 250,
@@ -1908,7 +1908,7 @@ describe('ContractOverviewComponent', () => {
     });
 
     component.createInvoice();
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices').flush({
       errors: ['Gross invoice amount exceeds the remaining invoiceable premium.']
     }, {
       status: 400,
@@ -1926,7 +1926,7 @@ describe('ContractOverviewComponent', () => {
     component.invoiceForm.controls.invoiceType.setValue('AVOIR');
     component.setAvoirProcessingMode('DIRECT_TO_REMITTANCES');
 
-    const firstPreview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    const firstPreview = httpMock.expectOne('/api/back-office/contracts/123/invoices/preview');
     firstPreview.flush({
       contractId: 123,
       invoiceType: 'AVOIR',
@@ -1936,7 +1936,7 @@ describe('ContractOverviewComponent', () => {
     component.invoiceForm.controls.amount.setValue(10);
     await flushPreviewDebounce();
 
-    const failedPreview = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview');
+    const failedPreview = httpMock.expectOne('/api/back-office/contracts/123/invoices/preview');
     expect(failedPreview.request.body).toEqual(expect.objectContaining({
       invoiceType: 'AVOIR',
       processingMode: 'DIRECT_TO_REMITTANCES',
@@ -1961,7 +1961,7 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('preview-trace-123');
 
     component.createInvoice();
-    httpMock.expectNone('http://localhost:5151/api/back-office/contracts/123/invoices');
+    httpMock.expectNone('/api/back-office/contracts/123/invoices');
   });
 
   it('shows HTTP status, backend exception detail and trace ID for direct Avoir creation errors', () => {
@@ -1971,7 +1971,7 @@ describe('ContractOverviewComponent', () => {
     flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 45 }, []);
     component.invoiceForm.controls.invoiceType.setValue('AVOIR');
     component.setAvoirProcessingMode('DIRECT_TO_REMITTANCES');
-    httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices/preview').flush({
+    httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceType: 'AVOIR',
       grossAmount: 45,
@@ -1981,7 +1981,7 @@ describe('ContractOverviewComponent', () => {
     expect(component.isInvoiceAllocationValid()).toBe(true);
 
     component.createInvoice();
-    const create = httpMock.expectOne('http://localhost:5151/api/back-office/contracts/123/invoices');
+    const create = httpMock.expectOne('/api/back-office/contracts/123/invoices');
     expect(create.request.body.invoiceType).toBe('AVOIR');
     expect(create.request.body.processingMode).toBe('DIRECT_TO_REMITTANCES');
     expect(create.request.body).not.toHaveProperty('receiptId');

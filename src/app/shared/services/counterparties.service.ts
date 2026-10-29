@@ -15,7 +15,7 @@ import {
   providedIn: 'root'
 })
 export class CounterpartiesService {
-  private readonly baseUrl = 'http://localhost:5151/api/counterparties';
+  private readonly baseUrl = '/api/counterparties';
   private readonly defaultListFilters: CounterpartyListFilters = {
     pageNumber: 1,
     pageSize: 25

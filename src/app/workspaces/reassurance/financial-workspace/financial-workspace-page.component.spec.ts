@@ -1199,7 +1199,7 @@ describe('FinancialWorkspacePageComponent', () => {
       .mockReturnValueOnce(throwError(() => new HttpErrorResponse({
         status: 0,
         statusText: 'Unknown Error',
-        url: 'http://localhost:5151/api/back-office/bank-receipts/99/eligible-invoices'
+        url: '/api/back-office/bank-receipts/99/eligible-invoices'
       })))
       .mockReturnValueOnce(of({
         status: 200,

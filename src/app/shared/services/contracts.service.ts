@@ -25,7 +25,7 @@ import {
   providedIn: 'root'
 })
 export class ContractsService {
-  private readonly baseUrl = 'http://localhost:5151/api';
+  private readonly baseUrl = '/api';
 
   constructor(private readonly httpClient: HttpClient) {}
 
