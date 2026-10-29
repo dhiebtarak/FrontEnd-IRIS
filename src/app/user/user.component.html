@@ -39,12 +39,14 @@
             Open My Workspace
           </a>
         }
-        <a
-          routerLink="/register"
-          class="inline-flex justify-center bg-iris-secondary-bg hover:bg-iris-border/50 text-iris-navy font-bold py-3 px-6 rounded-lg text-sm border border-iris-border transition"
-        >
-          Create Another Account
-        </a>
+        @if (hasAdminWorkspace) {
+          <a
+            routerLink="/workspace/admin"
+            class="inline-flex justify-center bg-iris-secondary-bg hover:bg-iris-border/50 text-iris-navy font-bold py-3 px-6 rounded-lg text-sm border border-iris-border transition"
+          >
+            Open Admin Workspace
+          </a>
+        }
       </div>
     </section>
   </main>

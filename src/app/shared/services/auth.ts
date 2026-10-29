@@ -50,9 +50,7 @@ export class Auth {
   constructor(private httpClient: HttpClient) { }
 
   createUser(formData: any) {
-    return this.httpClient.post<LoginResponse>(`${this.baseUrl}/auth/register`, formData).pipe(
-      tap(response => this.saveSessionFromAuthResponse(response))
-    );
+    return this.httpClient.post<UserProfileResponse>(`${this.baseUrl}/users`, formData);
   }
 
   loginUser(formData: any) {
@@ -137,7 +135,17 @@ export class Auth {
       || userRoles.some(item => this.normalizeRoleValue(item) === normalizedRole);
   }
 
+  isAdmin(): boolean {
+    const userRoles = this.findStringArray(this.getCurrentUser(), ['roles']);
+    const workspaceRoles = this.findStringArray(this.getStoredWorkspace(), ['roles']);
+    return [...userRoles, ...workspaceRoles].some(role => role.trim().toLowerCase() === 'admin');
+  }
+
   getWorkspaceRoute(): string {
+    if (this.isAdmin()) {
+      return '/workspace/admin';
+    }
+
     const workspace = this.getStoredWorkspace();
     const workspaceKey = this.normalizeRoleValue(this.findUserValue(workspace, ['workspaceKey']));
 

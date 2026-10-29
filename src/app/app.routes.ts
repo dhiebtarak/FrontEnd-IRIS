@@ -5,6 +5,7 @@ import { FacultativeInformationComponent } from './contracts/facultative-informa
 import { AddCounterpartyComponent } from './counterparties/add-counterparty/add-counterparty.component';
 import { CounterpartyListComponent } from './counterparties/counterparty-list/counterparty-list.component';
 import { authGuard } from './shared/guards/auth.guard';
+import { adminGuard } from './shared/guards/admin.guard';
 import { pendingChangesGuard } from './shared/guards/pending-changes.guard';
 import { workspaceGuard } from './shared/guards/workspace.guard';
 import { LoginComponent } from './user/login/login.component';
@@ -17,12 +18,24 @@ import { FrontOfficerLayoutComponent } from './workspaces/reassurance/front-offi
 import { ContractsListComponent } from './contracts/contracts-list/contracts-list.component';
 import { ClaimsComingSoonComponent } from './claims/claims-coming-soon.component';
 import { FinancialWorkspacePageComponent } from './workspaces/reassurance/financial-workspace/financial-workspace-page.component';
+import { AdminWorkspaceComponent } from './workspaces/reassurance/admin-workspace.component';
+import { AccessDeniedComponent } from './user/access-denied.component';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
   { path: 'login', component: LoginComponent },
-  { path: 'register', component: RegistrationComponent },
+  { path: 'access-denied', component: AccessDeniedComponent },
   { path: 'user', component: UserComponent, canActivate: [authGuard] },
+  {
+    path: 'workspace/admin',
+    component: AdminWorkspaceComponent,
+    canActivate: [authGuard, adminGuard],
+    canActivateChild: [authGuard, adminGuard],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'users/new' },
+      { path: 'users/new', component: RegistrationComponent }
+    ]
+  },
   {
     path: 'workspace/reassurance/front-officer',
     component: FrontOfficerLayoutComponent,

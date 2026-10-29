@@ -75,6 +75,11 @@ describe('LoginComponent', () => {
     expect(submitButton.disabled).toBe(false);
   });
 
+  it('does not expose a public account-creation link', () => {
+    expect(fixture.nativeElement.textContent).not.toContain('Need an operator account?');
+    expect(fixture.nativeElement.querySelector('a[href="/register"]')).toBeNull();
+  });
+
   it('uses a stable signal-backed disabled state throughout login', () => {
     component.loginForm.setValue({
       emailOrUsername: 'front.officer',

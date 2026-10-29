@@ -51,4 +51,8 @@ export class UserComponent {
   get hasOfficerWorkspace(): boolean {
     return this.workspaceRoute !== '/user';
   }
+
+  get hasAdminWorkspace(): boolean {
+    return this.authService.isAdmin();
+  }
 }

@@ -48,14 +48,14 @@
       <div class="mb-8">
         <!-- Eyebrow label -->
         <span class="text-[9pt] font-bold tracking-[0.25em] uppercase text-iris-teal block mb-2 font-calibri">
-          USER ACQUISITION
+          ADMINISTRATION
         </span>
         <!-- Heading -->
         <h1 class="font-cambria text-3xl font-bold text-iris-navy">
-          Create Operator Account
+          Create user
         </h1>
         <p class="text-[11pt] text-iris-slate mt-2 font-calibri">
-          Please fill in the authorization details to construct your profile.
+          Provision a staff account. The administrator session will remain active.
         </p>
       </div>
 
@@ -206,7 +206,6 @@
             >
               <option value="" disabled selected>Select an operational department...</option>
               <option value="Reassurance">Reassurance</option>
-              <option value="Operation">Operation</option>
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-iris-navy">
               <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
@@ -281,12 +280,14 @@
         <div class="pt-4 flex flex-col sm:flex-row gap-3">
           <button
             type="submit"
+            [disabled]="isSubmitting || registrationForm.invalid"
             class="flex-1 bg-iris-teal hover:bg-iris-teal-light text-white font-bold py-3 px-6 rounded-lg text-sm transition shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-iris-teal-extralight flex items-center justify-center space-x-2"
           >
-            <span>Initialize Account</span>
+            <span>{{ isSubmitting ? 'Creating user…' : 'Create user' }}</span>
           </button>
           <button
             type="button"
+            [disabled]="isSubmitting"
             (click)="resetRegistrationForm()"
             class="bg-iris-secondary-bg hover:bg-iris-border/50 text-iris-navy font-bold py-3 px-6 rounded-lg text-sm border border-iris-border transition focus:outline-none"
           >
@@ -294,10 +295,7 @@
           </button>
         </div>
 
-        <p class="text-sm text-iris-slate">
-          Already have an operator account?
-          <a routerLink="/login" class="font-bold text-iris-teal hover:text-iris-teal-light">Login</a>
-        </p>
+        <p class="text-sm text-iris-slate">New accounts receive the existing staff role and selected department position.</p>
       </form>
     </div>
   </div>

@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
 import { catchError, forkJoin, of, switchMap } from 'rxjs';
 import { Auth, LoginResponse } from '../../shared/services/auth';
@@ -11,7 +11,7 @@ import { FirstKeyPipe } from '../../shared/pipes/first-key.pipe';
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, FirstKeyPipe],
+  imports: [CommonModule, ReactiveFormsModule, FirstKeyPipe],
   templateUrl: './login.component.html',
   styles: ``,
 })

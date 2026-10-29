@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
+import { finalize } from 'rxjs';
 import { FirstKeyPipe } from '../../shared/pipes/first-key.pipe';
 import { Auth } from '../../shared/services/auth';
 import { ToastrService } from 'ngx-toastr';
@@ -17,17 +17,17 @@ const passwordMatchValidator: ValidatorFn = (control: AbstractControl): Validati
 @Component({
   selector: 'app-registration',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, FirstKeyPipe],
+  imports: [CommonModule, ReactiveFormsModule, FirstKeyPipe],
   templateUrl: './registration.component.html',
   styles: ``,
 })
 export class RegistrationComponent implements OnInit {
   registrationForm!: FormGroup;
   submitted = false;
+  isSubmitting = false;
   successMessage = '';
   readonly departmentPositions: Record<string, string[]> = {
-    Reassurance: ['Front officer', 'Back officer', 'Finance officer'],
-    Operation: ['Operations officer']
+    Reassurance: ['Front officer', 'Back officer', 'Finance officer']
   };
   availablePositions: string[] = [];
   private readonly initialFormValue = {
@@ -80,6 +80,7 @@ export class RegistrationComponent implements OnInit {
   }
 
   onSubmit(): void {
+    if (this.isSubmitting) return;
     this.submitted = true;
     this.successMessage = '';
 
@@ -88,24 +89,21 @@ export class RegistrationComponent implements OnInit {
       return;
     }
 
-    // Process registration data
-    const registrationPayload = this.registrationForm.getRawValue();
-
-    console.log('Registration Success:', registrationPayload);
-    this.authService.createUser(registrationPayload).subscribe({
-      next: (response: any) => {
-        console.log('User created successfully:', response);
-        if (this.isSuccessfulRegistration(response)) {
-          this.successMessage = 'User created successfully!';
-          this.resetRegistrationForm(false);
-          this.toastr.success(this.successMessage, 'Success');
-        } else {
-          this.showRegistrationErrors(response);
+    const { agreeTerms: _agreeTerms, ...registrationPayload } = this.registrationForm.getRawValue();
+    this.isSubmitting = true;
+    this.authService.createUser(registrationPayload).pipe(
+      finalize(() => this.isSubmitting = false)
+    ).subscribe({
+      next: response => {
+        if (!response?.id) {
+          this.showRegistrationErrors({ message: 'The server did not confirm user creation.' });
+          return;
         }
+        this.successMessage = `User ${response.username} created successfully.`;
+        this.resetRegistrationForm(false);
+        this.toastr.success(this.successMessage, 'Success');
       },
-      error: (error: HttpErrorResponse) => {
-        this.showRegistrationErrors(error.error ?? error.message);
-      }
+      error: (error: HttpErrorResponse) => this.showRegistrationErrors(error.error ?? error.message)
     });
   }
 
@@ -124,34 +122,6 @@ export class RegistrationComponent implements OnInit {
   hasDisplayedError(controlName: string, errorName: string): boolean {
     const control = this.registrationForm.get(controlName);
     return !!(control && control.hasError(errorName) && (control.dirty || control.touched || this.submitted));
-  }
-
-  private isSuccessfulRegistration(response: any): boolean {
-    if (response == null) {
-      return true;
-    }
-
-    if (typeof response === 'boolean') {
-      return response;
-    }
-
-    if (typeof response === 'object') {
-      if ('succeeded' in response) {
-        return response.succeeded === true;
-      }
-
-      if ('success' in response) {
-        return response.success === true;
-      }
-
-      if ('isSuccess' in response) {
-        return response.isSuccess === true;
-      }
-
-      return this.getRegistrationErrorMessages(response).length === 0;
-    }
-
-    return false;
   }
 
   private showRegistrationErrors(payload: unknown): void {
@@ -228,7 +198,7 @@ export class RegistrationComponent implements OnInit {
     }
 
     if (description) {
-      return description;
+      return code ? `${description} (${code})` : description;
     }
 
     if (code) {
