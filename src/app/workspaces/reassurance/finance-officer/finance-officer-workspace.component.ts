@@ -11,9 +11,8 @@ import { RoleWorkspaceShellComponent, WorkspaceNavigationItem } from '../shared/
 export class FinanceOfficerWorkspaceComponent {
   readonly navigationItems: WorkspaceNavigationItem[] = [
     { label: 'Dashboard', route: '/workspace/reassurance/finance-officer', icon: 'dashboard', exact: true },
-    { label: 'Incoming Remittances', route: '/workspace/reassurance/finance-officer/incoming-remittances', icon: 'receipts', exact: false },
-    { label: 'Disbursement Queue', route: '/workspace/reassurance/finance-officer/disbursement-queue', icon: 'disbursements', exact: false },
-    { label: 'Counterparty Bank Accounts', route: '/workspace/reassurance/finance-officer/counterparty-bank-accounts', icon: 'bankAccounts', exact: false },
-    { label: 'Notifications', route: '/workspace/reassurance/finance-officer/notifications', icon: 'notifications', exact: false }
+    { label: 'Incoming Remittances', route: '/workspace/reassurance/finance-officer/incoming-remittances', icon: 'receipts', exact: false, module: 'Encaissement' },
+    { label: 'Disbursement Queue', route: '/workspace/reassurance/finance-officer/disbursement-queue', icon: 'disbursements', exact: false, module: 'Decaissement' },
+    { label: 'Counterparty Bank Accounts', route: '/workspace/reassurance/finance-officer/counterparty-bank-accounts', icon: 'bankAccounts', exact: false, module: 'CounterpartyBankAccounts' },
   ];
 }

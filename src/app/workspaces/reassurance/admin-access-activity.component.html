@@ -1,0 +1,82 @@
+<section class="p-4 md:p-7">
+  <p class="text-xs font-bold uppercase tracking-widest text-teal-700">Administrator</p>
+  <h1 class="mt-1 text-2xl font-bold text-slate-900">User Access Activity</h1>
+  <p class="mt-2 text-slate-600">Monitor authentication events, account sessions and access security across the IRIS platform.</p>
+  @if (summary(); as s) {
+    <div class="my-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div class="rounded-xl border bg-white p-4"><p>Active sessions</p><strong class="text-2xl">{{ s.activeSessions }}</strong></div>
+      <div class="rounded-xl border bg-white p-4"><p>Successful logins today (UTC)</p><strong class="text-2xl">{{ s.successfulLoginsToday }}</strong></div>
+      <div class="rounded-xl border bg-white p-4"><p>Failed login attempts in the last 24 hours</p><strong class="text-2xl">{{ s.failedLoginsLast24Hours }}</strong></div>
+      <div class="rounded-xl border bg-white p-4"><p>Locked or disabled accounts</p><strong class="text-2xl">{{ s.lockedOrDisabledAccounts }}</strong></div>
+      <div class="rounded-xl border bg-white p-4"><p>Revoked sessions today (UTC)</p><strong class="text-2xl">{{ s.revokedSessionsToday }}</strong></div>
+      <div class="rounded-xl border bg-white p-4"><p>Average session duration</p><strong class="text-xl">{{ formatDuration(s.averageSessionDurationSeconds) }}</strong></div>
+    </div>
+  }
+  <div class="my-5 grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
+    <label>User search<input [ngModel]="search" (ngModelChange)="search = $event; searchChanged($event)" placeholder="Name, username or email" /></label>
+    <label>Role<select [ngModel]="query.role ?? ''" (ngModelChange)="filter('role', $event)"><option value="">All roles</option><option value="Admin">Administrator</option><option>Front officer</option><option>Back officer</option><option>Finance officer</option></select></label>
+    <label>Department<input [ngModel]="query.department ?? ''" (change)="filter('department', $any($event.target).value)" placeholder="All departments" /></label>
+    <label>Account status<select [ngModel]="query.accountStatus ?? ''" (ngModelChange)="filter('accountStatus', $event)"><option value="">All accounts</option><option>Enabled</option><option>Disabled</option><option>Locked</option></select></label>
+    <label>Session status<select [ngModel]="query.sessionStatus ?? ''" (ngModelChange)="filter('sessionStatus', $event)"><option value="">All sessions</option><option>Active</option><option value="LoggedOut">Logged Out</option><option>Expired</option><option>Revoked</option></select></label>
+    <label>Event type<select [ngModel]="query.eventType ?? ''" (ngModelChange)="filter('eventType', $event)"><option value="">All events</option>@for (event of events; track event) { <option>{{ event }}</option> }</select></label>
+    <label>Authentication result<select [ngModel]="query.result ?? ''" (ngModelChange)="filter('result', $event)"><option value="">All results</option><option>Successful</option><option>Failed</option></select></label>
+    <label>Date from (local time)<input type="datetime-local" [(ngModel)]="dateFrom" (change)="dates()" /></label>
+    <label>Date to (local time)<input type="datetime-local" [(ngModel)]="dateTo" (change)="dates()" /></label>
+  </div>
+  @if (query.userId) { <p class="mb-3">Selected user: {{ query.userId }} <button (click)="clearUser()">Show all users</button></p> }
+  @if (error()) { <p role="alert" class="my-3 rounded bg-red-50 p-3 text-red-800">{{ error() }} <button (click)="apply({})">Retry</button></p> }
+  @if (loading()) { <p role="status" class="py-10 text-center">Loading access activity...</p> }
+  @else if (!error()) {
+    <p class="mb-2 text-xs text-slate-500">Timestamps are displayed in your local time. Failed attempts have no session.</p>
+    <div class="overflow-x-auto rounded-xl border bg-white"><table class="w-full text-left text-sm"><thead class="bg-slate-50"><tr>
+      <th>User</th><th><button (click)="sort('username')">Username ?</button></th><th>Email</th><th>Role</th><th>Department</th><th>Account status</th>
+      <th><button (click)="sort('loginAtUtc')">Login date/time ?</button></th><th><button (click)="sort('lastActivityAtUtc')">Last activity ?</button></th><th>Logout date/time</th><th>Session duration</th>
+      <th><button (click)="sort('sessionStatus')">Session status ?</button></th><th>IP address</th><th>Device/browser</th><th>Authentication result</th><th>Actions</th>
+    </tr></thead><tbody class="divide-y">
+      @for (row of rows(); track $index) { <tr>
+        <td>{{ row.fullName }}</td><td>{{ row.username }}</td><td>{{ row.email || '?' }}</td><td>{{ row.role || '?' }}</td><td>{{ row.department || '?' }}</td><td>{{ row.accountStatus }}</td>
+        <td class="whitespace-nowrap">{{ row.loginAtUtc | date:'medium' }}</td><td class="whitespace-nowrap">{{ row.lastActivityAtUtc ? (row.lastActivityAtUtc | date:'medium') : '?' }}</td>
+        <td class="whitespace-nowrap">{{ row.logoutAtUtc ? (row.logoutAtUtc | date:'medium') : '?' }}</td><td class="whitespace-nowrap">{{ duration(row) }}</td>
+        <td><span [class]="badge(row.sessionStatus)">{{ statusLabel(row.sessionStatus) }}</span></td><td>{{ row.ipAddress || '?' }}</td><td>{{ row.deviceType }} {{ row.browser || row.userAgent || 'Unknown' }}</td><td>{{ row.result }}</td>
+        <td class="min-w-44 space-y-2">@if (row.sessionId) { <button (click)="viewDetails(row)">View details</button> } @if (row.userId) { <button (click)="viewHistory(row)">View user history</button> }
+          @if (row.sessionStatus === 'Active') { <button class="text-red-700" [disabled]="busy()" (click)="askRevoke(row)">Revoke session</button> }</td>
+      </tr> } @empty { <tr><td colspan="15" class="py-10 text-center">No access activity found.</td></tr> }
+    </tbody></table></div>
+    <div class="mt-4 flex items-center gap-3"><button [disabled]="query.pageNumber <= 1 || loading()" (click)="page(-1)">Previous</button><span>Page {{ query.pageNumber }} ? {{ total() }} results</span>
+      <button [disabled]="query.pageNumber * query.pageSize >= total() || loading()" (click)="page(1)">Next</button>
+      <label>Rows<select [ngModel]="query.pageSize" (ngModelChange)="apply({ pageSize: +$event, pageNumber: 1 })"><option [ngValue]="20">20</option><option [ngValue]="50">50</option><option [ngValue]="100">100</option></select></label>
+    </div>
+  }
+  @if (detailLoading()) { <p role="status">Loading session details...</p> }
+  @if (detail(); as row) {
+    <div class="fixed inset-0 z-50 flex justify-end bg-slate-900/50" (keydown.escape)="detail.set(null)"><section role="dialog" aria-modal="true" aria-label="Session details" class="h-full w-full max-w-xl overflow-y-auto bg-white p-6">
+      <button class="float-right" (click)="detail.set(null)">Close</button><h2 class="text-xl font-bold">Session details</h2>
+      <dl class="my-5 grid grid-cols-2 gap-3"><dt>User</dt><dd>{{ row.fullName }} ? {{ row.username }}</dd><dt>Status</dt><dd>{{ statusLabel(row.sessionStatus) }}</dd>
+        <dt>Login</dt><dd>{{ row.loginAtUtc | date:'medium' }}</dd><dt>Last activity</dt><dd>{{ row.lastActivityAtUtc | date:'medium' }}</dd><dt>Logout</dt><dd>{{ row.logoutAtUtc | date:'medium' }}</dd>
+        <dt>Expires</dt><dd>{{ row.expiresAtUtc | date:'medium' }}</dd><dt>Revoked</dt><dd>{{ row.revokedAtUtc | date:'medium' }}</dd><dt>Duration</dt><dd>{{ duration(row) }}</dd>
+        <dt>IP address</dt><dd>{{ row.ipAddress }}</dd><dt>Browser / OS</dt><dd>{{ row.browser }} / {{ row.operatingSystem }}</dd><dt>User agent</dt><dd class="break-all">{{ row.userAgent }}</dd>
+        <dt>Revoked by user</dt><dd>{{ row.revokedByUserId || '?' }}</dd><dt>Revocation reason</dt><dd>{{ row.revocationReason || '?' }}</dd></dl>
+      <button (click)="viewHistory(row)">View user history</button> @if (row.sessionStatus === 'Active') { <button [disabled]="busy()" (click)="askRevoke(row)">Revoke session</button> }
+      @if (row.userId) { <button [disabled]="busy()" (click)="askRevoke(row, true)">Revoke all active sessions for this user</button> }
+    </section></div>
+  }
+  @if (historyUser()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"><section role="dialog" aria-modal="true" aria-label="User access history" class="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-xl bg-white p-6">
+      <button class="float-right" (click)="historyUser.set('')">Close</button><h2 class="text-xl font-bold">User access history</h2>
+      @if (historyLoading()) { <p role="status">Loading history...</p> } @else { <table class="my-4 w-full text-left text-sm"><thead><tr><th>Time</th><th>Event</th><th>Identifier</th><th>Reason</th><th>IP</th><th>Administrator</th></tr></thead><tbody>
+        @for (event of history()?.items ?? []; track event.id) { <tr><td>{{ event.createdAtUtc | date:'medium' }}</td><td>{{ event.eventType }}</td><td>{{ event.identifier }}</td><td>{{ event.reason }}</td><td>{{ event.ipAddress }}</td><td>{{ event.actorUserId || '?' }}</td></tr> }
+        @empty { <tr><td colspan="6">No matching events.</td></tr> }</tbody></table>
+        <button [disabled]="(history()?.pageNumber ?? 1) <= 1" (click)="historyPage(-1)">Previous</button>
+        <button [disabled]="(history()?.pageNumber ?? 1) * query.pageSize >= (history()?.totalCount ?? 0)" (click)="historyPage(1)">Next</button> }
+    </section></div>
+  }
+  @if (confirmation(); as action) {
+    <div class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4"><section role="dialog" aria-modal="true" aria-labelledby="revoke-title" class="w-full max-w-lg rounded-xl bg-white p-6">
+      <h2 id="revoke-title" class="text-xl font-bold">{{ action.all ? 'Revoke all active sessions?' : 'Revoke session?' }}</h2><p class="my-3">{{ action.row.fullName }} will lose access from {{ action.all ? 'all active sessions' : 'this session' }}.</p>
+      @if (action.row.isCurrentSession || (action.all && isOwnUser(action.row))) { <p role="alert" class="my-3 font-bold text-red-700">This includes your current session. You will be signed out.</p> }
+      <label>Reason<textarea [(ngModel)]="reason" maxlength="200"></textarea></label>
+      @if (error()) { <p role="alert" class="text-red-700">{{ error() }}</p> }
+      <div class="mt-4 flex gap-3"><button [disabled]="busy()" (click)="confirmation.set(null)">Cancel</button><button class="text-red-700" [disabled]="busy() || !reason.trim() || reason.length > 200" (click)="confirmRevoke()">{{ busy() ? 'Revoking...' : 'Confirm revocation' }}</button></div>
+    </section></div>
+  }
+</section>

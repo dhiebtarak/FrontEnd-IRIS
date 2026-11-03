@@ -91,3 +91,6 @@ pnpm-debug.log*
 **/.idea/shelf/
 *.swp
 *.swo
+
+# Personal editor workspace
+/src/app/shared/pipes/IRIS-FullStack.code-workspace

@@ -6,6 +6,7 @@ import { finalize } from 'rxjs';
 import { FirstKeyPipe } from '../../shared/pipes/first-key.pipe';
 import { Auth } from '../../shared/services/auth';
 import { ToastrService } from 'ngx-toastr';
+import { RouterLink } from '@angular/router';
 
 const passwordMatchValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
   const password = control.get('password');
@@ -17,7 +18,7 @@ const passwordMatchValidator: ValidatorFn = (control: AbstractControl): Validati
 @Component({
   selector: 'app-registration',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FirstKeyPipe],
+  imports: [CommonModule, ReactiveFormsModule, FirstKeyPipe, RouterLink],
   templateUrl: './registration.component.html',
   styles: ``,
 })
@@ -26,6 +27,7 @@ export class RegistrationComponent implements OnInit {
   submitted = false;
   isSubmitting = false;
   successMessage = '';
+  createdUserId = '';
   readonly departmentPositions: Record<string, string[]> = {
     Reassurance: ['Front officer', 'Back officer', 'Finance officer']
   };
@@ -83,6 +85,7 @@ export class RegistrationComponent implements OnInit {
     if (this.isSubmitting) return;
     this.submitted = true;
     this.successMessage = '';
+    this.createdUserId = '';
 
     if (this.registrationForm.invalid) {
       this.registrationForm.markAllAsTouched();
@@ -100,6 +103,7 @@ export class RegistrationComponent implements OnInit {
           return;
         }
         this.successMessage = `User ${response.username} created successfully.`;
+        this.createdUserId = response.id;
         this.resetRegistrationForm(false);
         this.toastr.success(this.successMessage, 'Success');
       },

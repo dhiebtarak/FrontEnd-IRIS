@@ -20,26 +20,34 @@ import { ClaimsComingSoonComponent } from './claims/claims-coming-soon.component
 import { FinancialWorkspacePageComponent } from './workspaces/reassurance/financial-workspace/financial-workspace-page.component';
 import { AdminWorkspaceComponent } from './workspaces/reassurance/admin-workspace.component';
 import { AccessDeniedComponent } from './user/access-denied.component';
+import { AdminAccountManagementComponent } from './workspaces/reassurance/admin-account-management.component';
+import { AdminPermissionsComponent } from './workspaces/reassurance/admin-permissions.component';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
+  { path: 'workspace/admin', pathMatch: 'full', redirectTo: 'workspace/administrator' },
+  { path: 'workspace/admin/users/:action', redirectTo: 'workspace/administrator/users/:action' },
   { path: 'login', component: LoginComponent },
   { path: 'access-denied', component: AccessDeniedComponent },
   { path: 'user', component: UserComponent, canActivate: [authGuard] },
   {
-    path: 'workspace/admin',
+    path: 'workspace/administrator',
     component: AdminWorkspaceComponent,
     canActivate: [authGuard, adminGuard],
     canActivateChild: [authGuard, adminGuard],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'users/new' },
-      { path: 'users/new', component: RegistrationComponent }
+      { path: '', pathMatch: 'full', redirectTo: 'users/accounts' },
+      { path: 'users/new', component: RegistrationComponent },
+      { path: 'users/accounts', component: AdminAccountManagementComponent },
+      { path: 'users/permissions', component: AdminPermissionsComponent },
+      { path: 'access-activity', loadComponent: () => import('./workspaces/reassurance/admin-access-activity.component').then(m => m.AdminAccessActivityComponent) }
     ]
   },
   {
     path: 'workspace/reassurance/front-officer',
     component: FrontOfficerLayoutComponent,
-    canActivate: [workspaceGuard],
+    canActivate: [authGuard],
+    canActivateChild: [workspaceGuard],
     children: [
       { path: '', component: FrontOfficerWorkspaceComponent },
       { path: 'counterparties', component: CounterpartyListComponent },
@@ -59,7 +67,8 @@ export const routes: Routes = [
   {
     path: 'workspace/reassurance/back-officer',
     component: BackOfficerWorkspaceComponent,
-    canActivate: [workspaceGuard],
+    canActivate: [authGuard],
+    canActivateChild: [workspaceGuard],
     children: [
       { path: '', component: FinancialWorkspacePageComponent, data: { role: 'back-office', page: 'dashboard' } },
       { path: 'receipt-pairing', component: FinancialWorkspacePageComponent, data: { role: 'back-office', page: 'receipts' } },
@@ -74,7 +83,8 @@ export const routes: Routes = [
   {
     path: 'workspace/reassurance/finance-officer',
     component: FinanceOfficerWorkspaceComponent,
-    canActivate: [workspaceGuard],
+    canActivate: [authGuard],
+    canActivateChild: [workspaceGuard],
     children: [
       { path: '', component: FinancialWorkspacePageComponent, data: { role: 'finance', page: 'dashboard' } },
       { path: 'incoming-remittances', component: FinancialWorkspacePageComponent, data: { role: 'finance', page: 'receipts' } },

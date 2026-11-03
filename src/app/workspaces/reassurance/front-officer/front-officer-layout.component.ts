@@ -21,19 +21,22 @@ export class FrontOfficerLayoutComponent {
       label: 'Counterparties',
       route: '/workspace/reassurance/front-officer/counterparties',
       icon: 'counterparties',
-      exact: false
+      exact: false,
+      module: 'Counterparties'
     },
     {
       label: 'Contracts',
       route: '/workspace/reassurance/front-officer/contracts',
       icon: 'contracts',
-      exact: false
+      exact: false,
+      module: 'Contracts'
     },
     {
       label: 'Claims',
       route: '/workspace/reassurance/front-officer/claims',
       icon: 'claims',
-      exact: false
+      exact: false,
+      module: 'Claims'
     }
   ];
 

@@ -67,6 +67,9 @@
             <div>
               <p class="font-bold text-iris-teal-light text-sm">Action Confirmed</p>
               <p class="text-xs text-iris-divider/90 mt-0.5">{{ successMessage }}</p>
+              @if (createdUserId) {
+                <a [routerLink]="['/workspace/admin/users/permissions']" [queryParams]="{ userId: createdUserId }" class="mt-2 inline-flex text-xs font-bold text-white underline">Manage permissions</a>
+              }
             </div>
           </div>
         </div>
@@ -244,7 +247,6 @@
           </div>
           @if ((submitted || f['position'].touched) && f['position'].errors) {
             <div class="bg-iris-navy border border-iris-navy-mid text-iris-teal-extralight text-xs rounded px-3 py-1.5 mt-1.5 flex items-center space-x-1.5">
-              <span>ðŸ›ˆ</span>
               <span>Please select your department position.</span>
             </div>
           }

@@ -23,6 +23,7 @@ export interface WorkspaceNavigationItem {
   route: string;
   icon: WorkspaceNavIcon;
   exact: boolean;
+  module?: string;
 }
 
 @Component({
@@ -50,6 +51,23 @@ export class RoleWorkspaceShellComponent {
   @Input() deskLabel = 'Secure workspace';
 
   readonly isMobileNavigationOpen = signal(false);
+  readonly moduleNavigationItems: WorkspaceNavigationItem[] = [
+    { label: 'Counterparties', route: '/workspace/reassurance/front-officer/counterparties', icon: 'counterparties', exact: false, module: 'Counterparties' },
+    { label: 'Contracts', route: '/workspace/reassurance/front-officer/contracts', icon: 'contracts', exact: false, module: 'Contracts' },
+    { label: 'Claims', route: '/workspace/reassurance/front-officer/claims', icon: 'claims', exact: false, module: 'Claims' },
+    { label: 'Back Officer', route: '/workspace/reassurance/back-officer', icon: 'remittances', exact: true, module: 'BackOffice' },
+    { label: 'Encaissement', route: '/workspace/reassurance/finance-officer/incoming-remittances', icon: 'receipts', exact: false, module: 'Encaissement' },
+    { label: 'DÃ©caissement', route: '/workspace/reassurance/finance-officer/disbursement-queue', icon: 'disbursements', exact: false, module: 'Decaissement' },
+    { label: 'Counterparty Bank Accounts', route: '/workspace/reassurance/finance-officer/counterparty-bank-accounts', icon: 'bankAccounts', exact: false, module: 'CounterpartyBankAccounts' }
+  ];
+
+  get visibleNavigationItems(): WorkspaceNavigationItem[] {
+    if (this.authService.isAdmin()) return this.navigationItems;
+    const current = this.navigationItems.filter(item => !item.module || this.authService.hasModule(item.module));
+    const represented = new Set(current.map(item => item.module).filter(Boolean));
+    const granted = this.moduleNavigationItems.filter(item => this.authService.hasModule(item.module!) && !represented.has(item.module));
+    return [...current, ...granted];
+  }
 
   constructor(
     private readonly authService: Auth,

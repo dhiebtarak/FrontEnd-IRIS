@@ -45,7 +45,7 @@ export class FrontOfficerWorkspaceComponent implements OnInit {
   }
 
   get canCreateContract(): boolean {
-    return this.authService.getWorkspaceRoute() === '/workspace/reassurance/front-officer';
+    return this.authService.hasModule('Contracts');
   }
 
   loadDashboardSummary(): void {

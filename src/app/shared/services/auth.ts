@@ -35,8 +35,35 @@ export interface WorkspaceAccessResponse {
   position: string;
   roles: string[];
   permissions: string[];
+  modules?: string[];
   [key: string]: unknown;
 }
+
+export interface AdminManagedUser {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  department: string;
+  position: string;
+  roles: string[];
+  modules: string[];
+  isEnabled: boolean;
+  lastSuccessfulLoginAtUtc?: string;
+  activeSessionCount: number;
+  accountStatus: string;
+  isLocked: boolean;
+}
+
+export const ACCESS_MODULES = [
+  { key: 'Counterparties', label: 'Counterparties', description: 'Front Officer counterparty screens' },
+  { key: 'Contracts', label: 'Contracts', description: 'Contract creation and placement screens' },
+  { key: 'Claims', label: 'Claims', description: 'Claims screens' },
+  { key: 'BackOffice', label: 'Back Officer', description: 'Receipt pairing, invoices and outgoing remittances' },
+  { key: 'Encaissement', label: 'Encaissement', description: 'Incoming receipts and allocations' },
+  { key: 'Decaissement', label: 'Decaissement', description: 'Outgoing payments and disbursements' },
+  { key: 'CounterpartyBankAccounts', label: 'Counterparty Bank Accounts', description: 'Cedent and reinsurer bank accounts' }
+] as const;
 
 @Injectable({
   providedIn: 'root',
@@ -53,6 +80,34 @@ export class Auth {
     return this.httpClient.post<UserProfileResponse>(`${this.baseUrl}/users`, formData);
   }
 
+  listAdminUsers(search = ''): Observable<AdminManagedUser[]> {
+    const suffix = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+    return this.httpClient.get<AdminManagedUser[]>(`${this.baseUrl}/users/admin${suffix}`);
+  }
+
+  getAdminUserModules(userId: string): Observable<string[]> {
+    return this.httpClient.get<string[]>(`${this.baseUrl}/users/admin/${encodeURIComponent(userId)}/modules`);
+  }
+
+  setAdminUserModules(userId: string, modules: string[]): Observable<string[]> {
+    return this.httpClient.put<string[]>(`${this.baseUrl}/users/admin/${encodeURIComponent(userId)}/modules`, { modules });
+  }
+
+  setAdminUserEnabled(userId: string, isEnabled: boolean): Observable<{ userId: string; isEnabled: boolean }> {
+    return this.httpClient.patch<{ userId: string; isEnabled: boolean }>(`${this.baseUrl}/users/admin/${encodeURIComponent(userId)}/status`, { isEnabled });
+  }
+
+  hasModule(module: string): boolean {
+    if (this.isAdmin()) return false;
+    const workspaceModules = this.findStringArray(this.getStoredWorkspace(), ['modules']);
+    const userModules = this.findStringArray(this.getCurrentUser(), ['modules']);
+    return [...workspaceModules, ...userModules].some(value => value.toLowerCase() === module.toLowerCase());
+  }
+
+  hasAnyModule(modules: string[]): boolean {
+    return modules.some(module => this.hasModule(module));
+  }
+
   loginUser(formData: any) {
     return this.httpClient.post<LoginResponse>(`${this.baseUrl}/auth/login`, formData).pipe(
       tap(response => this.saveSessionFromAuthResponse(response))
@@ -63,8 +118,16 @@ export class Auth {
     return this.httpClient.get<UserProfileResponse>(`${this.baseUrl}/users/me`);
   }
 
+  refreshCurrentUserProfile(): Observable<UserProfileResponse> {
+    return this.fetchCurrentUserProfile().pipe(tap(user => this.saveUserProfile(user)));
+  }
+
   fetchCurrentWorkspace(): Observable<WorkspaceAccessResponse> {
     return this.httpClient.get<WorkspaceAccessResponse>(`${this.baseUrl}/workspaces/me`);
+  }
+
+  refreshCurrentWorkspace(): Observable<WorkspaceAccessResponse> {
+    return this.fetchCurrentWorkspace().pipe(tap(workspace => this.saveWorkspace(workspace)));
   }
 
   logout(): Observable<unknown> {
@@ -136,15 +199,29 @@ export class Auth {
   }
 
   isAdmin(): boolean {
-    const userRoles = this.findStringArray(this.getCurrentUser(), ['roles']);
-    const workspaceRoles = this.findStringArray(this.getStoredWorkspace(), ['roles']);
-    return [...userRoles, ...workspaceRoles].some(role => role.trim().toLowerCase() === 'admin');
+    const workspace = this.getStoredWorkspace();
+    const workspaceRoles = this.findStringArray(workspace, ['roles']);
+    if (workspace && typeof workspace === 'object' && Array.isArray((workspace as Record<string, unknown>)['roles'])) {
+      return workspaceRoles.some(role => role.trim().toLowerCase() === 'admin');
+    }
+    return this.findStringArray(this.getCurrentUser(), ['roles']).some(role => role.trim().toLowerCase() === 'admin');
   }
 
   getWorkspaceRoute(): string {
     if (this.isAdmin()) {
-      return '/workspace/admin';
+      return '/workspace/administrator';
     }
+
+    const accessibleRoute = [
+      ['Counterparties', '/workspace/reassurance/front-officer/counterparties'],
+      ['Contracts', '/workspace/reassurance/front-officer/contracts'],
+      ['Claims', '/workspace/reassurance/front-officer/claims'],
+      ['BackOffice', '/workspace/reassurance/back-officer'],
+      ['Encaissement', '/workspace/reassurance/finance-officer/incoming-remittances'],
+      ['Decaissement', '/workspace/reassurance/finance-officer/disbursement-queue'],
+      ['CounterpartyBankAccounts', '/workspace/reassurance/finance-officer/counterparty-bank-accounts']
+    ].find(([module]) => this.hasModule(module));
+    if (accessibleRoute) return accessibleRoute[1];
 
     const workspace = this.getStoredWorkspace();
     const workspaceKey = this.normalizeRoleValue(this.findUserValue(workspace, ['workspaceKey']));
