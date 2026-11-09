@@ -1,14 +1,15 @@
 import { CommonModule, DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, HostListener, OnInit, computed, inject, isDevMode, signal } from '@angular/core';
+import { Component, DestroyRef, LOCALE_ID, HostListener, OnInit, computed, inject, isDevMode, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { finalize, forkJoin, Observable, Subscription, debounceTime, distinctUntilChanged, merge, of, take } from 'rxjs';
-import { Counterparty, FinanceCounterpartyListItem } from '../../../shared/models/counterparty.model';
+import { finalize, Observable, Subject, Subscription, catchError, switchMap, debounceTime, distinctUntilChanged, merge, of, take } from 'rxjs';
+import { Counterparty, CounterpartyListItem, FinanceCounterpartyListItem } from '../../../shared/models/counterparty.model';
 import { CurrencyReference } from '../../../shared/models/contract.model';
 import {
   BankAccountResponse,
+  FinancialReceiptQuery,
   BankAccountSnapshot,
   BankReceiptResponse,
   BackendFileDownload,
@@ -29,6 +30,8 @@ import {
   InvoicePaymentStatus,
   normalizePaymentStatus
 } from '../../../shared/models/payment-status.util';
+import { CounterpartyAutocompleteComponent } from '../../../shared/components/counterparty-autocomplete/counterparty-autocomplete.component';
+import { calendarDateValidator, receiptFilterValidator, formatCalendarDate } from '../../../shared/models/calendar-date.util';
 import { DocumentAttachmentsComponent } from '../../../shared/components/document-attachments/document-attachments.component';
 import { DocumentContext } from '../../../shared/models/document.model';
 import { CounterpartiesService } from '../../../shared/services/counterparties.service';
@@ -58,7 +61,7 @@ enum RemittanceWorkflowStatus {
 @Component({
   selector: 'app-financial-workspace-page',
   standalone: true,
-  imports: [CommonModule, DatePipe, NgClass, ReactiveFormsModule, DocumentAttachmentsComponent],
+  imports: [CommonModule, DatePipe, NgClass, ReactiveFormsModule, DocumentAttachmentsComponent, CounterpartyAutocompleteComponent],
   templateUrl: './financial-workspace-page.component.html',
   styles: `:host { display: block; }`
 })
@@ -74,6 +77,23 @@ export class FinancialWorkspacePageComponent implements OnInit {
   readonly page = signal<FinancialPage>('dashboard');
   readonly receipts = signal<BankReceiptResponse[]>([]);
   readonly totalReceipts = signal(0);
+  readonly receiptPageNumber = signal(1);
+  readonly receiptPageSize = signal(25);
+  readonly receiptTotalPages = signal(0);
+  readonly receiptCounterparty = signal<CounterpartyListItem | null>(null);
+  readonly receiptFilterReset = signal(0);
+  readonly accountDirectorySelection = signal<CounterpartyListItem | null>(null);
+  readonly bankAccountFormVisible = signal(false);
+  readonly bankAccountViewOnly = signal(false);
+  readonly paymentAccountId = signal<number | null>(null);
+  private readonly locale = inject(LOCALE_ID);
+  private readonly receiptLoads = new Subject<FinancialReceiptQuery>();
+  private readonly receiptAccountSearches = new Subject<{search:string;counterpartyId?:number;page:number}>();
+  readonly receiptFormCounterparty = signal<CounterpartyListItem|null>(null);
+  readonly receiptAccountPage = signal(1);
+  readonly receiptAccountHasMore = signal(false);
+  private readonly chosenReceiptAccount = signal<BankAccountResponse|null>(null);
+  readonly displayCalendarDate = (value: string | null | undefined) => formatCalendarDate(value, this.locale);
   readonly remittances = signal<RemittanceResponse[]>([]);
   readonly remittancePageNumber = signal(1);
   readonly remittancePageSize = signal(20);
@@ -176,8 +196,10 @@ export class FinancialWorkspacePageComponent implements OnInit {
   });
   readonly lastRemittanceConfirmation = signal<RemittanceBatchConfirmationResponse | null>(null);
   readonly activeBankAccounts = computed(() => this.bankAccounts().filter(account => account.isActive));
+  readonly eligibleDisbursementBankAccounts = computed(() => this.activeBankAccounts().filter(account => this.isValidDisbursementBankAccount(account)));
   readonly selectedDisbursementBankAccount = computed(() => {
-    return this.activeBankAccounts().find(account => this.isValidDisbursementBankAccount(account)) ?? null;
+    const accounts=this.eligibleDisbursementBankAccounts();
+    return accounts.find(account=>account.idBankAccount===this.paymentAccountId()) ?? accounts.find(account=>account.isDefault) ?? (accounts.length===1?accounts[0]:null);
   });
   readonly activeReceiptBankAccounts = computed(() => this.allReceiptBankAccounts().filter(account => account.isActive));
   readonly filteredReceiptBankAccounts = computed(() => {
@@ -205,7 +227,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   });
   selectedReceiptBankAccount(): BankAccountResponse | null {
     const bankAccountId = this.receiptForm.controls.bankAccountId.value;
-    return this.activeReceiptBankAccounts().find(account => account.idBankAccount === bankAccountId) ?? null;
+    return this.activeReceiptBankAccounts().find(account => account.idBankAccount === bankAccountId) ?? (this.chosenReceiptAccount()?.idBankAccount===bankAccountId && this.chosenReceiptAccount()?.isActive ? this.chosenReceiptAccount() : null);
   }
   receiptValidationMessages(): string[] {
     if (!this.receiptForm.touched) {
@@ -219,8 +241,8 @@ export class FinancialWorkspacePageComponent implements OnInit {
       messages.push('Select a bank account from the search results.');
     }
 
-    if (controls.receiptMonth.invalid) {
-      messages.push('Enter the receipt month in YYYY-MM format.');
+    if (controls.operationDate.invalid) {
+      messages.push('Select a valid complete encaissement date.');
     }
 
     if (controls.amountReceived.invalid) {
@@ -391,15 +413,19 @@ export class FinancialWorkspacePageComponent implements OnInit {
     pairingStatus: new FormControl('', { nonNullable: true }),
     counterpartyId: new FormControl<number | null>(null),
     currencyId: new FormControl<number | null>(null),
-    operationFrom: new FormControl('', { nonNullable: true }),
-    operationTo: new FormControl('', { nonNullable: true })
-  });
+    operationFrom: new FormControl('', { nonNullable: true, validators: [calendarDateValidator] }),
+    operationTo: new FormControl('', { nonNullable: true, validators: [calendarDateValidator] }),
+    minAmount: new FormControl<number | null>(null, Validators.min(0)),
+    maxAmount: new FormControl<number | null>(null, Validators.min(0)),
+    sortBy: new FormControl('operationDate', { nonNullable: true }),
+    sortDirection: new FormControl<'asc' | 'desc'>('desc', { nonNullable: true })
+  }, { validators: receiptFilterValidator });
 
   readonly receiptForm = new FormGroup({
     bankAccountSearch: new FormControl('', { nonNullable: true }),
     bankAccountId: new FormControl<number | null>(null, [Validators.required]),
-    receiptMonth: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.pattern(/^\d{4}-\d{2}$/)] }),
-    amountReceived: new FormControl<number | null>(null, [Validators.required, Validators.min(0.01)]),
+    operationDate: new FormControl('', { nonNullable: true, validators: [Validators.required, calendarDateValidator] }),
+    amountReceived: new FormControl<number | null>(null, [Validators.required, Validators.min(0.0001)]),
     settlementMethod: new FormControl('BankTransfer', { nonNullable: true }),
   });
 
@@ -414,6 +440,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     iban: new FormControl('', { nonNullable: true, validators: [Validators.required, this.ibanValidator()] }),
     swiftBic: new FormControl('', { nonNullable: true, validators: [Validators.required, this.swiftBicValidator()] }),
     accountLabel: new FormControl('', { nonNullable: true }),
+    isDefault: new FormControl(false, { nonNullable: true }),
     hasCorrespondentBank: new FormControl(false, { nonNullable: true }),
     correspondentBankName: new FormControl('', { nonNullable: true }),
     correspondentSwiftBic: new FormControl('', { nonNullable: true }),
@@ -460,9 +487,30 @@ export class FinancialWorkspacePageComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.receiptLoads.pipe(switchMap(query => {
+      this.isLoading.set(true); this.receiptError.set('');
+      const request=this.role()==='finance'?this.workflowService.getFinanceReceipts(query):this.workflowService.getBackOfficeReceipts(query);
+      return request.pipe(catchError(error => { this.receiptError.set(this.getErrorMessage(error,'Receipts could not be loaded.')); return of(null); }));
+    }),takeUntilDestroyed(this.destroyRef)).subscribe(response => {
+      this.isLoading.set(false);
+      this.receipts.set(response?.items ?? []); this.totalReceipts.set(response?.totalCount ?? 0);
+      this.receiptTotalPages.set(response?.totalPages ?? Math.ceil((response?.totalCount ?? 0)/this.receiptPageSize()));
+      if(response) this.openPendingReceiptIfAvailable();
+    });
+    this.receiptAccountSearches.pipe(switchMap(query => {
+      this.isReceiptBankAccountLoading.set(true);
+      return this.workflowService.getReceiptBankAccountOptions(query.search,query.counterpartyId,query.page).pipe(catchError(error=>{
+        this.errorMessage.set(this.getErrorMessage(error,'Active bank accounts could not be loaded.'));return of(null);
+      }));
+    }),takeUntilDestroyed(this.destroyRef)).subscribe(response=>{
+      if(response){this.allReceiptBankAccounts.set(response.pageNumber===1?response.items:[...this.allReceiptBankAccounts(),...response.items]);this.receiptAccountHasMore.set(response.pageNumber<response.totalPages);}
+      else{this.allReceiptBankAccounts.set([]);this.receiptAccountHasMore.set(false);}
+      this.hasLoadedReceiptBankAccounts.set(true);this.isReceiptBankAccountLoading.set(false);
+    });
     this.route.data.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(data => {
       this.role.set(data['role'] === 'back-office' ? 'back-office' : 'finance');
       this.page.set((data['page'] as FinancialPage) ?? 'dashboard');
+      if(this.page()==='receipts' && this.role()==='back-office' && !this.receiptFilters.dirty)this.receiptFilters.controls.sortBy.setValue('pairingStatus',{emitEvent:false});
       this.loadPage();
     });
 
@@ -472,9 +520,14 @@ export class FinancialWorkspacePageComponent implements OnInit {
       this.receiptFilters.controls.counterpartyId.valueChanges,
       this.receiptFilters.controls.currencyId.valueChanges,
       this.receiptFilters.controls.operationFrom.valueChanges,
-      this.receiptFilters.controls.operationTo.valueChanges
+      this.receiptFilters.controls.operationTo.valueChanges,
+      this.receiptFilters.controls.minAmount.valueChanges,
+      this.receiptFilters.controls.maxAmount.valueChanges,
+      this.receiptFilters.controls.sortBy.valueChanges,
+      this.receiptFilters.controls.sortDirection.valueChanges
     ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.page() === 'receipts') {
+        this.receiptPageNumber.set(1);
         this.loadReceipts();
       }
     });
@@ -517,6 +570,10 @@ export class FinancialWorkspacePageComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(hasCorrespondentBank => this.syncCorrespondentBankValidators(hasCorrespondentBank));
 
+    this.receiptForm.controls.bankAccountSearch.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(value=>{
+      const selected=this.selectedReceiptBankAccount();
+      if(selected && value!==this.getReceiptBankAccountOptionLabel(selected)) this.receiptForm.controls.bankAccountId.setValue(null,{emitEvent:false});
+    });
     this.receiptForm.controls.bankAccountSearch.valueChanges
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(value => this.handleReceiptBankAccountSearch(value));
@@ -593,7 +650,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     }
 
     if (this.page() === 'receipts') {
-      this.loadCounterparties();
+      this.loadCurrencies();
       this.loadReceipts();
       return;
     }
@@ -624,36 +681,28 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   loadReceipts(): void {
-    this.isLoading.set(true);
-    this.errorMessage.set('');
-    this.receiptError.set('');
-    const query = {
-      pageNumber: 1,
-      pageSize: 25,
-      sortBy: this.role() === 'back-office' ? 'pairingStatus' : 'operationDate',
-      sortDirection: 'asc' as const,
-      search: this.receiptFilters.controls.search.value,
-      pairingStatus: this.receiptFilters.controls.pairingStatus.value,
-      counterpartyId: this.receiptFilters.controls.counterpartyId.value,
-      currencyId: this.receiptFilters.controls.currencyId.value,
-      operationFrom: this.receiptFilters.controls.operationFrom.value,
-      operationTo: this.receiptFilters.controls.operationTo.value
-    };
+    this.receiptFilters.updateValueAndValidity({emitEvent:false});
+    if(this.receiptFilters.invalid){this.receiptFilters.markAllAsTouched();return;}
+    const filters=this.receiptFilters.getRawValue();
+    this.receiptLoads.next({...filters,pageNumber:this.receiptPageNumber(),pageSize:this.receiptPageSize()});
+  }
 
-    const request = this.role() === 'finance'
-      ? this.workflowService.getFinanceReceipts(query)
-      : this.workflowService.getBackOfficeReceipts(query);
-
-    request.subscribe({
-      next: response => {
-        const receipts = Array.isArray(response.items) ? response.items : [];
-        this.receipts.set(this.role() === 'back-office' ? this.sortReceiptsForBackOffice(receipts) : receipts);
-        this.totalReceipts.set(response.totalCount ?? receipts.length);
-        this.isLoading.set(false);
-        this.openPendingReceiptIfAvailable();
-      },
-      error: error => this.handleLoadError(error, 'Receipts could not be loaded.', this.receiptError)
-    });
+  changeReceiptPage(delta:number):void {
+    const next=this.receiptPageNumber()+delta;if(next<1 || next>this.receiptTotalPages() || this.isLoading())return;
+    this.receiptPageNumber.set(next);this.loadReceipts();
+  }
+  selectReceiptCounterparty(item:CounterpartyListItem|null):void {
+    this.receiptCounterparty.set(item);this.receiptFilters.controls.counterpartyId.setValue(item?Number(item.id):null);
+  }
+  clearReceiptFilters():void {
+    this.receiptCounterparty.set(null);this.receiptFilterReset.update(v=>v+1);this.receiptPageNumber.set(1);
+    this.receiptFilters.reset({search:'',pairingStatus:'',counterpartyId:null,currencyId:null,operationFrom:'',operationTo:'',minAmount:null,maxAmount:null,sortBy:'operationDate',sortDirection:'desc'},{emitEvent:false});
+    this.loadReceipts();
+  }
+  openCounterpartyAccounts(item:CounterpartyListItem|null):void {
+    this.accountDirectorySelection.set(item);if(!item)return;
+    if(typeof item.hasActiveBankAccount!=='boolean'||typeof item.activeBankAccountCount!=='number'){this.errorMessage.set('Counterparty account status is unavailable.');return;}
+    this.openBankAccounts({id:Number(item.id),name:item.name,status:item.status,hasActiveBankAccount:item.hasActiveBankAccount,activeBankAccountCount:item.activeBankAccountCount});
   }
 
   loadRemittances(): void {
@@ -838,17 +887,19 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   openReceiptModal(): void {
-    this.loadReceiptBankAccountOptions();
+    this.chosenReceiptAccount.set(null);
+    this.receiptFormCounterparty.set(null);
     this.receiptForm.reset({
       bankAccountSearch: '',
       bankAccountId: null,
-      receiptMonth: this.currentMonth(),
+      operationDate: this.localCalendarToday(),
       amountReceived: null,
       settlementMethod: 'BankTransfer',
-    });
+    }, {emitEvent:false});
     this.receiptBankAccountQuery.set('');
     this.highlightedReceiptBankAccountIndex.set(0);
     this.modal.set('receipt');
+    this.loadReceiptBankAccountOptions();
   }
 
   openReceiptBankAccountDropdown(): void {
@@ -882,6 +933,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   selectReceiptBankAccount(account: BankAccountResponse): void {
+    this.chosenReceiptAccount.set(account);
     this.receiptForm.patchValue({
       bankAccountSearch: this.getReceiptBankAccountOptionLabel(account),
       bankAccountId: account.idBankAccount
@@ -892,6 +944,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   clearReceiptBankAccountSelection(): void {
+    this.chosenReceiptAccount.set(null);
     this.receiptForm.patchValue({
       bankAccountSearch: '',
       bankAccountId: null
@@ -958,42 +1011,15 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   private loadReceiptBankAccountOptions(): void {
-    if (this.hasLoadedReceiptBankAccounts() || this.isReceiptBankAccountLoading()) {
-      return;
-    }
-
-    const counterpartyIds = this.counterparties()
-      .map(counterparty => this.getPositiveId(counterparty.id))
-      .filter((id): id is number => id != null);
-
-    if (!counterpartyIds.length) {
-      this.allReceiptBankAccounts.set([]);
-      this.hasLoadedReceiptBankAccounts.set(true);
-      return;
-    }
-
-    this.isReceiptBankAccountLoading.set(true);
-    this.errorMessage.set('');
-
-    forkJoin(counterpartyIds.map(counterpartyId => this.workflowService.getBankAccounts(counterpartyId))).subscribe({
-      next: accountGroups => {
-        const uniqueAccounts = new Map<number, BankAccountResponse>();
-        accountGroups.flat().forEach(account => {
-          const accountId = this.getPositiveId(account.idBankAccount);
-          if (accountId != null) {
-            uniqueAccounts.set(accountId, account);
-          }
-        });
-
-        this.allReceiptBankAccounts.set([...uniqueAccounts.values()]);
-        this.hasLoadedReceiptBankAccounts.set(true);
-        this.isReceiptBankAccountLoading.set(false);
-      },
-      error: error => {
-        this.errorMessage.set(this.getErrorMessage(error, 'Active bank accounts could not be loaded.'));
-        this.isReceiptBankAccountLoading.set(false);
-      }
-    });
+    this.receiptAccountPage.set(1);
+    this.receiptAccountSearches.next({search:this.selectedReceiptBankAccount()?'':this.receiptBankAccountQuery(),counterpartyId:this.receiptFormCounterparty()?Number(this.receiptFormCounterparty()!.id):undefined,page:1});
+  }
+  selectReceiptFormCounterparty(item:CounterpartyListItem|null):void {
+    this.receiptFormCounterparty.set(item);this.clearReceiptBankAccountSelection();this.loadReceiptBankAccountOptions();
+  }
+  moreReceiptAccounts():void {
+    if(this.isReceiptBankAccountLoading()||!this.receiptAccountHasMore())return;
+    this.receiptAccountPage.update(p=>p+1);this.receiptAccountSearches.next({search:this.receiptBankAccountQuery(),counterpartyId:this.receiptFormCounterparty()?Number(this.receiptFormCounterparty()!.id):undefined,page:this.receiptAccountPage()});
   }
 
   private clearReceiptBankAccountCache(): void {
@@ -1175,6 +1201,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.loadCurrencies();
     this.loadCounterpartyDetails(counterpartyId);
     this.loadBankAccounts(counterpartyId);
+    this.bankAccountFormVisible.set(false);
   }
 
   loadBankAccounts(counterpartyId: number): void {
@@ -1185,7 +1212,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.disbursementBankAccountsSubscription?.unsubscribe();
     this.loadingDisbursementBankAccountsCounterpartyId = this.modal() === 'disbursement' ? counterpartyId : null;
     this.isBankAccountLoading.set(true);
-    const subscription = this.workflowService.getBankAccounts(counterpartyId).pipe(
+    const subscription = (this.modal()==='bank-account'?this.workflowService.getBankAccounts(counterpartyId,false):this.workflowService.getBankAccounts(counterpartyId)).pipe(
       take(1),
       finalize(() => {
         this.isBankAccountLoading.set(false);
@@ -1204,10 +1231,10 @@ export class FinancialWorkspacePageComponent implements OnInit {
         }
       }
     });
-    this.disbursementBankAccountsSubscription = this.modal() === 'disbursement' && !subscription.closed ? subscription : null;
+    this.disbursementBankAccountsSubscription = !subscription.closed ? subscription : null;
   }
 
-  loadDisbursementContext(remittanceReference: number): void {
+  loadDisbursementContext(remittanceReference: number, bankAccountId?: number): void {
     if (this.loadingDisbursementContextReference === remittanceReference) {
       return;
     }
@@ -1215,7 +1242,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.disbursementContextSubscription?.unsubscribe();
     this.loadingDisbursementContextReference = remittanceReference;
     this.isLoadingContext.set(true);
-    const subscription = this.workflowService.getDisbursementContext(remittanceReference).pipe(
+    const subscription = (bankAccountId == null ? this.workflowService.getDisbursementContext(remittanceReference) : this.workflowService.getDisbursementContext(remittanceReference, bankAccountId)).pipe(
       take(1),
       finalize(() => {
         this.isLoadingContext.set(false);
@@ -1229,6 +1256,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
           return;
         }
         this.disbursementContext.set(context);
+        this.paymentAccountId.set(context.defaultBankAccount?.idBankAccount ?? null);
         const current = this.selectedRemittance();
         if (!current || this.getNumericRemittanceReference(current) !== remittanceReference) {
           return;
@@ -1454,7 +1482,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.modal.set('remittance-confirmation');
   }
 
-  openClosingDisbursementModal(closingId: number): void {
+  openClosingDisbursementModal(closingId: number, bankAccountId?: number): void {
     if (this.modal() === 'disbursement' && this.selectedClosingId() === closingId) {
       return;
     }
@@ -1467,7 +1495,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.isTransferConfirmationOpen.set(false);
     this.modal.set('disbursement');
     this.isLoadingContext.set(true);
-    const subscription = this.workflowService.getClosingDisbursementContext(closingId).pipe(
+    const subscription = (bankAccountId == null ? this.workflowService.getClosingDisbursementContext(closingId) : this.workflowService.getClosingDisbursementContext(closingId, bankAccountId)).pipe(
       take(1), takeUntilDestroyed(this.destroyRef), finalize(() => this.isLoadingContext.set(false))
     ).subscribe({
       next: context => {
@@ -1490,10 +1518,17 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.disbursementContextSubscription = subscription.closed ? null : subscription;
   }
 
+  choosePaymentAccount(accountId:number):void {
+    if(!accountId || this.isSubmitting() || this.isLoadingContext())return;
+    const closing=this.closingContext();
+    if(closing){if(closing.disbursementId)return;this.openClosingDisbursementModal(closing.closingId,accountId);return;}
+    const remittance=this.selectedRemittance();const reference=remittance?this.getNumericRemittanceReference(remittance):null;
+    if(reference!=null && !this.getActualDisbursementId(remittance!))this.loadDisbursementContext(reference,accountId);
+  }
   startClosingPayment(): void {
     const context = this.closingContext();
     if (!context || !this.canStartClosingPayment(context) || this.isSubmitting()) return;
-    this.submit(() => this.workflowService.startClosingDisbursement(context.closingId), 'Closing payment started.', updated => {
+    this.submit(() => this.workflowService.startClosingDisbursement(context.closingId, context.selectedBankAccount?.idBankAccount), 'Closing payment started.', updated => {
       this.closingContext.set(updated);
       this.loadRemittances();
     }, false);
@@ -1604,12 +1639,14 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.submit(() => this.workflowService.createReceipt({
       bankAccountId: raw.bankAccountId!,
       amountReceived: raw.amountReceived!,
-      receiptMonth: raw.receiptMonth,
+      operationDate: raw.operationDate,
+      counterpartyId: this.receiptFormCounterparty()?Number(this.receiptFormCounterparty()!.id):account.idCounterparty || account.counterpartyId,
       settlementMethod: raw.settlementMethod,
     }), 'Encaissement created and sent to the Back Officer for pairing.', () => this.loadReceipts());
   }
 
   saveBankAccount(): void {
+    if(this.bankAccountViewOnly())return;
     const counterparty = this.selectedCounterparty();
     const counterpartyId = this.getPositiveId(counterparty?.id);
     if (!counterparty || this.bankAccountForm.invalid || this.isSubmitting()) {
@@ -1630,15 +1667,15 @@ export class FinancialWorkspacePageComponent implements OnInit {
       bankName: raw.bankName.trim(),
       bankCity: raw.bankCity.trim(),
       bankCountry: raw.bankCountry.trim(),
-      agencyCode: this.nullable(raw.agencyCode) ?? account?.agencyCode ?? null,
-      rib: this.nullable(raw.rib) ?? account?.rib ?? null,
+      agencyCode: this.nullable(raw.agencyCode),
+      rib: this.nullable(raw.rib),
       iban: this.normalizeAccountCode(raw.iban),
       swiftBic: this.normalizeAccountCode(raw.swiftBic),
       hasCorrespondentBank: raw.hasCorrespondentBank,
       correspondentBankName: raw.hasCorrespondentBank ? this.nullable(raw.correspondentBankName) : null,
       correspondentSwiftBic: raw.hasCorrespondentBank ? this.normalizeAccountCode(raw.correspondentSwiftBic) : null,
-      accountLabel: this.nullable(raw.accountLabel) ?? account?.accountLabel ?? null,
-      isDefault: account?.isDefault ?? false,
+      accountLabel: this.nullable(raw.accountLabel),
+      isDefault: raw.isDefault,
       isActive: raw.isActive
     };
     const requestFactory = account
@@ -1651,10 +1688,20 @@ export class FinancialWorkspacePageComponent implements OnInit {
       this.loadCounterparties();
       this.selectedBankAccount.set(null);
       this.resetBankAccountForm();
+      this.bankAccountFormVisible.set(false);
     }, false);
   }
 
-  editBankAccount(account: BankAccountResponse): void {
+  editBankAccount(account: BankAccountResponse, viewOnly = false): void {
+    if(this.isSubmitting() || this.isBankAccountLoading())return;
+    this.isBankAccountLoading.set(true);this.errorMessage.set('');
+    this.workflowService.getBankAccount(account.idCounterparty,account.idBankAccount).pipe(take(1),finalize(()=>this.isBankAccountLoading.set(false)),takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: detail=>this.showBankAccountForm(detail,viewOnly),
+      error: error=>this.errorMessage.set(this.getErrorMessage(error,'Bank account could not be loaded.'))
+    });
+  }
+  private showBankAccountForm(account:BankAccountResponse,viewOnly:boolean):void {
+    this.bankAccountFormVisible.set(true);this.bankAccountViewOnly.set(viewOnly);this.bankAccountForm.enable({emitEvent:false});
     this.selectedBankAccount.set(account);
     this.bankAccountForm.reset({
       currencyId: account.currencyId,
@@ -1667,6 +1714,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
       iban: account.iban ?? '',
       swiftBic: account.swiftBic ?? '',
       accountLabel: account.accountLabel ?? '',
+      isDefault: account.isDefault,
       hasCorrespondentBank: account.hasCorrespondentBank,
       correspondentBankName: account.correspondentBankName ?? '',
       correspondentSwiftBic: account.correspondentSwiftBic ?? '',
@@ -1674,9 +1722,11 @@ export class FinancialWorkspacePageComponent implements OnInit {
     });
     this.syncCorrespondentBankValidators(account.hasCorrespondentBank);
     this.bankAccountForm.markAsPristine();
+    if(viewOnly)this.bankAccountForm.disable({emitEvent:false});
   }
 
   resetBankAccountForm(): void {
+    this.bankAccountFormVisible.set(true);this.bankAccountViewOnly.set(false);this.bankAccountForm.enable({emitEvent:false});
     this.selectedBankAccount.set(null);
     this.bankAccountForm.reset({
       currencyId: null,
@@ -1689,6 +1739,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
       iban: '',
       swiftBic: '',
       accountLabel: '',
+      isDefault: false,
       hasCorrespondentBank: false,
       correspondentBankName: '',
       correspondentSwiftBic: '',
@@ -1710,8 +1761,20 @@ export class FinancialWorkspacePageComponent implements OnInit {
     this.bankAccountForm.controls.currencyId.markAsTouched();
   }
 
+  markBankAccountDefault(account:BankAccountResponse):void {
+    if(this.isSubmitting())return;this.isSubmitting.set(true);this.errorMessage.set('');
+    this.workflowService.setBankAccountDefault(account.idCounterparty,account.idBankAccount).pipe(finalize(()=>this.isSubmitting.set(false)),takeUntilDestroyed(this.destroyRef)).subscribe({
+      next:()=>{this.loadBankAccounts(account.idCounterparty);this.clearReceiptBankAccountCache();},
+      error:error=>this.errorMessage.set(this.getErrorMessage(error,'Default account could not be updated.'))
+    });
+  }
+  private localCalendarToday():string {
+    const today=new Date();return `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  }
   setBankAccountStatus(account: BankAccountResponse, isActive: boolean): void {
-    this.workflowService.setBankAccountStatus(account.idCounterparty, account.idBankAccount, isActive).subscribe({
+    if(this.isSubmitting())return;
+    this.isSubmitting.set(true);
+    this.workflowService.setBankAccountStatus(account.idCounterparty, account.idBankAccount, isActive).pipe(finalize(()=>this.isSubmitting.set(false)),takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.clearReceiptBankAccountCache();
         this.loadBankAccounts(account.idCounterparty);
@@ -2035,6 +2098,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     return [
       account.beneficiaryName || 'Beneficiary unavailable',
       account.bankName,
+      account.accountLabel,
       this.getBankAccountIbanDisplay(account),
       account.swiftBic,
       account.currencyCode
@@ -2046,7 +2110,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
       return 'No IBAN';
     }
 
-    return account.maskedIban?.trim() || this.maskIban(account.iban);
+    return account.maskedIban?.trim() || this.maskIban(account.iban || account.rib);
   }
 
   getEligibleInvoiceLabel(invoice: EligibleInvoice): string {
@@ -2542,7 +2606,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
       this.errorMessage.set('The backend did not provide a valid remittanceReference.');
       return;
     }
-    this.workflowService.startDisbursement(remittanceReference).subscribe({
+    this.workflowService.startDisbursement(remittanceReference, this.disbursementContext()?.defaultBankAccount?.idBankAccount ?? this.selectedDisbursementBankAccount()?.idBankAccount).subscribe({
       next: response => {
         const updated = this.applyDisbursementCommandResponse(remittance, response, 'PaymentInProgress');
         const downloadRequest = this.isAvoirRefund(updated)
@@ -2898,7 +2962,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   }
 
   getReceiptMonth(receipt: BankReceiptResponse): string {
-    return (receipt.receptionDate || receipt.operationDate || '').slice(0, 7) || 'Not provided';
+    return this.displayCalendarDate(receipt.operationDate);
   }
 
   private submit<T>(requestFactory: () => Observable<T>, success: string, afterSuccess: (response: T) => void, close = true): void {
@@ -2918,6 +2982,15 @@ export class FinancialWorkspacePageComponent implements OnInit {
         this.errorMessage.set(this.selectedClosingId() != null
           ? this.getCommandErrorMessage(error, fallback)
           : this.getErrorMessage(error, fallback));
+        if(this.modal()==='bank-account') {
+          const errors=Array.isArray(error.error?.errors)?error.error.errors:[];
+          for(const entry of errors) {
+            if(typeof entry!=='string')continue;
+            const separator=entry.indexOf(':');if(separator<0)continue;
+            const field=entry.slice(0,separator);const key=field.charAt(0).toLowerCase()+field.slice(1);
+            const control=this.bankAccountForm.get(key);if(control){control.setErrors({server:entry.slice(separator+1).trim()});control.markAsTouched();}
+          }
+        }
         this.isSubmitting.set(false);
       }
     });
