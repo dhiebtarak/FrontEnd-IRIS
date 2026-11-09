@@ -73,6 +73,8 @@ export interface CounterpartyListFilters {
 }
 
 export interface CounterpartyListItem {
+  hasActiveBankAccount?: boolean;
+  activeBankAccountCount?: number;
   id: number | string;
   legacyClientId: number | null;
   legacyCompanyCode: string | null;

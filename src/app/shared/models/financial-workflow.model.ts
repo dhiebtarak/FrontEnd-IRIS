@@ -38,7 +38,8 @@ export interface BankAccountResponse extends BankAccountRequest {
 
 export interface BankReceiptRequest {
   bankAccountId: number;
-  receiptMonth: string;
+  operationDate: string;
+  counterpartyId: number;
   amountReceived: number;
   settlementMethod: string;
 }
@@ -50,6 +51,8 @@ export interface FinancialReceiptQuery {
   pairingStatus?: string | null;
   operationFrom?: string | null;
   operationTo?: string | null;
+  minAmount?: number | null;
+  maxAmount?: number | null;
   pageNumber: number;
   pageSize: number;
   sortBy?: string | null;
@@ -79,6 +82,10 @@ export interface BankReceiptResponse {
   bankAccountId: number;
   counterpartyId: number;
   counterpartyName: string;
+  counterpartyBusinessCode?: string | null;
+  businessReference?: string | null;
+  bankName?: string;
+  maskedIban?: string | null;
   receptionDate: string;
   operationDate: string;
   amountReceived: number;

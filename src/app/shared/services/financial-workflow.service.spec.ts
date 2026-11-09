@@ -153,7 +153,8 @@ describe('FinancialWorkflowService', () => {
   it('creates incoming remittances with the exact bank receipt payload', () => {
     const payload = {
       bankAccountId: 11,
-      receiptMonth: '2026-09',
+      operationDate: '2026-09-23',
+      counterpartyId: 22,
       amountReceived: 1500,
       settlementMethod: 'BankTransfer'
     };

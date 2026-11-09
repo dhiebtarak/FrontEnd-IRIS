@@ -304,8 +304,8 @@ export class FinancialWorkflowService {
     );
   }
 
-  getDisbursementContext(remittanceReference: number): Observable<DisbursementContext> {
-    return this.httpClient.get<unknown>(`${this.baseUrl}/finance/remittances/${remittanceReference}/disbursement-context`).pipe(
+  getDisbursementContext(remittanceReference: number, bankAccountId?: number): Observable<DisbursementContext> {
+    return this.httpClient.get<unknown>(`${this.baseUrl}/finance/remittances/${remittanceReference}/disbursement-context`, { params: bankAccountId ? new HttpParams().set('bankAccountId', bankAccountId) : new HttpParams() }).pipe(
       map(response => this.normalizeDisbursementContext(response, remittanceReference))
     );
   }
@@ -317,8 +317,8 @@ export class FinancialWorkflowService {
     }).pipe(map(response => this.mapFileDownload(response)));
   }
 
-  getClosingDisbursementContext(closingId: number): Observable<ClosingDisbursementContext> {
-    return this.httpClient.get<Record<string, unknown>>(`${this.baseUrl}/finance/closings/${closingId}/disbursement-context`).pipe(map(record => ({
+  getClosingDisbursementContext(closingId: number, bankAccountId?: number): Observable<ClosingDisbursementContext> {
+    return this.httpClient.get<Record<string, unknown>>(`${this.baseUrl}/finance/closings/${closingId}/disbursement-context`, { params: bankAccountId ? new HttpParams().set('bankAccountId', bankAccountId) : new HttpParams() }).pipe(map(record => ({
       ...record,
       storedTotal: this.toRequiredNumber(record['storedTotal'] ?? record['StoredTotal'] ?? record['totalClosingAmount'] ?? record['TotalClosingAmount']),
       calculatedTotal: this.toRequiredNumber(record['calculatedTotal'] ?? record['CalculatedTotal']),
@@ -328,8 +328,8 @@ export class FinancialWorkflowService {
     } as ClosingDisbursementContext)));
   }
 
-  startClosingDisbursement(closingId: number): Observable<ClosingDisbursementContext> {
-    return this.httpClient.post<ClosingDisbursementContext>(`${this.baseUrl}/finance/closings/${closingId}/start-disbursement`, {});
+  startClosingDisbursement(closingId: number, bankAccountId?: number): Observable<ClosingDisbursementContext> {
+    return this.httpClient.post<ClosingDisbursementContext>(`${this.baseUrl}/finance/closings/${closingId}/start-disbursement`, bankAccountId ? { bankAccountId } : {});
   }
 
   confirmClosingTransfer(closingId: number): Observable<ClosingDisbursementContext> {
@@ -350,8 +350,8 @@ export class FinancialWorkflowService {
     return this.httpClient.post<DisbursementResponse>(`${this.baseUrl}/finance/disbursements/${disbursementId}/confirm`, {});
   }
 
-  startDisbursement(remittanceId: number): Observable<StartDisbursementResponse> {
-    return this.httpClient.post<unknown>(`${this.baseUrl}/finance/remittances/${remittanceId}/start-disbursement`, {}).pipe(
+  startDisbursement(remittanceId: number, bankAccountId?: number): Observable<StartDisbursementResponse> {
+    return this.httpClient.post<unknown>(`${this.baseUrl}/finance/remittances/${remittanceId}/start-disbursement`, bankAccountId ? { bankAccountId } : {}).pipe(
       map(response => this.normalizeStartDisbursementResponse(response))
     );
   }
@@ -426,8 +426,24 @@ export class FinancialWorkflowService {
     return this.httpClient.post<InvoiceResponse>(`${this.baseUrl}/contracts/${contractId}/panels/${panelId}/invoices`, request);
   }
 
-  getBankAccounts(counterpartyId: number): Observable<BankAccountResponse[]> {
-    return this.httpClient.get<BankAccountResponse[]>(`${this.baseUrl}/counterparties/${counterpartyId}/bank-accounts`);
+  getBankAccounts(counterpartyId: number, activeOnly = true): Observable<BankAccountResponse[]> {
+    return this.httpClient.get<BankAccountResponse[]>(`${this.baseUrl}/counterparties/${counterpartyId}/bank-accounts`, { params: new HttpParams().set('activeOnly', String(activeOnly)) });
+  }
+
+  getBankAccount(counterpartyId: number, accountId: number): Observable<BankAccountResponse> {
+    return this.httpClient.get<{ account: BankAccountResponse; iban: string | null; rib: string | null }>(`${this.baseUrl}/counterparties/${counterpartyId}/bank-accounts/${accountId}`)
+      .pipe(map(response => ({ ...response.account, iban: response.iban, rib: response.rib })));
+  }
+
+  setBankAccountDefault(counterpartyId: number, accountId: number): Observable<BankAccountResponse> {
+    return this.httpClient.patch<BankAccountResponse>(`${this.baseUrl}/counterparties/${counterpartyId}/bank-accounts/${accountId}/default`, {});
+  }
+
+  getReceiptBankAccountOptions(search = '', counterpartyId?: number, pageNumber = 1): Observable<PagedResponse<BankAccountResponse>> {
+    let params = new HttpParams().set('search', search).set('pageNumber', pageNumber).set('pageSize', 25);
+    if(counterpartyId) params=params.set('counterpartyId',counterpartyId);
+    return this.httpClient.get<PagedResponse<Pick<BankAccountResponse, 'idBankAccount' | 'bankName' | 'bankCity' | 'bankCountry' | 'beneficiaryName' | 'currencyId' | 'currencyCode' | 'maskedIban' | 'swiftBic' | 'isDefault' | 'isActive' | 'accountLabel'> & { counterpartyId: number }>>(`${this.baseUrl}/finance/bank-account-options`, { params })
+      .pipe(map(response => ({...response,items:response.items.map(account => ({ ...account, idCounterparty: account.counterpartyId, iban: null, rib: null, agencyCode:null,beneficiaryAddress:null,beneficiaryCity:null,beneficiaryCountry:null,hasCorrespondentBank:false,correspondentBankName:null,correspondentSwiftBic:null }))})));
   }
 
   createBankAccount(counterpartyId: number, request: BankAccountRequest): Observable<BankAccountResponse> {
@@ -548,6 +564,8 @@ export class FinancialWorkflowService {
     params = this.setText(params, 'pairingStatus', query.pairingStatus);
     params = this.setText(params, 'operationFrom', query.operationFrom);
     params = this.setText(params, 'operationTo', query.operationTo);
+    if (typeof query.minAmount === 'number' && Number.isFinite(query.minAmount)) params = params.set('minAmount', query.minAmount);
+    if (typeof query.maxAmount === 'number' && Number.isFinite(query.maxAmount)) params = params.set('maxAmount', query.maxAmount);
     params = this.setText(params, 'sortBy', query.sortBy);
     params = this.setText(params, 'sortDirection', query.sortDirection);
 

@@ -1,3 +1,5 @@
+import { map, Observable } from 'rxjs';
+import { BankAccountResponse } from '../../../shared/models/financial-workflow.model';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
@@ -50,7 +52,7 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture.componentInstance.openClosingDisbursementModal(1);
     fixture.componentInstance.startClosingPayment();
     fixture.componentInstance.confirmClosingPayment();
-    expect(workflowService.startClosingDisbursement).toHaveBeenCalledWith(1);
+    expect(workflowService.startClosingDisbursement).toHaveBeenCalledWith(1, 3);
     expect(workflowService.confirmClosingTransfer).toHaveBeenCalledWith(1);
     expect(workflowService.startDisbursement).not.toHaveBeenCalled();
     expect(fixture.componentInstance.closingContext()?.status).toBe('Closed');
@@ -147,6 +149,9 @@ describe('FinancialWorkspacePageComponent', () => {
     getBackOfficeRemittances: ReturnType<typeof vi.fn>;
     getInvoices: ReturnType<typeof vi.fn>;
     getBankAccounts: ReturnType<typeof vi.fn>;
+    getBankAccount: ReturnType<typeof vi.fn>;
+    getReceiptBankAccountOptions: ReturnType<typeof vi.fn>;
+    setBankAccountDefault: ReturnType<typeof vi.fn>;
     createBankAccount: ReturnType<typeof vi.fn>;
     updateBankAccount: ReturnType<typeof vi.fn>;
     setBankAccountStatus: ReturnType<typeof vi.fn>;
@@ -154,6 +159,7 @@ describe('FinancialWorkspacePageComponent', () => {
   };
   let counterpartiesService: {
     getFinanceCounterparties: ReturnType<typeof vi.fn>;
+    getCounterparties: ReturnType<typeof vi.fn>;
     getCounterpartyById: ReturnType<typeof vi.fn>;
   };
   let contractsService: {
@@ -224,12 +230,16 @@ describe('FinancialWorkspacePageComponent', () => {
       getBackOfficeRemittances: vi.fn().mockReturnValue(of({ items: [], pageNumber: 1, pageSize: 20, totalCount: 0, totalPages: 0 })),
       getInvoices: vi.fn().mockReturnValue(of({ items: [], pageNumber: 1, pageSize: 20, totalCount: 0, totalPages: 0 })),
       getBankAccounts: vi.fn().mockReturnValue(of([])),
+      getBankAccount: vi.fn().mockReturnValue(of({})),
+      getReceiptBankAccountOptions: vi.fn().mockImplementation(()=>(workflowService.getBankAccounts as unknown as (id:number)=>Observable<BankAccountResponse[]>)(22).pipe(map((items:BankAccountResponse[])=>({items:items.filter(a=>a.isActive),pageNumber:1,pageSize:25,totalCount:items.length,totalPages:1})))),
+      setBankAccountDefault: vi.fn().mockReturnValue(of({})),
       createBankAccount: vi.fn().mockReturnValue(of({})),
       updateBankAccount: vi.fn().mockReturnValue(of({})),
       setBankAccountStatus: vi.fn().mockReturnValue(of({})),
       markNotificationRead: vi.fn().mockReturnValue(of({}))
     };
     counterpartiesService = {
+      getCounterparties: vi.fn().mockReturnValue(of({items:[],pageNumber:1,pageSize:20,totalCount:0,totalPages:0})),
       getFinanceCounterparties: vi.fn().mockReturnValue(of({
         items: [
           {
@@ -671,10 +681,12 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture.detectChanges();
 
     expect(counterpartiesService.getCounterpartyById).toHaveBeenCalledWith(22);
-    expect(workflowService.getBankAccounts).toHaveBeenCalledWith(22);
+    expect(workflowService.getBankAccounts).toHaveBeenCalledWith(22, false);
     expect(contractsService.getCurrencies).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.textContent).toContain('Beneficiary Re');
     expect(fixture.nativeElement.textContent).not.toContain('Default account');
+    getButtonsByText('Add another bank account')[0].click();
+    fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Banque correspondante');
   });
 
@@ -855,7 +867,7 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture.componentInstance.openReceiptModal();
     fixture.componentInstance.selectReceiptBankAccount(activeAccount);
     fixture.componentInstance.receiptForm.patchValue({
-      receiptMonth: '2026-09',
+      operationDate: '2026-09-23',
       amountReceived: 1250.1234,
       settlementMethod: 'BankTransfer',
     });
@@ -881,7 +893,8 @@ describe('FinancialWorkspacePageComponent', () => {
 
     expect(workflowService.createReceipt).toHaveBeenCalledWith({
       bankAccountId: 44,
-      receiptMonth: '2026-09',
+      counterpartyId: 22,
+      operationDate: '2026-09-23',
       amountReceived: 1250.1234,
       settlementMethod: 'BankTransfer',
     });
@@ -945,7 +958,7 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture.componentInstance.receiptForm.patchValue({
       bankAccountSearch: 'ami - biat - TN****8831 - 15249584 - TND',
       bankAccountId: null,
-      receiptMonth: '2026-09',
+      operationDate: '2026-09-23',
       amountReceived: 15000,
       settlementMethod: 'BankTransfer',
     });
@@ -953,7 +966,8 @@ describe('FinancialWorkspacePageComponent', () => {
 
     expect(workflowService.createReceipt).toHaveBeenCalledWith({
       bankAccountId: 44,
-      receiptMonth: '2026-09',
+      counterpartyId: 22,
+      operationDate: '2026-09-23',
       amountReceived: 15000,
       settlementMethod: 'BankTransfer',
     });
@@ -1590,7 +1604,7 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture.componentInstance.startDisbursement();
     fixture.detectChanges();
 
-    expect(workflowService.startDisbursement).toHaveBeenCalledWith(2);
+    expect(workflowService.startDisbursement).toHaveBeenCalledWith(2, 44);
     expect(workflowService.downloadDocumentUrl).toHaveBeenCalledWith('/api/finance/disbursements/7/invoice');
     expect(workflowService.createDisbursement).not.toHaveBeenCalled();
     expect(fixture.componentInstance.selectedRemittance()?.disbursementId).toBe(7);
@@ -1763,7 +1777,7 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Download Invoice');
 
     fixture.componentInstance.startDisbursement();
-    expect(workflowService.startDisbursement).toHaveBeenCalledWith(8);
+    expect(workflowService.startDisbursement).toHaveBeenCalledWith(8, 501);
     expect(workflowService.downloadDocumentUrl).toHaveBeenCalledWith(creditNoteUrl);
     expect(workflowService.downloadDisbursementInvoice).not.toHaveBeenCalled();
     expect(fixture.componentInstance.disbursementContext()?.status).toBe('PaymentInProgress');
