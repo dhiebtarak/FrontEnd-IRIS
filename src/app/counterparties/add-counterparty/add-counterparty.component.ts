@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, signal } from '@angular/core';
-import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
+import { AbstractControl, FormArray, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
 import {
@@ -53,6 +53,7 @@ type AttachmentFormGroup = FormGroup<{
 }>;
 
 type CounterpartyFormValue = {
+  additionalContacts: { email: string; phoneNumber: string }[];
   name: string;
   types: CounterpartyType[];
   activity: string;
@@ -97,6 +98,7 @@ export class AddCounterpartyComponent implements OnInit {
   readonly dashboardRoute = '/workspace/reassurance/front-officer';
 
   counterpartyForm!: FormGroup<{
+    additionalContacts: FormArray<FormGroup<{ email: FormControl<string>; phoneNumber: FormControl<string> }>>;
     name: FormControl<string>;
     types: FormControl<CounterpartyType[]>;
     activity: FormControl<string>;
@@ -129,6 +131,7 @@ export class AddCounterpartyComponent implements OnInit {
     originalFileName: ''
   };
   readonly emptyFormValue: CounterpartyFormValue = {
+    additionalContacts: [],
     name: '',
     types: [],
     activity: '',
@@ -177,6 +180,7 @@ export class AddCounterpartyComponent implements OnInit {
     this.counterpartyId = routeCounterpartyId;
 
     this.counterpartyForm = this.fb.group({
+      additionalContacts: this.fb.array<FormGroup<{ email: FormControl<string>; phoneNumber: FormControl<string> }>>([]),
       name: this.fb.nonNullable.control(this.emptyFormValue.name, [Validators.required]),
       types: this.fb.nonNullable.control(this.emptyFormValue.types, [atLeastOneCounterpartyTypeValidator]),
       activity: this.fb.nonNullable.control(this.emptyFormValue.activity),
@@ -304,6 +308,7 @@ export class AddCounterpartyComponent implements OnInit {
       return;
     }
 
+    this.resetAdditionalContacts(this.initialFormValue.additionalContacts);
     this.counterpartyForm.reset(this.createInitialFormValue(this.initialFormValue));
     this.counterpartyForm.markAsPristine();
     this.counterpartyForm.markAsUntouched();
@@ -458,6 +463,33 @@ export class AddCounterpartyComponent implements OnInit {
     });
   }
 
+  addContact(): void {
+    if (this.isSubmitting() || this.isLoadingRecord() || this.f.additionalContacts.length >= 50) return;
+    this.f.additionalContacts.push(this.createContactGroup());
+    this.counterpartyForm.markAsDirty();
+  }
+
+  removeContact(index: number): void {
+    if (this.isSubmitting() || this.isLoadingRecord()) return;
+    this.f.additionalContacts.removeAt(index);
+    this.counterpartyForm.markAsDirty();
+  }
+
+  private createContactGroup(value = { email: '', phoneNumber: '' }) {
+    return this.fb.group({
+      email: this.fb.nonNullable.control(value.email, [Validators.email, Validators.maxLength(256)]),
+      phoneNumber: this.fb.nonNullable.control(value.phoneNumber, [Validators.maxLength(32)])
+    }, { validators: control => {
+      const contact = control.value;
+      return contact.email?.trim() || contact.phoneNumber?.trim() ? null : { emptyContact: true };
+    } });
+  }
+
+  private resetAdditionalContacts(contacts: CounterpartyFormValue['additionalContacts']): void {
+    this.f.additionalContacts.clear({ emitEvent: false });
+    for (const contact of contacts) this.f.additionalContacts.push(this.createContactGroup(contact), { emitEvent: false });
+  }
+
   private async buildJsonPayload(): Promise<CounterpartyUpsertRequest> {
     const rawValue = this.counterpartyForm.getRawValue();
     const commercialRegister = await this.createAttachmentUploadRequest(this.selectedAttachmentFiles.commercialRegisterAttachment);
@@ -468,6 +500,9 @@ export class AddCounterpartyComponent implements OnInit {
       types: [...rawValue.types],
       email: rawValue.email,
       phoneNumber: rawValue.phoneNumber,
+      additionalContacts: rawValue.additionalContacts.map(contact => ({
+        email: contact.email.trim(), phoneNumber: contact.phoneNumber.trim()
+      })),
       addressLine: rawValue.addressLine,
       city: rawValue.city,
       country: rawValue.country,
@@ -513,6 +548,7 @@ export class AddCounterpartyComponent implements OnInit {
 
   private applyFormValue(formValue: CounterpartyFormValue): void {
     this.initialFormValue = this.createInitialFormValue(formValue);
+    this.resetAdditionalContacts(formValue.additionalContacts);
     this.counterpartyForm.reset(this.createInitialFormValue(formValue));
     this.counterpartyForm.markAsPristine();
     this.counterpartyForm.markAsUntouched();
@@ -537,6 +573,9 @@ export class AddCounterpartyComponent implements OnInit {
       taxIdentificationNumberAttachment: this.mapAttachmentToFormValue(counterparty?.taxIdentificationNumberAttachment),
       email: this.toText(counterparty?.email),
       phoneNumber: this.toText(counterparty?.phoneNumber),
+      additionalContacts: (counterparty?.additionalContacts ?? []).map(contact => ({
+        email: this.toText(contact.email), phoneNumber: this.toText(contact.phoneNumber)
+      })),
       addressLine: this.toText(counterparty?.addressLine),
       city: this.toText(counterparty?.city),
       postalCode: this.toText(counterparty?.postalCode),
@@ -558,6 +597,9 @@ export class AddCounterpartyComponent implements OnInit {
   }
 
   private trimFormValues(): void {
+    for (const contact of this.f.additionalContacts.controls) {
+      contact.patchValue({ email: contact.controls.email.value.trim(), phoneNumber: contact.controls.phoneNumber.value.trim() }, { emitEvent: false });
+    }
     for (const key of Object.keys(this.counterpartyForm.controls) as Array<keyof typeof this.counterpartyForm.controls>) {
       const control = this.counterpartyForm.controls[key];
 
@@ -589,7 +631,7 @@ export class AddCounterpartyComponent implements OnInit {
       control.setErrors(Object.keys(errors).length ? errors : null);
     }
 
-    if (control instanceof FormGroup) {
+    if (control instanceof FormGroup || control instanceof FormArray) {
       for (const childControl of Object.values(control.controls)) {
         this.clearServerErrorsRecursive(childControl);
       }
@@ -666,6 +708,8 @@ export class AddCounterpartyComponent implements OnInit {
 
   private mapBackendField(fieldName: string): string | null {
     const normalizedField = fieldName.toLowerCase().replace(/\[(\w+)\]/g, '.$1');
+    const contactField = /^additionalcontacts\.(\d+)(?:\.(email|phonenumber))?$/.exec(normalizedField);
+    if (contactField) return `additionalContacts.${contactField[1]}${contactField[2] ? '.' + (contactField[2] === 'phonenumber' ? 'phoneNumber' : 'email') : ''}`;
     const map: Record<string, string> = {
       name: 'name',
       types: 'types',
@@ -773,6 +817,7 @@ export class AddCounterpartyComponent implements OnInit {
     return {
       ...value,
       types: [...value.types],
+      additionalContacts: value.additionalContacts.map(contact => ({ ...contact })),
       commercialRegisterAttachment: this.cloneAttachmentValue(value.commercialRegisterAttachment),
       taxIdentificationNumberAttachment: this.cloneAttachmentValue(value.taxIdentificationNumberAttachment)
     };

@@ -26,7 +26,13 @@ export interface CounterpartyAttachment {
   documentCategory?: string;
 }
 
+export interface CounterpartyContact {
+  email: string;
+  phoneNumber: string;
+}
+
 interface CounterpartyBase {
+  additionalContacts?: CounterpartyContact[];
   name: string;
   types: CounterpartyType[];
   email: string;

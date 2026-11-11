@@ -522,6 +522,33 @@ describe('FacultativeInformationComponent', () => {
     expect(httpMock.match('/api/contracts/facultative')).toHaveLength(0);
   });
 
+  it('keeps a one-percent rate unchanged when saving and receiving a two-million TSI contract', async () => {
+    fillRequiredFields();
+    await selectCedent();
+    selectMainCover();
+    component.form.patchValue({ sumInsured: 2000000, premiumRate: 1, cedentCommissionPct: 0 });
+    fixture.detectChanges();
+
+    expect(component.form.controls.grossPremium.value).toBe(20000);
+    expect(fixture.nativeElement.textContent).toContain('Enter the premium rate as a percentage.');
+    expect(fixture.nativeElement.textContent).not.toContain('for example 10 for 0.1%');
+
+    component.saveDraft();
+    const request = httpMock.expectOne('/api/contracts/facultative');
+    expect(request.request.body.premiumRate).toBe(1);
+    expect(request.request.body.sumInsured).toBe(2000000);
+    request.flush({
+      contractId: 123, umr: 'IT26-F-PD-0001', status: 'DRAFT',
+      sumInsured: 2000000, premiumRate: 1, grossPremium: 20000,
+      cedentCommissionPct: 0, netPremiumCedent: 20000, netPremium: 20000,
+      name: 'FAC 2026', counterpartyId: 99, currencyId: 1,
+      inceptionDate: '2026-08-19', expiryDate: '2026-12-31',
+      isHighPriority: false, isFronting: false
+    });
+    expect(component.form.controls.premiumRate.value).toBe(1);
+    expect(component.form.controls.grossPremium.value).toBe(20000);
+  });
+
   it('submits the calculated financial values and replaces them with the backend response', async () => {
     fillRequiredFields();
     await selectCedent();
@@ -538,7 +565,7 @@ describe('FacultativeInformationComponent', () => {
     const request = httpMock.expectOne('/api/contracts/facultative');
     expect(request.request.body).toEqual(expect.objectContaining({
       sumInsured: 100000,
-      premiumRate: 0.02,
+      premiumRate: 2,
       cedentCommissionPct: 5
     }));
     expect(request.request.body.grossPremium).toBeUndefined();
@@ -947,7 +974,7 @@ describe('FacultativeInformationComponent existing contract', () => {
   it('loads the selected draft into the existing form and keeps subsequent saves on PUT', () => {
     flushExistingContract({
       fees: 200,
-      premiumRate: 0.02,
+      premiumRate: 2,
       grossPremium: 2000,
       cedentCommissionPct: 5,
       netPremium: 1900,
@@ -972,6 +999,7 @@ describe('FacultativeInformationComponent existing contract', () => {
     expect(component.form.controls.grossPremium.value).toBe(2000);
     expect(component.form.controls.netPremium.value).toBe(1900);
     expect(component.canDeactivate()).toBe(true);
+    expect(component.form.controls.premiumRate.value).toBe(2);
 
     component.form.controls.sumInsured.setValue(200000);
     expect(component.form.controls.grossPremium.value).toBe(4000);
@@ -981,7 +1009,7 @@ describe('FacultativeInformationComponent existing contract', () => {
     expect(update.request.method).toBe('PUT');
     expect(update.request.body).toEqual(expect.objectContaining({
       sumInsured: 200000,
-      premiumRate: 0.02,
+      premiumRate: 2,
       fees: 200,
       cedentCommissionPct: 5
     }));
@@ -1004,7 +1032,7 @@ describe('FacultativeInformationComponent existing contract', () => {
       currencyId: 1,
       fees: 200,
       sumInsured: 200000,
-      premiumRate: 0.02,
+      premiumRate: 2,
       grossPremium: 4000,
       cedentCommissionPct: 5,
       netPremium: 3800,
