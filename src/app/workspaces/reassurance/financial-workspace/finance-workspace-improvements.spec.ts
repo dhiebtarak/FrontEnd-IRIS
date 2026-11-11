@@ -272,6 +272,46 @@ describe('Finance workspace improvements', () => {
     expect(c.bankAccounts()).toHaveLength(2);
     expect(api.getBankAccounts.mock.calls.length).toBeGreaterThan(1);
   });
+  it('accepts long IBAN and RIB values and hyphenated account identifiers', () => {
+    const f = fixture(), c = f.componentInstance;
+    c.openCounterpartyAccounts(choice);
+    c.resetBankAccountForm();
+    fillAccount(c);
+    const iban = '354415-USD-0000001069-01-' + '9'.repeat(512);
+    const rib = 'RIB-' + '7'.repeat(512);
+    c.bankAccountForm.patchValue({ iban, rib });
+    expect(c.bankAccountForm.valid).toBe(true);
+    f.detectChanges();
+    expect(f.nativeElement.querySelector('[formControlName="rib"]').hasAttribute('maxlength')).toBe(false);
+    expect(f.nativeElement.querySelector('[formControlName="iban"]').hasAttribute('maxlength')).toBe(false);
+    c.saveBankAccount();
+    expect(api.createBankAccount).toHaveBeenCalledWith(7, expect.objectContaining({ iban, rib }));
+  });
+
+  it('does not require IBAN or SWIFT/BIC, including correspondent SWIFT/BIC', () => {
+    const f = fixture(), c = f.componentInstance;
+    c.openCounterpartyAccounts(choice);
+    c.resetBankAccountForm();
+    fillAccount(c);
+    c.bankAccountForm.patchValue({ iban: '', swiftBic: '', hasCorrespondentBank: true, correspondentBankName: 'Correspondent', correspondentSwiftBic: '' });
+    expect(c.bankAccountForm.valid).toBe(true);
+    c.saveBankAccount();
+    expect(api.createBankAccount).toHaveBeenCalledWith(7, expect.objectContaining({ iban: null, swiftBic: null, correspondentSwiftBic: null }));
+  });
+
+  it('accepts punctuation and numeric or long SWIFT/BIC codes without validation', () => {
+    const f = fixture(), c = f.componentInstance;
+    c.openCounterpartyAccounts(choice);
+    c.resetBankAccountForm();
+    fillAccount(c);
+    c.bankAccountForm.patchValue({ iban: 'ANY/@!VALUE', swiftBic: '29590495' });
+    expect(c.bankAccountForm.valid).toBe(true);
+    c.bankAccountForm.patchValue({ swiftBic: '8'.repeat(512), hasCorrespondentBank: true, correspondentBankName: 'Correspondent', correspondentSwiftBic: '7'.repeat(512) });
+    expect(c.bankAccountForm.valid).toBe(true);
+    c.saveBankAccount();
+    expect(api.createBankAccount).toHaveBeenCalledWith(7, expect.objectContaining({ iban: 'ANY/@!VALUE', swiftBic: '8'.repeat(512), correspondentSwiftBic: '7'.repeat(512) }));
+  });
+
   it('prevents duplicate submissions and displays backend validation errors', () => {
     const f = fixture(),
       c = f.componentInstance;

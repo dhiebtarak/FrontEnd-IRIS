@@ -37,6 +37,58 @@ describe('AddCounterpartyComponent', () => {
     fixture.detectChanges();
   });
 
+  it('adds contact rows from the plus button, validates them and submits every pair', async () => {
+    component.f.name.setValue('Multiple contacts');
+    component.toggleCounterpartyType('Cedent');
+    component.f.email.setValue('primary@example.test');
+    const add = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
+      .find(button => button.textContent?.includes('Add another contact'))!;
+    add.click();
+    fixture.detectChanges();
+    expect(component.f.additionalContacts.length).toBe(1);
+    expect(component.f.additionalContacts.at(0).hasError('emptyContact')).toBe(true);
+    component.f.additionalContacts.at(0).patchValue({ email: 'bad email', phoneNumber: '+21611111111' });
+    expect(component.f.additionalContacts.at(0).invalid).toBe(true);
+    component.f.additionalContacts.at(0).patchValue({ email: 'second@example.test' });
+    component.addContact();
+    component.f.additionalContacts.at(1).patchValue({ email: 'third@example.test', phoneNumber: '+21622222222' });
+    await component.onSubmit();
+    expect(counterpartiesService.createCounterparty).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'primary@example.test',
+      additionalContacts: [
+        { email: 'second@example.test', phoneNumber: '+21611111111' },
+        { email: 'third@example.test', phoneNumber: '+21622222222' }
+      ]
+    }));
+  });
+
+  it('removes an extra contact without changing the primary contact', () => {
+    component.f.email.setValue('primary@example.test');
+    component.addContact();
+    component.removeContact(0);
+    expect(component.f.additionalContacts.length).toBe(0);
+    expect(component.f.email.value).toBe('primary@example.test');
+  });
+
+  it('reloads extra contacts for editing and restores them when the form is reset', async () => {
+    vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.paramMap, 'get').mockReturnValue('8');
+    (counterpartiesService.getCounterpartyById as ReturnType<typeof vi.fn>).mockReturnValue(of({
+      id: 8, name: 'Existing counterparty', types: ['Cedent'], email: 'primary@example.test',
+      additionalContacts: [{ email: 'second@example.test', phoneNumber: '+21611111111' }]
+    }));
+    component.ngOnInit();
+    expect(component.f.additionalContacts.at(0).controls.email.value).toBe('second@example.test');
+    component.removeContact(0);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    component.resetForm();
+    expect(component.f.additionalContacts.length).toBe(1);
+    component.f.additionalContacts.at(0).controls.phoneNumber.setValue('+21622222222');
+    await component.onSubmit();
+    expect(counterpartiesService.updateCounterparty).toHaveBeenCalledWith('8', expect.objectContaining({
+      additionalContacts: [{ email: 'second@example.test', phoneNumber: '+21622222222' }]
+    }));
+  });
+
   it('renders all supported types and requires at least one selection', () => {
     expect(fixture.nativeElement.textContent).toContain('Cedent');
     expect(fixture.nativeElement.textContent).toContain('Reinsurer');

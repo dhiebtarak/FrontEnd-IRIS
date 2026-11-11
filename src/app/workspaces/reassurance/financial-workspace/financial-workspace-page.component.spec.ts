@@ -727,7 +727,7 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(counterpartiesService.getFinanceCounterparties).toHaveBeenCalledTimes(2);
   });
 
-  it('requires correspondent fields only when Banque correspondante is enabled', () => {
+  it('requires the correspondent bank name when enabled but leaves its SWIFT/BIC optional', () => {
     createComponent();
 
     fixture.componentInstance.bankAccountForm.patchValue({
@@ -745,7 +745,7 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture.componentInstance.bankAccountForm.controls.hasCorrespondentBank.setValue(true);
 
     expect(fixture.componentInstance.bankAccountForm.controls.correspondentBankName.hasError('required')).toBe(true);
-    expect(fixture.componentInstance.bankAccountForm.controls.correspondentSwiftBic.hasError('required')).toBe(true);
+    expect(fixture.componentInstance.bankAccountForm.controls.correspondentSwiftBic.hasError('required')).toBe(false);
     expect(fixture.componentInstance.bankAccountForm.invalid).toBe(true);
   });
 

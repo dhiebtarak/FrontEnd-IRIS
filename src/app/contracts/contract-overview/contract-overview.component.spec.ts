@@ -1172,17 +1172,18 @@ describe('ContractOverviewComponent', () => {
     expect(component.invoiceContextRows().find(row => row.label === 'Remaining invoiceable amount')?.value).toContain('50');
   });
 
-  it('uses the backend full-contract invoiceable amount without applying signed share', () => {
+  it('displays the backend signed-share premium and commission without applying the share twice', () => {
     enableBackOfficeMode();
-    flushContract(123, { ...contractResponse, status: 'Bound', grossPremium: 2000, cedentCommissionPct: 10, signedSharePct: 20, currencyDecimalPlaces: 3 },
+    flushContract(123, { ...contractResponse, status: 'Bound', grossPremium: 20000, cedentCommissionPct: 10, signedSharePct: 10, currencyDecimalPlaces: 3 },
       [{ ...panelsResponse[0], role: 'Reinsurer', status: 'Confirmed' }]);
     component.openInvoiceModal();
     flushInvoiceContextAndHistory({
       ...invoiceContextResponse,
-      contractGrossPremium: 2000,
+      contractGrossPremium: 20000,
+      invoiceableGrossPremium: 2000,
       cedentCommissionPercentage: 10,
       cedentCommissionAmount: 200,
-      contractSignedSharePercentage: 20,
+      contractSignedSharePercentage: 10,
       invoiceableNetPremium: 1800,
       alreadyInvoicedAmount: 0,
       remainingInvoiceableAmount: 1800,
@@ -1196,13 +1197,13 @@ describe('ContractOverviewComponent', () => {
     expect(component.invoiceCreationAvailableAmount()).toBe(1800);
     const formattedAmount = (value: number) => component.formatMoney(value, 'TND');
     const rows = component.invoiceContextRows();
-    expect(rows.find(row => row.label === 'Contract gross premium')?.value).toBe(formattedAmount(2000));
+    expect(rows.find(row => row.label === 'Contract gross premium')?.value).toBe(formattedAmount(20000));
+    expect(rows.find(row => row.label === 'Signed gross premium')?.value).toBe(formattedAmount(2000));
     expect(component.invoiceContextRows().find(row => row.label === 'Cedent commission')?.value).toContain('10');
     expect(rows.find(row => row.label === 'Cedent commission amount')?.value).toBe(formattedAmount(200));
-    expect(component.invoiceContextRows().find(row => row.label === 'Contract signed share')?.value).toContain('20');
+    expect(component.invoiceContextRows().find(row => row.label === 'Contract signed share')?.value).toContain('10');
     expect(rows.find(row => row.label === 'Invoiceable net premium')?.value).toBe(formattedAmount(1800));
     expect(rows.find(row => row.label === 'Remaining invoiceable amount')?.value).toBe(formattedAmount(1800));
-    expect(rows.some(row => row.label === 'Signed gross premium' || row.label === 'Signed cedent commission')).toBe(false);
     expect(component.invoiceAmountLimitMessage()).toContain(formattedAmount(1800));
 
     component.invoiceForm.controls.amount.setValue(1200);

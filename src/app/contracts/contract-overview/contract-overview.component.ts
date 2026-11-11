@@ -217,6 +217,7 @@ export class ContractOverviewComponent implements OnInit {
       { label: 'Contract period', value: `${this.formatDate(contract.inceptionDate)} to ${this.formatDate(contract.expiryDate)}` },
       { label: 'Currency', value: context?.currencyCode || context?.currency || contract.currencyCode || 'Not provided' },
       { label: 'Contract gross premium', value: this.formatMoney(context?.contractGrossPremium ?? null, context?.currencyCode) },
+      { label: 'Signed gross premium', value: this.formatMoney(context?.invoiceableGrossPremium ?? null, context?.currencyCode) },
       { label: 'Cedent commission', value: this.formatPercent(context?.cedentCommissionPercentage ?? context?.cedentCommissionPct ?? null) },
       { label: 'Cedent commission amount', value: this.formatMoney(context?.cedentCommissionAmount ?? null, context?.currencyCode) },
       { label: 'Contract signed share', value: this.formatPercent(context?.contractSignedSharePercentage ?? null) },

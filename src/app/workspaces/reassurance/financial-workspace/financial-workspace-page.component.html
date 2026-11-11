@@ -762,7 +762,7 @@
               <div class="grid gap-4 md:grid-cols-2">
                 <label class="space-y-1 text-sm font-semibold text-iris-navy">Account label<input type="text" formControlName="accountLabel" maxlength="255" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm" /></label>
                 <label class="space-y-1 text-sm font-semibold text-iris-navy">Agency code<input type="text" formControlName="agencyCode" maxlength="100" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm" /></label>
-                <label class="space-y-1 text-sm font-semibold text-iris-navy">RIB<input type="text" formControlName="rib" maxlength="100" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm" /></label>
+                <label class="space-y-1 text-sm font-semibold text-iris-navy">RIB<input type="text" formControlName="rib" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm" /></label>
                 <label class="flex items-center gap-2 text-sm font-semibold text-iris-navy"><input type="checkbox" formControlName="isDefault" class="h-4 w-4" />Default for this currency</label>
                 <label class="space-y-1 text-sm font-semibold text-iris-navy">
                   <span>Nom de la banque</span>
@@ -801,22 +801,10 @@
                   <span>IBAN</span>
                   @if(bankAccountForm.controls.iban.getError('server')){<span role="alert" class="block text-xs text-rose-700">{{ bankAccountForm.controls.iban.getError('server') }}</span>}
                   <input type="text" formControlName="iban" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm uppercase outline-none focus:border-iris-teal" />
-                  @if (bankAccountForm.controls.iban.touched && bankAccountForm.controls.iban.hasError('required')) {
-                    <span class="text-xs font-semibold text-rose-700">IBAN is required.</span>
-                  }
-                  @if (bankAccountForm.controls.iban.touched && (bankAccountForm.controls.iban.hasError('ibanLength') || bankAccountForm.controls.iban.hasError('ibanCharacters'))) {
-                    <span class="text-xs font-semibold text-rose-700">IBAN must be 34 or fewer alphanumeric characters.</span>
-                  }
                 </label>
                 <label class="space-y-1 text-sm font-semibold text-iris-navy">
                   <span>Code SWIFT/BIC</span>
                   <input type="text" formControlName="swiftBic" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm uppercase outline-none focus:border-iris-teal" />
-                  @if (bankAccountForm.controls.swiftBic.touched && bankAccountForm.controls.swiftBic.hasError('required')) {
-                    <span class="text-xs font-semibold text-rose-700">SWIFT/BIC is required.</span>
-                  }
-                  @if (bankAccountForm.controls.swiftBic.touched && bankAccountForm.controls.swiftBic.hasError('swiftBic')) {
-                    <span class="text-xs font-semibold text-rose-700">SWIFT/BIC must contain 8 or 11 characters.</span>
-                  }
                 </label>
                 <label class="flex items-center gap-2 text-sm font-semibold text-iris-navy">
                   <input type="checkbox" formControlName="isActive" class="h-4 w-4" />
@@ -843,12 +831,6 @@
                   <label class="space-y-1 text-sm font-semibold text-iris-navy">
                     <span>Code SWIFT/BIC de la banque correspondante</span>
                     <input type="text" formControlName="correspondentSwiftBic" class="w-full rounded-xl border border-iris-border px-4 py-3 text-sm uppercase outline-none focus:border-iris-teal" />
-                    @if (bankAccountForm.controls.correspondentSwiftBic.touched && bankAccountForm.controls.correspondentSwiftBic.hasError('required')) {
-                      <span class="text-xs font-semibold text-rose-700">Correspondent SWIFT/BIC is required.</span>
-                    }
-                    @if (bankAccountForm.controls.correspondentSwiftBic.touched && bankAccountForm.controls.correspondentSwiftBic.hasError('swiftBic')) {
-                      <span class="text-xs font-semibold text-rose-700">Correspondent SWIFT/BIC must contain 8 or 11 characters.</span>
-                    }
                   </label>
                 </div>
               }

@@ -437,8 +437,8 @@ export class FinancialWorkspacePageComponent implements OnInit {
     bankCountry: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
     agencyCode: new FormControl('', { nonNullable: true }),
     rib: new FormControl('', { nonNullable: true }),
-    iban: new FormControl('', { nonNullable: true, validators: [Validators.required, this.ibanValidator()] }),
-    swiftBic: new FormControl('', { nonNullable: true, validators: [Validators.required, this.swiftBicValidator()] }),
+    iban: new FormControl('', { nonNullable: true }),
+    swiftBic: new FormControl('', { nonNullable: true }),
     accountLabel: new FormControl('', { nonNullable: true }),
     isDefault: new FormControl(false, { nonNullable: true }),
     hasCorrespondentBank: new FormControl(false, { nonNullable: true }),
@@ -3026,7 +3026,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
     if (hasCorrespondentBank) {
       bankName.setValidators([Validators.required]);
-      swiftBic.setValidators([Validators.required, this.swiftBicValidator()]);
     } else {
       bankName.clearValidators();
       swiftBic.clearValidators();
@@ -3226,32 +3225,6 @@ export class FinancialWorkspacePageComponent implements OnInit {
 
   private normalizeSearchText(value: string): string {
     return value.trim().toLowerCase().replace(/\s+/g, ' ');
-  }
-
-  private ibanValidator(): ValidatorFn {
-    return (control: AbstractControl<string>): ValidationErrors | null => {
-      const value = this.normalizeAccountCode(control.value);
-      if (!value) {
-        return null;
-      }
-
-      if (value.length > 34) {
-        return { ibanLength: true };
-      }
-
-      return /^[A-Z0-9]+$/.test(value) ? null : { ibanCharacters: true };
-    };
-  }
-
-  private swiftBicValidator(): ValidatorFn {
-    return (control: AbstractControl<string>): ValidationErrors | null => {
-      const value = this.normalizeAccountCode(control.value);
-      if (!value) {
-        return null;
-      }
-
-      return /^[A-Z0-9]{8}([A-Z0-9]{3})?$/.test(value) ? null : { swiftBic: true };
-    };
   }
 
   private getPositiveId(value: number | string | null | undefined): number | null {
