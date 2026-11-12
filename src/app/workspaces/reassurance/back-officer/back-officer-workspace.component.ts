@@ -10,6 +10,7 @@ import { RoleWorkspaceShellComponent, WorkspaceNavigationItem } from '../shared/
 })
 export class BackOfficerWorkspaceComponent {
   readonly navigationItems: WorkspaceNavigationItem[] = [
+    { label: 'Claims', route: '/workspace/reassurance/back-officer/claims', icon: 'claims', exact: false, module: 'BackOffice' },
     { label: 'Dashboard', route: '/workspace/reassurance/back-officer', icon: 'dashboard', exact: true },
     { label: 'Receipt Pairing', route: '/workspace/reassurance/back-officer/receipt-pairing', icon: 'receipts', exact: false, module: 'BackOffice' },
     { label: 'Outgoing Remittances', route: '/workspace/reassurance/back-officer/outgoing-remittances', icon: 'remittances', exact: false, module: 'BackOffice' },

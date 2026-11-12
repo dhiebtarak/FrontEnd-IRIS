@@ -65,6 +65,36 @@ describe('DocumentAttachmentsComponent', () => {
     vi.restoreAllMocks();
   });
 
+  it('accepts arbitrary claim files while retaining the size limit', () => {
+    component.context = { scope: 'claim', claimId: 42 };
+    const selected = new File(['evidence'], 'claim-evidence.zip', { type: 'application/zip' });
+    component.onFileSelected({ target: { files: { item: () => selected } } } as unknown as Event);
+    expect(component.selectedFileName()).toBe('claim-evidence.zip');
+    expect(component.selectedFileError()).toBe('');
+    const oversized = new File(['x'], 'large.zip');
+    Object.defineProperty(oversized, 'size', { value: 10 * 1024 * 1024 + 1 });
+    component.onFileSelected({ target: { files: { item: () => oversized } } } as unknown as Event);
+    expect(component.selectedFileError()).toContain('10 MB');
+    expect(component.selectedFileName()).toBe('');
+  });
+
+  it('keeps draft files local and removes them without archiving a server document', async () => {
+    component.context = { scope: 'claim', claimId: 0 };
+    component.draft = true;
+    openDocuments();
+    expect(documentsService.getDocuments).not.toHaveBeenCalled();
+    vi.spyOn(component as any, 'readFileAsBase64').mockResolvedValue('AQID');
+    const file = new File(['evidence'], 'loss.zip', { type: 'application/zip' });
+    component.onFileSelected({ target: { files: { item: () => file } } } as unknown as Event);
+    component.upload();
+    await Promise.resolve();
+    expect(documentsService.uploadDocument).not.toHaveBeenCalled();
+    expect(component.documents()).toHaveLength(1);
+    component.openArchiveConfirmation(component.documents()[0], new Event('click'));
+    expect(component.documents()).toHaveLength(0);
+    expect(documentsService.archiveDocument).not.toHaveBeenCalled();
+  });
+
   it('opens a responsive dialog for the supplied placement context', () => {
     openDocuments();
 

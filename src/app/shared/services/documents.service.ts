@@ -39,6 +39,9 @@ export class DocumentsService {
   }
 
   private getContextDocumentsUrl(context: DocumentContext): string {
+    if (context.scope === 'claim') {
+      return `${this.baseUrl}/claims/${context.claimId}/attachments`;
+    }
     if (context.scope === 'receipt') {
       return `${this.baseUrl}/bank-receipts/${context.receiptId}/attachments`;
     }
@@ -51,6 +54,9 @@ export class DocumentsService {
   }
 
   private getDocumentDownloadUrl(documentId: number, context?: DocumentContext): string {
+    if (context?.scope === 'claim') {
+      return `${this.getContextDocumentsUrl(context)}/${documentId}/download`;
+    }
     if (context?.scope === 'receipt') {
       return `${this.baseUrl}/bank-receipts/${context.receiptId}/attachments/${documentId}/download`;
     }
@@ -59,6 +65,9 @@ export class DocumentsService {
   }
 
   private getDocumentArchiveUrl(documentId: number, context?: DocumentContext): string {
+    if (context?.scope === 'claim') {
+      return `${this.getContextDocumentsUrl(context)}/${documentId}`;
+    }
     if (context?.scope === 'receipt') {
       return `${this.baseUrl}/bank-receipts/${context.receiptId}/attachments/${documentId}`;
     }

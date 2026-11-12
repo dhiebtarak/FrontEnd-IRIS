@@ -37,6 +37,9 @@
               @if (contractDocumentContext(); as documentContext) {
                 <app-document-attachments [context]="documentContext" title="Contract documents" />
               }
+              @if (canAddClaim()) {
+                <button type="button" (click)="openCreateClaim()" class="rounded-xl bg-iris-teal px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-sky-100 hover:bg-iris-teal-light">Add Claim</button>
+              }
               @if (shouldShowInvoiceAction()) {
                 <button type="button" (click)="openInvoiceModal()" class="rounded-xl bg-iris-teal px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-sky-100 transition hover:bg-iris-teal-light">
                   Create Invoice
@@ -529,6 +532,9 @@
     </div>
   }
 
+  @if (contract(); as claimContract) {
+    <app-contract-claims [contractId]="claimContract.contractId" />
+  }
   @if (isBackOfficeMode()) {
     <section class="rounded-[24px] border border-iris-border bg-white p-6 shadow-[0_18px_50px_rgba(13,47,79,0.08)]">
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-iris-divider pb-4">

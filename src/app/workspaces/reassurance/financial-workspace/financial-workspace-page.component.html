@@ -168,7 +168,7 @@
           <table class="w-full min-w-[1180px] text-left text-sm">
             <thead class="bg-iris-bg text-xs font-bold uppercase tracking-[0.1em] text-iris-slate"><tr>
               <th class="px-4 py-4">Closing reference</th><th class="px-4 py-4">Reinsurer</th><th class="px-4 py-4 text-right">Lines</th>
-              <th class="px-4 py-4 text-right">Premium total</th><th class="px-4 py-4 text-right">Avoir total</th><th class="px-4 py-4 text-right">Net payable</th>
+              <th class="px-4 py-4 text-right">Premium total</th><th class="px-4 py-4 text-right">Avoir / claim total</th><th class="px-4 py-4 text-right">Net payable</th>
               <th class="px-4 py-4">Currency</th><th class="px-4 py-4">Issue date</th><th class="px-4 py-4">Status</th><th class="px-4 py-4">Actions</th>
             </tr></thead>
             <tbody class="divide-y divide-iris-divider">
@@ -299,7 +299,7 @@
           <div class="space-y-1 text-sm font-semibold text-iris-slate">
             <p>{{ selectedRemittanceIds().size }} selected · Reinsurer: {{ selectedRemittanceReinsurer() }}</p>
             <p>Premium total: <strong class="text-iris-navy">{{ formatSignedRemittanceTotal(selectedPremiumTotal(), selectedRemittanceCurrency()) }}</strong></p>
-            <p>Avoir total: <strong class="text-iris-navy">{{ formatSignedRemittanceTotal(selectedAvoirTotal(), selectedRemittanceCurrency()) }}</strong></p>
+            <p>Avoir / claim total: <strong class="text-iris-navy">{{ formatSignedRemittanceTotal(selectedAvoirTotal(), selectedRemittanceCurrency()) }}</strong></p>
             <p>Net balance: <strong class="text-iris-navy">{{ formatSignedRemittanceTotal(selectedRemittanceTotal(), selectedRemittanceCurrency()) }}</strong></p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -317,7 +317,7 @@
           <div class="rounded-xl border border-iris-border bg-white px-4 py-3 text-sm" role="status">
             <p class="font-bold text-iris-navy">Backend settlement result</p>
             @if (confirmation.signedPremiumTotal != null) { <p>Premium total: {{ formatMoney(confirmation.signedPremiumTotal, remittanceConfirmationCurrency()) }}</p> }
-            @if (confirmation.signedAvoirTotal != null) { <p>Avoir total: {{ formatMoney(confirmation.signedAvoirTotal, remittanceConfirmationCurrency()) }}</p> }
+            @if (confirmation.signedAvoirTotal != null) { <p>Avoir / claim total: {{ formatMoney(confirmation.signedAvoirTotal, remittanceConfirmationCurrency()) }}</p> }
             @if (confirmation.netBalance != null) { <p>Net balance: {{ formatSignedRemittanceTotal(confirmation.netBalance, remittanceConfirmationCurrency()) }}</p> }
             @if (confirmation.settlementMode) { <p>Settlement mode: {{ confirmation.settlementMode }}</p> }
             @if (confirmation.amountToDisburse != null) { <p>Amount to disburse: {{ formatMoney(confirmation.amountToDisburse, remittanceConfirmationCurrency()) }}</p> }

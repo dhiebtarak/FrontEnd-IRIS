@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, OnInit, computed, inject, isDevMode, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, ViewChild, computed, inject, isDevMode, signal } from '@angular/core';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
@@ -32,6 +32,7 @@ import {
 import { getInvoicePaymentStatusClasses, getInvoicePaymentStatusDisplay } from '../../shared/models/payment-status.util';
 import { Auth } from '../../shared/services/auth';
 import { FinancialWorkflowService } from '../../shared/services/financial-workflow.service';
+import { ContractClaimsComponent } from '../../claims/contract-claims.component';
 
 interface ContractFinancialSummary {
   grossPremium: number | null;
@@ -64,7 +65,7 @@ const finiteAmountValidator: ValidatorFn = control => {
 @Component({
   selector: 'app-contract-overview',
   standalone: true,
-  imports: [CommonModule, MatSnackBarModule, ReactiveFormsModule, DocumentAttachmentsComponent],
+  imports: [CommonModule, MatSnackBarModule, ReactiveFormsModule, DocumentAttachmentsComponent, ContractClaimsComponent],
   templateUrl: './contract-overview.component.html',
   styles: ``
 })
@@ -87,6 +88,9 @@ export class ContractOverviewComponent implements OnInit {
     : '/workspace/reassurance/front-officer/contracts');
   readonly isBackOfficeMode = () => this.authService.hasWorkspaceRole('BackOfficer') || this.route.snapshot.data?.['workspace'] === 'back-office';
   readonly contract = signal<FacultativeContractResponse | null>(null);
+  @ViewChild(ContractClaimsComponent) claimsHistory?: ContractClaimsComponent;
+  readonly canAddClaim = computed(() => normalizeContractStatus(this.contract()?.status) === 'bound' && this.authService.hasModule('Claims'));
+  openCreateClaim() { if (this.canAddClaim()) this.claimsHistory?.openCreate(); }
   readonly contractPanels = signal<ContractPanelItem[]>([]);
   readonly isLoading = signal(true);
   readonly isDownloadingSlips = signal(false);

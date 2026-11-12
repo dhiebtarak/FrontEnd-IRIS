@@ -7,6 +7,12 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { ToastrService } from 'ngx-toastr';
 import { BehaviorSubject } from 'rxjs';
 import { ContractOverviewComponent } from './contract-overview.component';
+import { Component, Input } from '@angular/core';
+import { ContractClaimsComponent } from '../../claims/contract-claims.component';
+import { Auth } from '../../shared/services/auth';
+
+@Component({ selector: 'app-contract-claims', standalone: true, template: '' })
+class ClaimHistoryStub { @Input() contractId: number | null = null; openCreate() {} }
 
 describe('ContractOverviewComponent', () => {
   let fixture: ComponentFixture<ContractOverviewComponent>;
@@ -158,6 +164,7 @@ describe('ContractOverviewComponent', () => {
         }
       ]
     })
+      .overrideComponent(ContractOverviewComponent, { remove: { imports: [ContractClaimsComponent] }, add: { imports: [ClaimHistoryStub] } })
       .overrideProvider(MatSnackBar, { useValue: snackBar })
       .compileComponents();
 
@@ -210,6 +217,18 @@ describe('ContractOverviewComponent', () => {
     httpMock.expectOne('/api/back-office/contracts/123/invoice-context').flush(context);
     httpMock.expectOne('/api/back-office/contracts/123/invoices').flush(history);
   }
+
+  it('shows Add Claim only for a Bound contract with Claims access', () => {
+    vi.spyOn(TestBed.inject(Auth), 'hasModule').mockReturnValue(true);
+    flushContract(123, { ...contractResponse, status: 'Bound' });
+    expect(fixture.nativeElement.textContent).toContain('Add Claim');
+    component.contract.update(contract => ({ ...contract!, status: 'Draft' })); fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Add Claim');
+    component.contract.update(contract => ({ ...contract!, status: 'Bound' }));
+    (TestBed.inject(Auth).hasModule as ReturnType<typeof vi.fn>).mockReturnValue(false);
+    component.contract.update(contract => ({ ...contract! })); fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Add Claim');
+  });
 
   it('loads and renders the saved contract overview from the draft contract ID', () => {
     flushContract();

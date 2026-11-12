@@ -187,7 +187,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
   });
   readonly selectedRemittanceRows = computed(() => this.remittances().filter(remittance => this.selectedRemittanceIds().has(this.getRemittanceId(remittance))));
   readonly selectedPremiumTotal = computed(() => this.sumSelectedRemittanceMinorUnits(row => this.normalizeSourceType(row.sourceType) === 'PREMIUM'));
-  readonly selectedAvoirTotal = computed(() => this.sumSelectedRemittanceMinorUnits(row => this.normalizeSourceType(row.sourceType) === 'AVOIR'));
+  readonly selectedAvoirTotal = computed(() => this.sumSelectedRemittanceMinorUnits(row => ['AVOIR', 'CLAIM'].includes(this.normalizeSourceType(row.sourceType))));
   readonly selectedRemittanceTotal = computed(() => this.sumSelectedRemittanceMinorUnits(() => true));
   readonly selectedRemittanceCurrency = computed(() => this.selectedRemittanceRows()[0]?.currencyCode ?? '');
   readonly selectedRemittanceReinsurer = computed(() => {
@@ -2263,6 +2263,7 @@ export class FinancialWorkspacePageComponent implements OnInit {
     const source = this.normalizeSourceType(remittance.sourceType);
     if (source === 'PREMIUM') return 'Premium';
     if (source === 'AVOIR') return 'Avoir';
+    if (source === 'CLAIM') return 'Claim';
     if (source === 'AVOIR_REFUND') return 'Avoir Refund';
     return source ? source.replaceAll('_', ' ') : 'Not provided';
   }

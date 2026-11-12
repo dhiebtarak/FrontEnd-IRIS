@@ -1,0 +1,66 @@
+:host {
+  display: block;
+  min-width: 0;
+  margin-bottom: 1.25rem;
+  font-family: var(--font-calibri);
+  color: var(--color-iris-slate);
+}
+
+.claim-modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.claim-modal input,
+.claim-modal select,
+.claim-modal textarea {
+  font-family: var(--font-calibri);
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--color-iris-navy);
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+.claim-modal input:focus,
+.claim-modal select:focus,
+.claim-modal textarea:focus {
+  outline: none;
+  border-color: var(--color-iris-teal);
+  box-shadow: 0 0 0 3px var(--color-iris-divider);
+}
+
+.claim-modal input:disabled,
+.claim-modal select:disabled,
+.claim-modal textarea:disabled,
+.claim-modal input[readonly] {
+  background: var(--color-iris-bg);
+  opacity: 1;
+}
+
+button {
+  cursor: pointer;
+  transition: background-color 150ms, color 150ms;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-iris-teal);
+  outline-offset: 3px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.claim-action {
+  border: 1px solid var(--color-iris-border);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.claim-action:hover:not(:disabled) {
+  background: var(--color-iris-bg);
+}

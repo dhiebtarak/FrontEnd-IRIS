@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, ElementRef, HostListener, Input, OnDestroy, Optional, ViewChild, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
-import { finalize } from 'rxjs';
+import { concatMap, defer, endWith, finalize, from, ignoreElements, Observable, tap } from 'rxjs';
 import { DocumentContext, DocumentListItem, DocumentUploadRequest } from '../../models/document.model';
 import { DocumentsService } from '../../services/documents.service';
 
@@ -19,6 +19,7 @@ export class DocumentAttachmentsComponent implements OnDestroy {
   @Input({ required: true }) context!: DocumentContext;
   @Input() title = 'Contract documents';
   @Input() readOnly = false;
+  @Input() draft = false;
   @ViewChild('dialog') private dialog?: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog') private confirmDialog?: ElementRef<HTMLElement>;
   @ViewChild('fileInput') private fileInput?: ElementRef<HTMLInputElement>;
@@ -39,6 +40,22 @@ export class DocumentAttachmentsComponent implements OnDestroy {
   private restoreFocusElement: HTMLElement | null = null;
   private restoreArchiveFocusElement: HTMLElement | null = null;
   private previousBodyOverflow = '';
+  private nextPendingId = -1;
+  private readonly pendingFiles = signal<{ id: number; file: File; request: DocumentUploadRequest }[]>([]);
+
+  get isDraft(): boolean {
+    return this.draft && this.context.scope === 'claim';
+  }
+
+  uploadPending(context: DocumentContext): Observable<void> {
+    return defer(() => from([...this.pendingFiles()])).pipe(
+      concatMap(pending => this.documentsService.uploadDocument(context, pending.request).pipe(
+        tap(() => this.removePending(pending.id))
+      )),
+      ignoreElements(),
+      endWith(void 0)
+    );
+  }
 
   constructor(
     private readonly documentsService: DocumentsService,
@@ -102,7 +119,7 @@ export class DocumentAttachmentsComponent implements OnDestroy {
     }
 
     const extension = file.name.includes('.') ? `.${file.name.split('.').pop()?.toLowerCase()}` : '';
-    if (!allowedDocumentExtensions.has(extension)) {
+    if (this.context.scope !== 'claim' && !allowedDocumentExtensions.has(extension)) {
       this.clearSelection();
       this.selectedFileError.set('Unsupported file format. Choose a PDF, PNG, JPG, or JPEG file.');
       return;
@@ -125,17 +142,22 @@ export class DocumentAttachmentsComponent implements OnDestroy {
 
     this.isUploading.set(true);
     this.selectedFileError.set('');
-    this.readFileAsBase64(this.selectedFile).then(contentBase64 => {
-      const file = this.selectedFile;
-      if (!file) {
-        return;
-      }
+    const file = this.selectedFile;
+    this.readFileAsBase64(file).then(contentBase64 => {
 
       const request: DocumentUploadRequest = {
         fileName: file.name,
         mimeType: file.type || 'application/octet-stream',
         contentBase64
       };
+
+      if (this.isDraft) {
+        this.pendingFiles.update(files => [...files, { id: this.nextPendingId--, file, request }]);
+        this.clearSelection();
+        this.isUploading.set(false);
+        this.loadDocuments();
+        return;
+      }
 
       this.documentsService.uploadDocument(this.context, request).pipe(
         finalize(() => this.isUploading.set(false))
@@ -158,6 +180,11 @@ export class DocumentAttachmentsComponent implements OnDestroy {
   }
 
   preview(document: DocumentListItem): void {
+    const pending = this.pendingFiles().find(file => file.id === document.idDocument);
+    if (pending) {
+      this.openBlobPreview(pending.file);
+      return;
+    }
     if (this.previewingIds().has(document.idDocument)) {
       return;
     }
@@ -176,6 +203,11 @@ export class DocumentAttachmentsComponent implements OnDestroy {
   }
 
   download(document: DocumentListItem): void {
+    const pending = this.pendingFiles().find(file => file.id === document.idDocument);
+    if (pending) {
+      this.saveBlob(pending.file, pending.file.name);
+      return;
+    }
     if (this.downloadingIds().has(document.idDocument)) {
       return;
     }
@@ -198,6 +230,11 @@ export class DocumentAttachmentsComponent implements OnDestroy {
     event.stopPropagation();
 
     if (this.readOnly || this.archivingDocumentId === document.idDocument) {
+      return;
+    }
+
+    if (this.isDraft) {
+      this.removePending(document.idDocument);
       return;
     }
 
@@ -305,6 +342,10 @@ export class DocumentAttachmentsComponent implements OnDestroy {
   }
 
   private loadDocuments(): void {
+    if (this.isDraft) {
+      this.showPending();
+      return;
+    }
     this.isLoading.set(true);
     this.errorMessage.set('');
     this.documentsService.getDocuments(this.context).pipe(
@@ -313,6 +354,20 @@ export class DocumentAttachmentsComponent implements OnDestroy {
       next: documents => this.documents.set(documents),
       error: (error: HttpErrorResponse) => this.errorMessage.set(this.getErrorMessage(error))
     });
+  }
+
+  private removePending(id: number): void {
+    this.pendingFiles.update(files => files.filter(file => file.id !== id));
+    if (this.isDraft) this.showPending();
+  }
+
+  private showPending(): void {
+    this.errorMessage.set('');
+    this.documents.set(this.pendingFiles().map(({ id, file }) => ({
+      idDocument: id, fileName: file.name, mimeType: file.type || 'application/octet-stream',
+      fileSize: file.size, documentType: 'Pending claim attachment',
+      createdAt: new Date(file.lastModified).toISOString(), createdByName: 'Pending claim save'
+    })));
   }
 
   private clearSelection(): void {

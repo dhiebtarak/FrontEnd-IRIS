@@ -1,0 +1,405 @@
+@if (canRead()) {
+  <section class="rounded-[24px] border border-iris-border bg-white p-6 shadow-[0_18px_50px_rgba(13,47,79,0.08)]">
+    <header class="flex flex-wrap items-center justify-between gap-3 border-b border-iris-divider pb-4">
+      <div>
+        <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">{{ backOffice() ? 'Back Officer' : 'Claims' }}</p>
+        <h2 class="font-cambria text-2xl font-bold text-iris-navy">Claims History</h2>
+      </div>
+      <button
+        type="button"
+        (click)="load()"
+        [disabled]="loading() || busy()"
+        class="rounded-xl border border-iris-border bg-white px-4 py-2 text-sm font-semibold text-iris-navy transition hover:bg-iris-bg"
+      >
+        Refresh
+      </button>
+    </header>
+    @if (error() && !mode()) {
+      <p role="alert" class="m-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{{ error() }}</p>
+    }
+    @if (loading()) {
+      <p role="status" class="p-6 text-sm text-iris-slate">Loading claims...</p>
+    } @else if (!records().length) {
+      <div class="mt-5 rounded-2xl border border-dashed border-iris-border bg-iris-bg px-4 py-6 text-center text-sm font-semibold text-iris-slate">
+        {{ contractId == null ? 'No claims have been created yet.' : 'No claims have been created for this contract.' }}
+      </div>
+    } @else {
+      <div class="mt-5 overflow-x-auto">
+        <table class="min-w-full border-separate border-spacing-0 text-left text-sm">
+          <thead class="bg-iris-bg text-xs uppercase tracking-[0.12em] text-iris-slate">
+            <tr>
+              <th class="px-4 py-3">Claim ID</th>
+              @if (contractId == null) {
+                <th class="px-4 py-3">Contract / UMR</th>
+              }
+              <th class="px-4 py-3">Date of loss</th>
+              <th class="px-4 py-3">UY</th>
+              <th class="px-4 py-3 text-right">Reserve</th>
+              <th class="px-4 py-3 text-right">Paid loss</th>
+              <th class="px-4 py-3">Status</th>
+              <th class="px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-iris-divider">
+            @for (row of records(); track row.claimId) {
+              <tr class="align-top hover:bg-iris-bg/40">
+                <td class="px-4 py-3 font-bold text-iris-teal">{{ row.claimNumber }}</td>
+                @if (contractId == null) {
+                  <td class="px-4 py-3">
+                    <a
+                      [routerLink]="contractRoute(row)"
+                      [queryParams]="{ contractId: row.contractId }"
+                      class="font-semibold text-iris-teal"
+                      >{{ row.contractName }}</a
+                    ><span class="block text-xs text-iris-slate">{{ row.umr }}</span>
+                  </td>
+                }
+                <td class="px-4 py-3">{{ row.dateOfLoss }}</td>
+                <td class="px-4 py-3">{{ row.underwritingYear }}</td>
+                <td class="px-4 py-3 text-right">
+                  {{ money(row.reserve, row.currencyCode, row.currencyDecimalPlaces) }}
+                </td>
+                <td class="px-4 py-3 text-right">
+                  {{ money(row.paidLoss, row.currencyCode, row.currencyDecimalPlaces) }}
+                </td>
+                <td class="px-4 py-3">
+                  <span
+                    class="inline-flex rounded-full border border-current/20 px-2 py-1 text-[11px] font-bold"
+                    [ngClass]="
+                      row.isClosed
+                        ? 'bg-slate-100 text-slate-700'
+                        : row.status === 'PaidLoss'
+                          ? 'bg-emerald-50 text-emerald-800'
+                          : 'bg-amber-50 text-amber-800'
+                    "
+                    >{{ statusLabels[row.status] }}</span
+                  >
+                  @if (row.collectionReference) {
+                    <span class="mt-2 block text-xs text-iris-slate"
+                      >{{ row.collectionReference }}<br />{{
+                        row.processingMode === 'DIRECT_TO_REMITTANCES'
+                          ? 'Direct to remittances'
+                          : row.isPaired
+                            ? 'Paired with Encaissement'
+                            : 'Awaiting Encaissement pairing'
+                      }}</span
+                    >
+                  }
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex flex-wrap gap-2">
+                    <app-document-attachments
+                      [context]="{ scope: 'claim', claimId: row.claimId }"
+                      [title]="'Claim documents - ' + row.claimNumber"
+                    />
+                    <button
+                      type="button"
+                      (click)="openEdit(row)"
+                      [disabled]="busy()"
+                      class="claim-action font-bold text-iris-teal"
+                    >
+                      {{ row.canEdit ? 'Edit' : 'View' }}
+                    </button>
+                    @if (row.canIssue) {
+                      <button
+                        type="button"
+                        (click)="openIssue(row)"
+                        [disabled]="busy()"
+                        class="claim-action font-bold text-iris-teal"
+                      >
+                        Issue collection note
+                      </button>
+                    }
+                    @if (row.collectionIssuedAt) {
+                      <button
+                        type="button"
+                        (click)="download(row)"
+                        class="claim-action font-bold text-iris-teal"
+                      >
+                        Collection note PDF
+                      </button>
+                    }
+                    @if (row.canPair) {
+                      <button
+                        type="button"
+                        (click)="openPair(row)"
+                        [disabled]="busy()"
+                        class="claim-action font-bold text-iris-teal"
+                      >
+                        Pair Encaissement
+                      </button>
+                    }
+                    @if (!row.isClosed) {
+                      <button
+                        type="button"
+                        (click)="close(row)"
+                        [disabled]="busy()"
+                        class="claim-action font-semibold text-iris-slate"
+                      >
+                        Close claim
+                      </button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td
+                  [attr.colspan]="contractId == null ? 8 : 7"
+                  class="px-4 py-8 text-center text-iris-slate"
+                >
+                  No claims recorded.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (totalPages() > 1) {
+        <nav
+          aria-label="Claim pages"
+          class="flex items-center justify-between border-t border-iris-divider p-4 text-sm"
+        >
+          <span>Page {{ page() }} of {{ totalPages() }}</span>
+          <div class="flex gap-3">
+            <button type="button" (click)="load(page() - 1)" [disabled]="page() <= 1 || busy()">
+              Previous</button
+            ><button
+              type="button"
+              (click)="load(page() + 1)"
+              [disabled]="page() >= totalPages() || busy()"
+            >
+              Next
+            </button>
+          </div>
+        </nav>
+      }
+    }
+  </section>
+}
+@if (mode()) {
+  <div
+    class="fixed inset-0 z-[60] flex items-center justify-center bg-iris-navy-dark/60 p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="claim-modal-title"
+  >
+    <section
+      class="claim-modal max-h-[90vh] w-full max-w-4xl overflow-auto rounded-[26px] border border-iris-border bg-white p-6 shadow-2xl md:p-8"
+    >
+      <header class="flex items-center justify-between gap-4 border-b border-iris-divider pb-4">
+        <div>
+        <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Claim details</p>
+        <h2 id="claim-modal-title" class="mt-1 font-cambria text-2xl font-bold text-iris-navy">
+          {{
+            mode() === 'form'
+              ? selected()
+                ? readOnly
+                  ? 'View Claim'
+                  : 'Edit Claim'
+                : 'Add Claim'
+              : mode() === 'issue'
+                ? 'Issue Claim Collection Note'
+                : 'Pair Claim with Encaissement'
+          }}
+        </h2>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+        @if (mode() === 'form' && context()) {
+          <app-document-attachments
+            #formDocuments
+            [context]="{ scope: 'claim', claimId: selected()?.claimId ?? 0 }"
+            [draft]="draftDocuments()"
+            [readOnly]="busy()"
+            [title]="selected() ? 'Claim documents - ' + selected()!.claimNumber : 'New claim documents'"
+          />
+        }
+        <button
+          type="button"
+          (click)="dismiss()"
+          [disabled]="busy()"
+          class="rounded-xl border border-iris-border bg-white px-4 py-2 text-sm font-semibold text-iris-navy hover:bg-iris-bg"
+        >
+          Close
+        </button>
+        </div>
+      </header>
+      @if (error()) {
+        <p role="alert" class="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">
+          {{ error() }}
+        </p>
+      }
+      @if (savedForAttachments() && !busy()) {
+        <button type="button" (click)="retryAttachments()"
+          class="mt-4 rounded-xl bg-iris-teal px-5 py-3 text-sm font-bold text-white hover:bg-iris-teal-light">
+          Retry remaining attachments
+        </button>
+      }
+      @if (mode() === 'form' && context(); as ctx) {
+        <p class="my-5 rounded-2xl border border-iris-border bg-iris-bg px-4 py-4 text-sm font-semibold text-iris-navy">
+          {{ ctx.contractName }} · {{ ctx.umr }}
+        </p>
+        <form [formGroup]="form" (ngSubmit)="save()" class="space-y-5">
+          <div class="grid gap-5 md:grid-cols-2">
+            <label class="space-y-2 text-sm font-semibold text-iris-navy"
+              ><span>Date of loss</span
+              ><input
+                type="date"
+                formControlName="dateOfLoss"
+                class="w-full rounded-xl border border-iris-border px-4 py-3"
+            /></label>
+            <label class="space-y-2 text-sm font-semibold text-iris-navy"
+              ><span>Notification date</span
+              ><input
+                type="date"
+                formControlName="notificationDate"
+                class="w-full rounded-xl border border-iris-border px-4 py-3"
+            /></label>
+            <label class="space-y-2 text-sm font-semibold text-iris-navy md:col-span-2"
+              ><span>Nature of loss</span
+              ><textarea
+                formControlName="natureOfLoss"
+                rows="3"
+                maxlength="10000"
+                class="w-full rounded-xl border border-iris-border px-4 py-3"
+              ></textarea>
+            </label>
+            <label class="space-y-2 text-sm font-semibold text-iris-navy"
+              ><span>Currency</span
+              ><select
+                formControlName="currencyId"
+                class="w-full rounded-xl border border-iris-border bg-white px-4 py-3"
+              >
+                <option [ngValue]="ctx.currencyId">{{ ctx.currencyCode }}</option>
+              </select></label
+            >
+            @for (field of moneyFields; track field.key) {
+              <label class="space-y-2 text-sm font-semibold text-iris-navy"
+                ><span>{{ field.label }}</span
+                ><input
+                  type="number"
+                  [formControlName]="field.key"
+                  min="0"
+                  step="any"
+                  class="w-full rounded-xl border border-iris-border px-4 py-3"
+              /></label>
+            }
+            <label class="space-y-2 text-sm font-semibold text-iris-navy"
+              ><span>100% amount</span
+              ><input
+                readonly
+                [value]="money(grossPreview)"
+                class="w-full rounded-xl border border-iris-border bg-iris-bg px-4 py-3"
+            /></label>
+            <div class="rounded-xl bg-iris-bg p-4 text-sm text-iris-navy">
+              <p>
+                Contract deductible:
+                <strong>{{ money(readOnly ? selected()?.deductible : ctx.deductible) }}</strong>
+              </p>
+              <p class="mt-2">
+                Signed share:
+                <strong
+                  >{{ readOnly ? selected()?.signedSharePercentage : ctx.signedSharePercentage }}%</strong
+                >
+              </p>
+              <p class="mt-2 text-xs text-iris-slate">
+                Reserve is separate. The backend calculates the collection amount after deducting
+                the contract deductible and applying the signed share.
+              </p>
+            </div>
+            <label class="space-y-2 text-sm font-semibold text-iris-navy"
+              ><span>Status</span
+              ><select
+                formControlName="status"
+                class="w-full rounded-xl border border-iris-border bg-white px-4 py-3"
+              >
+                <option value="Outstanding">Outstanding claim</option>
+                <option value="PaidLoss">Paid loss</option>
+                <option value="Closed">Closed</option>
+                <option value="UnderDeductible">Under-deductible</option>
+              </select></label
+            >
+          </div>
+          @if (form.invalid && form.touched) {
+            <p role="alert" class="text-sm text-rose-700">
+              Check the dates and nonnegative amounts before saving.
+            </p>
+          }
+          @if (!readOnly && !savedForAttachments()) {
+            <button
+              type="submit"
+              [disabled]="busy() || form.invalid || formDocuments?.isUploading()"
+              class="w-full rounded-xl bg-iris-teal px-5 py-3 font-bold text-white shadow-lg shadow-sky-100 transition hover:bg-iris-teal-light disabled:opacity-50"
+            >
+              {{ busy() ? 'Saving...' : 'Save Claim' }}
+            </button>
+          }
+        </form>
+      }
+      @if (mode() === 'issue' && selected(); as row) {
+        <div class="mt-5 space-y-5 text-sm text-iris-navy">
+          <p class="font-bold">
+            {{ row.claimNumber }} ·
+            {{ money(row.collectionAmount, row.currencyCode, row.currencyDecimalPlaces) }}
+          </p>
+          <label class="block space-y-2"
+            ><span class="font-semibold">Processing mode</span
+            ><select
+              [formControl]="processingMode"
+              class="w-full rounded-xl border border-iris-border bg-white px-4 py-3"
+            >
+              <option value="DIRECT_TO_REMITTANCES">Direct to remittances</option>
+              <option value="PAIR_WITH_ENCAISSEMENT">Pair with an Encaissement first</option>
+            </select></label
+          >
+          <p class="text-iris-slate">
+            Issuing locks the financial details and creates a collection note using confirmed
+            reinsurer shares.
+          </p>
+          <button
+            type="button"
+            (click)="issue()"
+            [disabled]="busy()"
+            class="w-full rounded-xl bg-iris-teal px-5 py-3 font-bold text-white"
+          >
+            {{ busy() ? 'Issuing...' : 'Issue and download collection note' }}
+          </button>
+        </div>
+      }
+      @if (mode() === 'pair') {
+        <div class="mt-5 space-y-4 text-sm text-iris-navy">
+          <p>
+            Select an Encaissement for the same cedent, contract and currency. The claim is applied
+            as a credit against premium allocations.
+          </p>
+          <label class="block space-y-2"
+            ><span class="font-semibold">Encaissement</span
+            ><select
+              [formControl]="receiptId"
+              class="w-full rounded-xl border border-iris-border bg-white px-4 py-3"
+            >
+              <option [ngValue]="null">Select an Encaissement</option>
+              @for (receipt of receipts(); track receipt.bankReceiptId) {
+                <option [ngValue]="receipt.bankReceiptId">
+                  {{ receipt.reference || 'BR-' + receipt.bankReceiptId }} ·
+                  {{ receipt.operationDate }} · {{ money(receipt.amount, receipt.currencyCode) }}
+                </option>
+              }
+            </select></label
+          >
+          @if (!busy() && !receipts().length) {
+            <p>No matching Encaissements are available.</p>
+          }
+          <button
+            type="button"
+            (click)="pair()"
+            [disabled]="busy() || receiptId.invalid"
+            class="w-full rounded-xl bg-iris-teal px-5 py-3 font-bold text-white"
+          >
+            {{ busy() ? 'Pairing...' : 'Pair and generate claim remittances' }}
+          </button>
+        </div>
+      }
+    </section>
+  </div>
+}
