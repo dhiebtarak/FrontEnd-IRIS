@@ -1,1 +1,2 @@
-<router-outlet></router-outlet>
+<app-application-notices #notices />
+<div [attr.inert]="notices.showExpiration() ? '' : null"><router-outlet></router-outlet></div>

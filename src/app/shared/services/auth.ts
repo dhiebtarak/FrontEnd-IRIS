@@ -1,6 +1,7 @@
-import { Injectable } from '@angular/core';
+import { Injectable, OnDestroy, Optional, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
+import { catchError, defer, finalize, Observable, of, Subject, tap, timeout } from 'rxjs';
 
 export interface LoginResponse {
   token?: string;
@@ -68,13 +69,126 @@ export const ACCESS_MODULES = [
 @Injectable({
   providedIn: 'root',
 })
-export class Auth {
+export class Auth implements OnDestroy {
   private readonly tokenStorageKey = 'iris_auth_token';
   private readonly userStorageKey = 'iris_auth_user';
   private readonly workspaceStorageKey = 'iris_auth_workspace';
   readonly baseUrl = '/api';
 
-  constructor(private httpClient: HttpClient) { }
+  readonly sessionExpired = signal(false);
+  readonly sessionEnded = new Subject<void>();
+  private expirationTimer?: ReturnType<typeof setTimeout>;
+  private channel?: BroadcastChannel;
+  private sessionId: string | null = null;
+  private logoutToken: string | null = null;
+  private loggingOut = false;
+  private readonly eventKey = 'iris_auth_event';
+  private readonly storageListener = (event: StorageEvent) => {
+    if (event.key === this.eventKey && event.newValue) {
+      try { this.receiveEvent(JSON.parse(event.newValue)); } catch { /* Ignore unrelated or malformed messages. */ }
+    } else if (event.key === this.tokenStorageKey && event.newValue) {
+      this.sessionExpired.set(false);
+      this.scheduleExpiration();
+    }
+  };
+  private readonly resumeListener = () => this.checkExpiration();
+
+  constructor(private httpClient: HttpClient, @Optional() private router: Router | null) {
+    if (typeof window.BroadcastChannel !== 'undefined') {
+      this.channel = new window.BroadcastChannel('iris-auth');
+      this.channel.onmessage = event => this.receiveEvent(event.data);
+    }
+    window.addEventListener('storage', this.storageListener);
+    window.addEventListener('focus', this.resumeListener);
+    document.addEventListener('visibilitychange', this.resumeListener);
+    this.scheduleExpiration();
+  }
+
+  private tokenClaims(token = this.getToken()): Record<string, unknown> | null {
+    try {
+      if (!token) return null;
+      const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const result = JSON.parse(atob(part.padEnd(Math.ceil(part.length / 4) * 4, '=')));
+      return result && typeof result === 'object' ? result : null;
+    } catch { return null; }
+  }
+
+  private expirationTime(): number | null {
+    const exp = this.tokenClaims()?.['exp'];
+    return typeof exp === 'number' && Number.isFinite(exp) && Math.abs(exp) < Number.MAX_SAFE_INTEGER / 1000 ? exp * 1000 : null;
+  }
+
+  private serverNow(): number {
+    const offset = Number(localStorage.getItem('iris_auth_clock_offset') ?? 0);
+    return Date.now() + (Number.isFinite(offset) ? offset : 0);
+  }
+
+  checkExpiration(): boolean {
+    const expiry = this.expirationTime();
+    if (expiry != null && expiry <= this.serverNow()) this.expireSession();
+    return this.sessionExpired();
+  }
+
+  private scheduleExpiration(): void {
+    clearTimeout(this.expirationTimer);
+    const claims = this.tokenClaims();
+    this.sessionId = typeof claims?.['sid'] === 'string' ? claims['sid'] : null;
+    const expiry = this.expirationTime();
+    if (expiry == null) return;
+    const remaining = expiry - this.serverNow();
+    if (remaining <= 0) { this.expireSession(); return; }
+    this.expirationTimer = setTimeout(() => this.scheduleExpiration(), Math.min(remaining, 2147483647));
+  }
+
+  expireSession(): void {
+    if (!this.getToken() || this.sessionExpired()) return;
+    this.logoutToken = this.getToken();
+    const sessionId = this.sessionId;
+    this.clearCredentials();
+    this.sessionExpired.set(true);
+    this.publishEvent('expired', sessionId);
+  }
+
+  private publishEvent(type: 'expired' | 'logout', sessionId: string | null): void {
+    const event = { type, sessionId, id: (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`) };
+    localStorage.setItem(this.eventKey, JSON.stringify(event));
+    this.channel?.postMessage(event);
+  }
+
+  private receiveEvent(event: { type?: string; sessionId?: string | null }): void {
+    if (!event || !['expired', 'logout'].includes(event.type ?? '')) return;
+    // Do not let a delayed message terminate a later successful login.
+    if (event.sessionId && this.sessionId && event.sessionId !== this.sessionId) return;
+    if (!this.sessionId && !this.getToken() && !this.sessionExpired()) return;
+    this.clearCredentials();
+    if (event.type === 'expired') this.sessionExpired.set(true);
+    else { this.sessionExpired.set(false); this.logoutToken = null; this.sessionId = null; this.navigateToLogin(); }
+  }
+
+  private clearCredentials(): void {
+    clearTimeout(this.expirationTimer);
+    this.expirationTimer = undefined;
+    this.sessionEnded.next();
+    for (const storage of [localStorage, sessionStorage]) {
+      for (const key of Object.keys(storage)) {
+        if (key.startsWith('iris_auth_') && key !== this.eventKey) storage.removeItem(key);
+      }
+    }
+  }
+
+  private navigateToLogin(): void {
+    if (this.router && !this.router.url.startsWith('/login'))
+      void this.router.navigateByUrl('/login', { replaceUrl: true });
+  }
+
+  ngOnDestroy(): void {
+    clearTimeout(this.expirationTimer);
+    this.channel?.close();
+    window.removeEventListener('storage', this.storageListener);
+    window.removeEventListener('focus', this.resumeListener);
+    document.removeEventListener('visibilitychange', this.resumeListener);
+    this.sessionEnded.complete();
+  }
 
   createUser(formData: any) {
     return this.httpClient.post<UserProfileResponse>(`${this.baseUrl}/users`, formData);
@@ -131,18 +245,32 @@ export class Auth {
   }
 
   logout(): Observable<unknown> {
-    return this.httpClient.post(`${this.baseUrl}/auth/logout`, {}).pipe(
-      tap({
-        next: () => this.clearSession(),
-        error: () => this.clearSession()
-      })
-    );
+    return defer(() => {
+      if (this.loggingOut) return of(null);
+      this.loggingOut = true;
+      const token = this.getToken() ?? this.logoutToken;
+      const sessionId = this.sessionId;
+      // Local logout never waits for an expired token or an unavailable API.
+      this.clearCredentials();
+      this.sessionExpired.set(false);
+      this.logoutToken = null;
+      this.publishEvent('logout', sessionId);
+      this.sessionId = null;
+      this.navigateToLogin();
+      return this.httpClient.post(`${this.baseUrl}/auth/logout`, {}, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      }).pipe(timeout(3000), catchError(() => of(null)), finalize(() => this.loggingOut = false));
+    });
   }
 
   clearSession(): void {
-    localStorage.removeItem(this.tokenStorageKey);
-    localStorage.removeItem(this.userStorageKey);
-    localStorage.removeItem(this.workspaceStorageKey);
+    const sessionId = this.sessionId;
+    this.clearCredentials();
+    this.sessionExpired.set(false);
+    this.logoutToken = null;
+    this.publishEvent('logout', sessionId);
+    this.sessionId = null;
+    this.navigateToLogin();
   }
 
   isLoggedIn(): boolean {
@@ -270,11 +398,17 @@ export class Auth {
       return;
     }
 
+    this.clearCredentials();
+    this.sessionExpired.set(false);
+    this.logoutToken = null;
+    const serverTime = typeof response['serverTimeUtc'] === 'string' ? Date.parse(response['serverTimeUtc']) : NaN;
+    if (Number.isFinite(serverTime)) localStorage.setItem('iris_auth_clock_offset', String(serverTime - Date.now()));
     localStorage.setItem(this.tokenStorageKey, token);
+    this.scheduleExpiration();
 
     const responseUser = this.extractResponseUser(response);
 
-    if (responseUser) {
+    if (responseUser && !this.sessionExpired()) {
       this.saveUserProfile(responseUser);
     }
   }
