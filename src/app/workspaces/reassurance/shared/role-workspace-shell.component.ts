@@ -101,6 +101,6 @@ export class RoleWorkspaceShellComponent {
 
   private finishLogout(): void {
     this.toastr.success('You have been logged out.', 'Logout');
-    void this.router.navigate(['/login']);
+    void this.router.navigate(['/login'], { replaceUrl: true });
   }
 }

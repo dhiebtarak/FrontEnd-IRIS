@@ -7,9 +7,10 @@ export const adminGuard: CanActivateFn = () => {
   const auth = inject(Auth);
   const router = inject(Router);
 
+  if (auth.sessionExpired?.()) return false;
   if (!auth.isLoggedIn()) return router.createUrlTree(['/login']);
   return auth.refreshCurrentUserProfile().pipe(
     map(user => user.roles?.some(role => role.toLowerCase() === 'admin') ? true : router.createUrlTree(['/access-denied'])),
-    catchError(error => of(router.createUrlTree([error.status === 401 ? '/login' : '/access-denied'])))
+    catchError(error => of(auth.sessionExpired?.() ? false : router.createUrlTree([error.status === 401 ? '/login' : '/access-denied'])))
   );
 };

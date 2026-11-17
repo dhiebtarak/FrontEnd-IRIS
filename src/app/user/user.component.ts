@@ -39,11 +39,11 @@ export class UserComponent {
     this.authService.logout().subscribe({
       next: () => {
         this.toastr.success('You have been logged out.', 'Logout');
-        this.router.navigate(['/login']);
+        this.router.navigate(['/login'], { replaceUrl: true });
       },
       error: () => {
         this.toastr.success('You have been logged out.', 'Logout');
-        this.router.navigate(['/login']);
+        this.router.navigate(['/login'], { replaceUrl: true });
       }
     });
   }

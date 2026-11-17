@@ -7,6 +7,7 @@ export const workspaceGuard: CanActivateChildFn = (_route, state) => {
   const authService = inject(Auth);
   const router = inject(Router);
 
+  if (authService.sessionExpired?.()) return false;
   if (!authService.isLoggedIn()) {
     return router.createUrlTree(['/login']);
   }
@@ -21,7 +22,7 @@ export const workspaceGuard: CanActivateChildFn = (_route, state) => {
       if (required && authService.hasModule(required)) return true;
       return router.createUrlTree(['/access-denied']);
     }),
-    catchError(error => of(router.createUrlTree([error.status === 401 ? '/login' : '/access-denied'])))
+    catchError(error => of(authService.sessionExpired?.() ? false : router.createUrlTree([error.status === 401 ? '/login' : '/access-denied'])))
   );
 };
 

@@ -3,6 +3,8 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+ARG BUILD_REVISION=unknown
+ENV BUILD_REVISION=$BUILD_REVISION
 RUN npm run build
 
 FROM nginx:alpine AS runtime
