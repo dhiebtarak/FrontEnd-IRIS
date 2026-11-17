@@ -15,6 +15,7 @@ describe('FacultativeInformationComponent', () => {
   let snackBar: { open: ReturnType<typeof vi.fn> };
 
   const currenciesResponse = [
+    { id: 77, code: 'FCFA', name: 'Franc CFA', symbol: 'FCFA', decimalPlaces: 0, isDefault: false },
     { id: 1, code: 'MAD', name: 'Moroccan Dirham', symbol: 'DH', decimalPlaces: 2, isDefault: true },
     { id: 2, code: 'EUR', name: 'Euro', symbol: 'EUR', decimalPlaces: 2, isDefault: false }
   ];
@@ -126,6 +127,17 @@ describe('FacultativeInformationComponent', () => {
     }
     fixture.detectChanges();
   }
+
+  it('renders and submits FCFA from the currency API with zero decimal places', () => {
+    component.form.controls.currencyId.setValue(77);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('FCFA');
+    expect(component.selectedCurrency()?.decimalPlaces).toBe(0);
+    component.continueToOverview();
+    const request = httpMock.expectOne('/api/contracts/facultative');
+    expect(request.request.body.currencyId).toBe(77);
+    request.flush({ contractId: 42, status: 'Draft' });
+  });
 
   it('does not invent a currency when creating an incomplete draft', () => {
     expect(component.form.controls.currencyId.value).toBeNull();
