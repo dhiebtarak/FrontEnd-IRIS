@@ -39,3 +39,5 @@ coverage
 **/.idea/shelf
 **/*.swp
 **/*.swo
+**/*.bak
+**/App_Data
