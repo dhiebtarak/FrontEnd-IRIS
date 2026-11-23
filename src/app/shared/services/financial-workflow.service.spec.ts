@@ -877,4 +877,12 @@ describe('FinancialWorkflowService', () => {
       }]
     }]);
   });
+  it('preserves the real Claim source and claim number in contract Avoir history', () => {
+    service.getContractPremiumDebitNotes(7).subscribe(rows => {
+      expect(rows[0].claimId).toBe(4);expect(rows[0].claimNumber).toBe('CL-4');expect(rows[0].sourceType).toBe('Claim');
+      expect(rows[0].label).toBe('Storm settlement');
+    });
+    httpTesting.expectOne('/api/back-office/contracts/7/invoices').flush([{invoiceId:9,invoiceType:'AVOIR',claimId:4,claimNumber:'CL-4',sourceType:'Claim',label:'Storm settlement',allocations:[]}]);
+  });
+
 });

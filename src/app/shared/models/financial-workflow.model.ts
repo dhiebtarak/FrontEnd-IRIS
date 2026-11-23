@@ -142,6 +142,9 @@ export interface EligibleContractsResult {
 }
 
 export interface EligibleInvoice {
+  claimId?: number | null;
+  claimNumber?: string | null;
+  sourceType?: string;
   invoiceId: number;
   idInvoice?: number | string;
   invoiceNumber: string;
@@ -335,6 +338,9 @@ export interface InvoiceQuery {
 }
 
 export interface InvoiceResponse {
+  claimId?: number | null;
+  claimNumber?: string | null;
+  sourceType?: string;
   idInvoice: number;
   invoiceId?: number;
   contractId: number;
@@ -470,6 +476,9 @@ export interface PremiumDebitNotePreview {
 }
 
 export interface PremiumDebitNoteResponse extends PremiumDebitNotePreview {
+  claimId?: number | null;
+  claimNumber?: string | null;
+  sourceType?: string;
   invoiceId: number;
   invoiceNumber: string;
   documentNumber?: string | null;

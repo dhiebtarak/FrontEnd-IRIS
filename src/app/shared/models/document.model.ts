@@ -1,5 +1,9 @@
 export type DocumentContext =
   | {
+      scope: 'claim';
+      claimId: number;
+    }
+  | {
       scope: 'contract';
       contractId: number;
     }

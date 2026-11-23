@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ClaimsComingSoonComponent } from './claims-coming-soon.component';
+import { provideHttpClient } from '@angular/common/http';
+import { Auth } from '../shared/services/auth';
 
 describe('ClaimsComingSoonComponent', () => {
   let fixture: ComponentFixture<ClaimsComingSoonComponent>;
@@ -8,17 +10,16 @@ describe('ClaimsComingSoonComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ClaimsComingSoonComponent],
-      providers: [provideRouter([])]
+      providers: [provideRouter([]), provideHttpClient(), { provide: Auth, useValue: { hasModule: () => false } }]
     }).compileComponents();
 
     fixture = TestBed.createComponent(ClaimsComingSoonComponent);
     fixture.detectChanges();
   });
 
-  it('renders the Coming Soon message and dashboard action', () => {
-    expect(fixture.nativeElement.textContent).toContain('Claims Management Coming Soon');
-
-    const dashboardLink = fixture.nativeElement.querySelector('a');
-    expect(dashboardLink.getAttribute('href')).toBe('/workspace/reassurance/front-officer');
+  it('renders the claims workspace instead of the placeholder', () => {
+    expect(fixture.nativeElement.textContent).toContain('Claims');
+    expect(fixture.nativeElement.textContent).toContain('Bound contract overview');
+    expect(fixture.nativeElement.textContent).not.toContain('Coming Soon');
   });
 });

@@ -1,10 +1,10 @@
 import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ContractClaimsComponent } from './contract-claims.component';
 
 @Component({
   selector: 'app-claims-coming-soon',
   standalone: true,
-  imports: [RouterLink],
+  imports: [ContractClaimsComponent],
   templateUrl: './claims-coming-soon.component.html',
   styles: ``
 })
