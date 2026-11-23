@@ -17,6 +17,24 @@ describe('DocumentsService', () => {
 
   afterEach(() => httpTesting.verify());
 
+  it('keeps all attachment operations scoped to the real claim and document IDs', () => {
+    const context = { scope: 'claim' as const, claimId: 42 };
+    service.getDocuments(context).subscribe();
+    httpTesting.expectOne('/api/claims/42/attachments').flush([]);
+    const payload = { fileName: 'loss.zip', mimeType: 'application/zip', contentBase64: 'AQID' };
+    service.uploadDocument(context, payload).subscribe();
+    const upload = httpTesting.expectOne('/api/claims/42/attachments');
+    expect(upload.request.method).toBe('POST');
+    expect(upload.request.body).toEqual(payload);
+    upload.flush({ idDocument: 7 });
+    service.downloadDocument(7, context).subscribe();
+    httpTesting.expectOne('/api/claims/42/attachments/7/download').flush(new Blob(['file']));
+    service.archiveDocument(7, context).subscribe();
+    const archive = httpTesting.expectOne('/api/claims/42/attachments/7');
+    expect(archive.request.method).toBe('DELETE');
+    archive.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
   it('uses the contract document route and forwards raw Base64 JSON', () => {
     const request = {
       fileName: 'signed-slip.pdf',

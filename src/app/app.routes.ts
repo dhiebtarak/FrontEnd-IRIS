@@ -76,6 +76,7 @@ export const routes: Routes = [
       { path: 'contracts', component: ContractsListComponent, data: { workspace: 'back-office', readonly: true } },
       { path: 'contracts/:contractId/overview', component: ContractOverviewComponent, data: { workspace: 'back-office', readonly: true } },
       { path: 'contracts/overview', component: ContractOverviewComponent, data: { workspace: 'back-office', readonly: true } },
+      { path: 'claims', component: ClaimsComingSoonComponent },
       { path: 'notifications', loadComponent: () => import('./workspaces/reassurance/financial-workspace/financial-workspace-page.component').then(m => m.FinancialWorkspacePageComponent), data: { role: 'back-office', page: 'notifications' } }
     ]
   },

@@ -1011,6 +1011,9 @@ export class FinancialWorkflowService {
     const signedAmount = this.toNullableNumber(record['signedAmount'] ?? record['SignedAmount']);
     return {
       ...preview,
+      claimId: this.toNullableNumber(record['claimId'] ?? record['ClaimId']),
+      claimNumber: this.toNullableText(record['claimNumber'] ?? record['ClaimNumber']),
+      sourceType: this.toNullableText(record['sourceType'] ?? record['SourceType']) ?? 'Contract/Original Premium',
       invoiceId: this.toRequiredNumber(record['invoiceId'] ?? record['InvoiceId'] ?? record['idInvoice'] ?? record['IdInvoice']),
       invoiceNumber: invoiceNumber || documentNumber || `${isAvoir ? 'AV' : 'INV'}-${this.toRequiredNumber(record['invoiceId'] ?? record['InvoiceId'] ?? record['idInvoice'] ?? record['IdInvoice'])}`,
       ...(documentNumber ? { documentNumber } : {}),

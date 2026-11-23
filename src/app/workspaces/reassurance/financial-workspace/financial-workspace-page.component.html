@@ -168,7 +168,7 @@
           <table class="w-full min-w-[1180px] text-left text-sm">
             <thead class="bg-iris-bg text-xs font-bold uppercase tracking-[0.1em] text-iris-slate"><tr>
               <th class="px-4 py-4">Closing reference</th><th class="px-4 py-4">Reinsurer</th><th class="px-4 py-4 text-right">Lines</th>
-              <th class="px-4 py-4 text-right">Premium total</th><th class="px-4 py-4 text-right">Avoir total</th><th class="px-4 py-4 text-right">Net payable</th>
+              <th class="px-4 py-4 text-right">Premium total</th><th class="px-4 py-4 text-right">Avoir / claim total</th><th class="px-4 py-4 text-right">Net payable</th>
               <th class="px-4 py-4">Currency</th><th class="px-4 py-4">Issue date</th><th class="px-4 py-4">Status</th><th class="px-4 py-4">Actions</th>
             </tr></thead>
             <tbody class="divide-y divide-iris-divider">
@@ -299,7 +299,7 @@
           <div class="space-y-1 text-sm font-semibold text-iris-slate">
             <p>{{ selectedRemittanceIds().size }} selected · Reinsurer: {{ selectedRemittanceReinsurer() }}</p>
             <p>Premium total: <strong class="text-iris-navy">{{ formatSignedRemittanceTotal(selectedPremiumTotal(), selectedRemittanceCurrency()) }}</strong></p>
-            <p>Avoir total: <strong class="text-iris-navy">{{ formatSignedRemittanceTotal(selectedAvoirTotal(), selectedRemittanceCurrency()) }}</strong></p>
+            <p>Avoir / claim total: <strong class="text-iris-navy">{{ formatSignedRemittanceTotal(selectedAvoirTotal(), selectedRemittanceCurrency()) }}</strong></p>
             <p>Net balance: <strong class="text-iris-navy">{{ formatSignedRemittanceTotal(selectedRemittanceTotal(), selectedRemittanceCurrency()) }}</strong></p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -317,7 +317,7 @@
           <div class="rounded-xl border border-iris-border bg-white px-4 py-3 text-sm" role="status">
             <p class="font-bold text-iris-navy">Backend settlement result</p>
             @if (confirmation.signedPremiumTotal != null) { <p>Premium total: {{ formatMoney(confirmation.signedPremiumTotal, remittanceConfirmationCurrency()) }}</p> }
-            @if (confirmation.signedAvoirTotal != null) { <p>Avoir total: {{ formatMoney(confirmation.signedAvoirTotal, remittanceConfirmationCurrency()) }}</p> }
+            @if (confirmation.signedAvoirTotal != null) { <p>Avoir / claim total: {{ formatMoney(confirmation.signedAvoirTotal, remittanceConfirmationCurrency()) }}</p> }
             @if (confirmation.netBalance != null) { <p>Net balance: {{ formatSignedRemittanceTotal(confirmation.netBalance, remittanceConfirmationCurrency()) }}</p> }
             @if (confirmation.settlementMode) { <p>Settlement mode: {{ confirmation.settlementMode }}</p> }
             @if (confirmation.amountToDisburse != null) { <p>Amount to disburse: {{ formatMoney(confirmation.amountToDisburse, remittanceConfirmationCurrency()) }}</p> }
@@ -516,7 +516,7 @@
                   }
                   {{ getInvoiceDocumentNumber(invoice) }}
                 </td>
-                <td class="px-3 py-2 text-iris-slate">{{ getInvoiceLabel(invoice) }}</td>
+                <td class="px-3 py-2 text-iris-slate">{{ getInvoiceLabel(invoice) }}<span class="mt-1 block text-xs font-bold text-iris-teal">{{ invoice.sourceType || 'Contract/Original Premium' }} {{ invoice.claimNumber || '' }}</span></td>
                 <td class="px-3 py-2 font-semibold text-iris-navy">{{ getInvoiceContractDisplay(invoice) }}</td>
                 <td class="px-3 py-2">{{ getInvoiceCounterpartyName(invoice) }}</td>
                 <td class="px-3 py-2">{{ getInvoiceTypeLabel(invoice.invoiceType) }}</td>
@@ -527,7 +527,7 @@
                 <td class="px-3 py-2">{{ invoice.currencyCode || 'N/A' }}</td>
                 <td class="px-3 py-2"><span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.paymentStatus ?? invoice.recoveryStatus)">{{ getInvoiceRecoveryStatus(invoice) }}</span></td>
                 <td class="px-3 py-2"><div class="flex flex-wrap gap-2">
-                  @if (isAvoirInvoice(invoice)) { <button type="button" (click)="openAvoirRefund(invoice)" [disabled]="isLoadingAvoirRefundReceipts() || isCreatingAvoirRefund()" class="font-bold text-rose-800 hover:text-rose-950 disabled:opacity-50">Find eligible encaissements</button> }
+                  @if (isAvoirInvoice(invoice) && !invoice.claimId) { <button type="button" (click)="openAvoirRefund(invoice)" [disabled]="isLoadingAvoirRefundReceipts() || isCreatingAvoirRefund()" class="font-bold text-rose-800 hover:text-rose-950 disabled:opacity-50">Find eligible encaissements</button> }
                   <button type="button" (click)="downloadListedInvoice(invoice)" [disabled]="downloadingInvoiceIds().has(invoice.idInvoice)" class="font-bold text-iris-teal hover:text-iris-navy disabled:opacity-50">{{ invoiceDownloadActionLabel(invoice) }}</button>
                 </div></td>
               </tr>
@@ -541,7 +541,7 @@
             <div class="flex items-start justify-between gap-3">
               <div>
                 <h2 class="font-bold text-iris-navy">{{ getInvoiceDocumentNumber(invoice) }}</h2>
-                <p class="text-sm font-semibold text-iris-slate">{{ getInvoiceLabel(invoice) }}</p>
+                <p class="text-sm font-semibold text-iris-slate">{{ getInvoiceLabel(invoice) }}<span class="mt-1 block text-xs font-bold text-iris-teal">{{ invoice.sourceType || 'Contract/Original Premium' }} {{ invoice.claimNumber || '' }}</span></p>
               </div>
               <span class="rounded-full border px-2 py-1 text-[11px] font-bold" [ngClass]="getPairingStatusClasses(invoice.paymentStatus ?? invoice.recoveryStatus)">{{ getInvoiceRecoveryStatus(invoice) }}</span>
             </div>
@@ -955,7 +955,7 @@
                               {{ getInvoiceTypeLabel(invoice.invoiceType) }}
                             }
                           </td>
-                          <td class="px-4 py-3">{{ invoice.label || 'No label' }}</td>
+                          <td class="px-4 py-3">{{ invoice.label || 'No label' }}<span class="mt-1 block text-xs font-bold text-iris-teal">{{ invoice.sourceType || 'Contract/Original Premium' }} {{ invoice.claimNumber || '' }}</span></td>
                           <td class="px-4 py-3 font-semibold text-iris-navy">{{ getEligibleInvoiceContractDisplay(invoice) }}</td>
                           <td class="px-4 py-3">{{ invoice.cedentName }}</td>
                           <td class="px-4 py-3 text-right font-bold" [ngClass]="isAvoirInvoice(invoice) ? 'text-rose-800' : 'text-iris-navy'">{{ formatMoney(getEligibleInvoiceSignedAmount(invoice, invoice.invoiceAmount ?? invoice.grossAmount), invoice.currencyCode) }}</td>

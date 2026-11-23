@@ -15,5 +15,6 @@ export class BackOfficerWorkspaceComponent {
     { label: 'Outgoing Remittances', route: '/workspace/reassurance/back-officer/outgoing-remittances', icon: 'remittances', exact: false, module: 'BackOffice' },
     { label: 'Invoices', route: '/workspace/reassurance/back-officer/invoices', icon: 'invoices', exact: false, module: 'BackOffice' },
     { label: 'Contracts', route: '/workspace/reassurance/back-officer/contracts', icon: 'contracts', exact: false, module: 'BackOffice' },
+    { label: 'Claims', route: '/workspace/reassurance/back-officer/claims', icon: 'claims', exact: false, module: 'BackOffice' },
   ];
 }

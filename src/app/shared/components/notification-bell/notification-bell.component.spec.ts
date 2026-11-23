@@ -168,4 +168,11 @@ describe('NotificationBellComponent', () => {
       { queryParams: { notificationId: 12 } }
     );
   });
+  it('opens the precise claim overview for a Paid Claim notification', () => {
+    const notification={idNotification:21,notificationType:'ClaimReady',title:'Claim ready for invoicing',message:'Claim CL-7 is paid and ready for invoicing.',entityType:'CLAIM',entityId:7,isRead:true,createdAt:'2026-11-19T10:00:00Z'};
+    expect(fixture.componentInstance.getNotificationAction(notification)).toBe('Open Claim');
+    fixture.componentInstance.navigateToNotification(notification);
+    expect(router.navigate).toHaveBeenCalledWith(['/workspace/reassurance/back-officer/claims'],{queryParams:{claimId:7,notificationId:21}});
+  });
+
 });
