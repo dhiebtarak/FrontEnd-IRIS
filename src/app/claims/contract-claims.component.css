@@ -64,3 +64,8 @@ button:disabled {
 .claim-action:hover:not(:disabled) {
   background: var(--color-iris-bg);
 }
+
+.claim-filters label { display:flex; flex-direction:column; gap:.4rem; font-size:.8rem; color:var(--color-iris-navy); }
+.claim-filters input, .claim-filters select { border:1px solid var(--color-iris-border); border-radius:.75rem; padding:.6rem .8rem; background:white; }
+.claim-modal dt { color:var(--color-iris-slate); font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; }
+.claim-modal dd { font-weight:600; overflow-wrap:anywhere; }

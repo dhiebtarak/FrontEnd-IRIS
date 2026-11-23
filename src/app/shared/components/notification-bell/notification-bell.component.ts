@@ -124,6 +124,7 @@ export class NotificationBellComponent implements OnInit {
 
   getNotificationAction(notification: NotificationItem): string | null {
     const type = `${notification.notificationType} ${notification.entityType}`.toLowerCase();
+    if (notification.entityType.trim().toUpperCase() === 'CLAIM') return 'Open Claim';
     if (notification.closingId != null || type.includes('outgoing_closing')) return 'Open Closing';
     if (type.includes('contractreadyforinvoice') || type.includes('contractreadyfordebitnote')) {
       return 'Open Contract';
@@ -147,6 +148,12 @@ export class NotificationBellComponent implements OnInit {
     const workspace = this.router.url.includes('/finance-officer')
       ? '/workspace/reassurance/finance-officer'
       : '/workspace/reassurance/back-officer';
+
+    if (notification.entityType.trim().toUpperCase() === 'CLAIM') {
+      const claimId = notification.entityId;
+      return typeof claimId === 'number' && claimId > 0 ? { commands: ['/workspace/reassurance/back-officer/claims'],
+        queryParams: { claimId, notificationId: notification.idNotification } } : null;
+    }
 
     const isClosingEntity = notification.entityType.trim().toUpperCase() === 'OUTGOING_CLOSING';
     if (notification.closingId != null || isClosingEntity) {

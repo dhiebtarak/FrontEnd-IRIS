@@ -14,6 +14,21 @@
         Refresh
       </button>
     </header>
+    @if (contractId == null) {
+      <form [formGroup]="filters" (ngSubmit)="load(1)" class="claim-filters mt-5 grid gap-3 md:grid-cols-4">
+        <label>Claim / text<input formControlName="search" placeholder="Claim number or nature of loss" /></label>
+        <label>Contract / UMR<input formControlName="contract" /></label>
+        <label>Cedent<input formControlName="cedent" /></label>
+        <label>Claim status<select formControlName="status"><option value="">All</option><option value="Outstanding">Outstanding</option><option value="PaidLoss">Paid Claim</option><option value="Closed">Closed</option><option value="UnderDeductible">Under-deductible</option></select></label>
+        <label>Invoicing<select formControlName="invoicingStatus"><option value="">All</option><option value="NotInvoiced">Not invoiced</option><option value="Ready">Ready</option><option value="Invoiced">Invoiced</option><option value="LegacyIssued">Previously issued</option></select></label>
+        <label>Currency<select formControlName="currencyId"><option value="">All</option>@for (currency of currencies(); track currency.id) {<option [value]="currency.id">{{ currency.code }} &mdash; {{ currency.name }}</option>}</select></label>
+        <label>Loss from<input type="date" formControlName="lossFrom" /></label>
+        <label>Loss to<input type="date" formControlName="lossTo" /></label>
+        <label>Sort<select formControlName="sort"><option value="created">Created date</option><option value="claimNumber">Claim number</option><option value="dateOfLoss">Date of loss</option><option value="paidLoss">Paid loss</option></select></label>
+        <label>Order<select formControlName="descending"><option value="true">Descending</option><option value="false">Ascending</option></select></label>
+        <button type="submit" class="claim-action self-end bg-iris-teal text-white" [disabled]="busy() || loading()">Apply filters</button>
+      </form>
+    }
     @if (error() && !mode()) {
       <p role="alert" class="m-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{{ error() }}</p>
     }
@@ -32,12 +47,12 @@
               @if (contractId == null) {
                 <th class="px-4 py-3">Contract / UMR</th>
               }
-              <th class="px-4 py-3">Date of loss</th>
+              <th class="px-4 py-3">Cedent</th><th class="px-4 py-3">Currency</th><th class="px-4 py-3 text-right">Net loss</th><th class="px-4 py-3 text-right">Deductible</th><th class="px-4 py-3">Date of loss</th>
               <th class="px-4 py-3">UY</th>
               <th class="px-4 py-3 text-right">Reserve</th>
               <th class="px-4 py-3 text-right">Paid loss</th>
               <th class="px-4 py-3">Status</th>
-              <th class="px-4 py-3">Actions</th>
+              <th class="px-4 py-3">Invoicing</th><th class="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-iris-divider">
@@ -54,6 +69,10 @@
                     ><span class="block text-xs text-iris-slate">{{ row.umr }}</span>
                   </td>
                 }
+                <td class="px-4 py-3">{{ row.cedentName }}</td>
+                <td class="px-4 py-3" [title]="row.currencyName || ''">{{ row.currencyCode }}</td>
+                <td class="px-4 py-3 text-right">{{ money(netLossFor(row), row.currencyCode, row.currencyDecimalPlaces) }}</td>
+                <td class="px-4 py-3 text-right">{{ money(row.deductible, row.currencyCode, 4) }}</td>
                 <td class="px-4 py-3">{{ row.dateOfLoss }}</td>
                 <td class="px-4 py-3">{{ row.underwritingYear }}</td>
                 <td class="px-4 py-3 text-right">
@@ -86,6 +105,7 @@
                     >
                   }
                 </td>
+                <td class="px-4 py-3">{{ row.invoicingStatus || 'NotInvoiced' }}</td>
                 <td class="px-4 py-3">
                   <div class="flex flex-wrap gap-2">
                     <app-document-attachments
@@ -100,17 +120,17 @@
                     >
                       {{ row.canEdit ? 'Edit' : 'View' }}
                     </button>
-                    @if (row.canIssue) {
+                    @if (row.canPassToInvoicing) {
                       <button
                         type="button"
                         (click)="openIssue(row)"
                         [disabled]="busy()"
                         class="claim-action font-bold text-iris-teal"
                       >
-                        Issue collection note
+                        Pass to invoicing
                       </button>
                     }
-                    @if (row.collectionIssuedAt) {
+                    @if (row.collectionIssuedAt && row.invoicingStatus !== 'Invoiced') {
                       <button
                         type="button"
                         (click)="download(row)"
@@ -118,6 +138,9 @@
                       >
                         Collection note PDF
                       </button>
+                    }
+                    @if (row.invoicingStatus === 'Invoiced') {
+                      <button type="button" (click)="showDocuments(row)" [disabled]="busy()" class="claim-action font-bold text-iris-teal">Documents</button>
                     }
                     @if (row.canPair) {
                       <button
@@ -129,7 +152,7 @@
                         Pair Encaissement
                       </button>
                     }
-                    @if (!row.isClosed) {
+                    @if (!row.isClosed && canManage()) {
                       <button
                         type="button"
                         (click)="close(row)"
@@ -145,7 +168,7 @@
             } @empty {
               <tr>
                 <td
-                  [attr.colspan]="contractId == null ? 8 : 7"
+                  [attr.colspan]="contractId == null ? 14 : 13"
                   class="px-4 py-8 text-center text-iris-slate"
                 >
                   No claims recorded.
@@ -198,9 +221,9 @@
                   ? 'View Claim'
                   : 'Edit Claim'
                 : 'Add Claim'
-              : mode() === 'issue'
-                ? 'Issue Claim Collection Note'
-                : 'Pair Claim with Encaissement'
+              : mode() === 'invoicing'
+                ? 'Claim Invoicing'
+                : mode() === 'documents' ? 'Claim Documents' : 'Pair Claim with Encaissement'
           }}
         </h2>
         </div>
@@ -239,6 +262,13 @@
         <p class="my-5 rounded-2xl border border-iris-border bg-iris-bg px-4 py-4 text-sm font-semibold text-iris-navy">
           {{ ctx.contractName }} · {{ ctx.umr }}
         </p>
+        @if (selected(); as row) {
+          <div class="mb-5 flex flex-wrap items-center gap-3 text-sm text-iris-navy">
+            <strong>{{ row.claimNumber }}</strong><span>{{ row.cedentName }} &middot; {{ row.currencyCode }} &middot; {{ row.invoicingStatus }}</span>
+            @if (row.canPassToInvoicing) {<button type="button" class="rounded-xl bg-iris-teal px-5 py-3 font-bold text-white" [disabled]="busy()" (click)="openInvoicing(row)">Pass to invoicing</button>}
+            @if (row.invoicingStatus === 'Invoiced') {<button type="button" class="claim-action" (click)="showDocuments(row)">Documents</button>}
+          </div>
+        }
         <form [formGroup]="form" (ngSubmit)="save()" class="space-y-5">
           <div class="grid gap-5 md:grid-cols-2">
             <label class="space-y-2 text-sm font-semibold text-iris-navy"
@@ -270,7 +300,11 @@
                 formControlName="currencyId"
                 class="w-full rounded-xl border border-iris-border bg-white px-4 py-3"
               >
-                <option [ngValue]="ctx.currencyId">{{ ctx.currencyCode }}</option>
+                <option [ngValue]="null">Select currency</option>
+                @for (currency of currencies(); track currency.id) {
+                  <option [ngValue]="currency.id">{{ currency.code }} &mdash; {{ currency.name }} {{ currency.symbol }}</option>
+                }
+                @if (readOnly && !formCurrency) { <option [ngValue]="selected()!.currencyId">{{ selected()!.currencyCode }}</option> }
               </select></label
             >
             @for (field of moneyFields; track field.key) {
@@ -285,28 +319,18 @@
               /></label>
             }
             <label class="space-y-2 text-sm font-semibold text-iris-navy"
-              ><span>100% amount</span
+              ><span>Net loss</span
               ><input
                 readonly
-                [value]="money(grossPreview)"
+                [value]="money(netPreview)"
                 class="w-full rounded-xl border border-iris-border bg-iris-bg px-4 py-3"
             /></label>
-            <div class="rounded-xl bg-iris-bg p-4 text-sm text-iris-navy">
-              <p>
-                Contract deductible:
-                <strong>{{ money(readOnly ? selected()?.deductible : ctx.deductible) }}</strong>
-              </p>
-              <p class="mt-2">
-                Signed share:
-                <strong
-                  >{{ readOnly ? selected()?.signedSharePercentage : ctx.signedSharePercentage }}%</strong
-                >
-              </p>
-              <p class="mt-2 text-xs text-iris-slate">
-                Reserve is separate. The backend calculates the collection amount after deducting
-                the contract deductible and applying the signed share.
-              </p>
-            </div>
+            <label class="space-y-2 text-sm font-semibold text-iris-navy"><span>Claim deductible (optional)</span>
+              <input type="number" formControlName="deductible" min="0" step="0.0001" class="w-full rounded-xl border border-iris-border px-4 py-3" />
+              @if (form.controls.deductible.invalid && form.controls.deductible.touched) {<span class="text-rose-700">Use a nonnegative amount with at most four decimal places.</span>}
+              @if (readOnly && selected()?.deductible == null) {<span>Not provided</span>}
+            </label>
+            <p class="text-sm text-iris-slate">Net loss = paid loss + expert fees + other fees &minus; claim deductible. Reserve is tracked separately.</p>
             <label class="space-y-2 text-sm font-semibold text-iris-navy"
               ><span>Status</span
               ><select
@@ -314,11 +338,15 @@
                 class="w-full rounded-xl border border-iris-border bg-white px-4 py-3"
               >
                 <option value="Outstanding">Outstanding claim</option>
-                <option value="PaidLoss">Paid loss</option>
+                <option value="PaidLoss">Paid Claim</option>
                 <option value="Closed">Closed</option>
                 <option value="UnderDeductible">Under-deductible</option>
               </select></label
             >
+            <dl class="grid gap-4 rounded-xl border border-iris-border bg-iris-bg p-4 text-sm text-iris-navy md:col-span-2 md:grid-cols-2">
+              <div><dt>Contract signed share</dt><dd>{{ ctx.signedSharePercentage == null ? 'Not provided' : ctx.signedSharePercentage + '%' }}</dd></div>
+              <div><dt>Contract deductible</dt><dd>{{ money(ctx.deductible, ctx.currencyCode, ctx.currencyDecimalPlaces) }}</dd></div>
+            </dl>
           </div>
           @if (form.invalid && form.touched) {
             <p role="alert" class="text-sm text-rose-700">
@@ -336,34 +364,38 @@
           }
         </form>
       }
-      @if (mode() === 'issue' && selected(); as row) {
+      @if (mode() === 'invoicing' && preview(); as p) {
         <div class="mt-5 space-y-5 text-sm text-iris-navy">
-          <p class="font-bold">
-            {{ row.claimNumber }} ·
-            {{ money(row.collectionAmount, row.currencyCode, row.currencyDecimalPlaces) }}
-          </p>
-          <label class="block space-y-2"
-            ><span class="font-semibold">Processing mode</span
-            ><select
-              [formControl]="processingMode"
-              class="w-full rounded-xl border border-iris-border bg-white px-4 py-3"
-            >
-              <option value="DIRECT_TO_REMITTANCES">Direct to remittances</option>
-              <option value="PAIR_WITH_ENCAISSEMENT">Pair with an Encaissement first</option>
-            </select></label
-          >
-          <p class="text-iris-slate">
-            Issuing locks the financial details and creates a collection note using confirmed
-            reinsurer shares.
-          </p>
-          <button
-            type="button"
-            (click)="issue()"
-            [disabled]="busy()"
-            class="w-full rounded-xl bg-iris-teal px-5 py-3 font-bold text-white"
-          >
-            {{ busy() ? 'Issuing...' : 'Issue and download collection note' }}
-          </button>
+          <dl class="grid gap-4 rounded-2xl border border-iris-border bg-iris-bg p-5 md:grid-cols-3">
+            <div><dt>Claim</dt><dd>{{ p.claim.claimNumber }}</dd></div><div><dt>Contract / UMR</dt><dd>{{ p.claim.contractName }} / {{ p.claim.umr }}</dd></div>
+            <div><dt>Cedent</dt><dd>{{ p.claim.cedentName }}</dd></div><div><dt>Date of loss</dt><dd>{{ p.claim.dateOfLoss }}</dd></div>
+            <div><dt>Net loss</dt><dd>{{ money(netLossFor(p.claim),p.claim.currencyCode,p.claim.currencyDecimalPlaces) }}</dd></div>
+            <div><dt>Deductible</dt><dd>{{ money(p.claim.deductible,p.claim.currencyCode,4) }}</dd></div>
+            <div><dt>Paid loss</dt><dd>{{ p.claim.currencyCode }} {{ p.paidLossText }}</dd></div><div><dt>Reinsured total ({{ p.totalSignedShare }}%)</dt><dd>{{ p.claim.currencyCode }} {{ p.allocationTotalText }}</dd></div><div><dt>Document type</dt><dd>Avoir</dd></div><div><dt>Source</dt><dd>Claim</dd></div>
+          </dl>
+          <label>Avoir label <input [formControl]="invoiceLabel" maxlength="255" class="w-full rounded-xl border border-iris-border px-4 py-3" /></label>
+          @if (invoiceLabel.touched && invoiceLabel.invalid) {<p role="alert" class="text-rose-700">Enter an Avoir label using 1 to 255 characters.</p>}
+          <div class="overflow-x-auto"><table class="w-full text-left"><thead class="bg-iris-bg text-xs uppercase text-iris-slate"><tr><th class="p-3">Reinsurer</th><th class="p-3">Signed share</th><th class="p-3">Approved allocation ({{ p.claim.currencyCode }})</th></tr></thead><tbody>
+            @for (panel of p.panels; track panel.panelId; let i = $index) {
+              <tr class="border-b border-iris-divider"><td class="p-3">{{ panel.reinsurerName }}</td><td class="p-3">{{ panel.signedShare }}%</td><td class="p-3">
+                <input type="text" inputmode="decimal" [formControl]="allocations.at(i)" [attr.aria-label]="'Allocation for ' + panel.reinsurerName" class="w-full rounded-xl border border-iris-border px-4 py-3" />
+              </td></tr>
+            }
+          </tbody></table></div>
+          @if (allocationTotals; as totals) {
+            <div class="flex flex-wrap gap-5 rounded-xl bg-iris-bg p-4"><span>Reinsured total: {{ p.claim.currencyCode }} {{ totals.total }}</span><span>Allocated: {{ totals.allocated }}</span><strong [class.text-rose-700]="!totals.valid">Remaining: {{ totals.remaining }}</strong></div>
+          } @else {<p role="alert" class="text-rose-700">Use nonnegative decimal amounts with up to {{ p.claim.currencyDecimalPlaces }} decimal places.</p>}
+          <p class="text-iris-slate">Allocate net loss multiplied by the confirmed reinsurers' signed shares. Approval locks the financial details and creates the cedent Avoir, separate collection notes and Claim remittances.</p>
+          <button type="button" (click)="approve()" [disabled]="!canApprove" class="w-full rounded-xl bg-iris-teal px-5 py-3 font-bold text-white">{{ busy() ? 'Approving...' : 'Approve and generate documents' }}</button>
+        </div>
+      }
+      @if (mode() === 'documents' && generated(); as result) {
+        <div class="mt-5 space-y-4 text-sm text-iris-navy">
+          <p class="rounded-xl bg-emerald-50 p-4">Claim invoicing completed. Avoir {{ result.avoirNumber }} &mdash; {{ result.label }}. Financial records are saved.</p>
+          <button type="button" class="rounded-xl bg-iris-teal px-5 py-3 font-bold text-white" (click)="downloadDocuments(result.claimId)">Download / retry document ZIP</button>
+          @for (doc of result.documents; track doc.kind + doc.id) {
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-iris-border p-4"><span>{{ doc.reference }} ? {{ doc.recipient }}</span><button type="button" class="claim-action" (click)="downloadDocuments(result.claimId, doc.kind, doc.kind === 'collection' ? doc.id : undefined)">Download PDF</button></div>
+          }
         </div>
       }
       @if (mode() === 'pair') {

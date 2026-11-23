@@ -3,9 +3,10 @@ import { provideHttpClient } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 import { By } from '@angular/platform-browser';
 import { DocumentAttachmentsComponent } from '../shared/components/document-attachments/document-attachments.component';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
 import { ContractClaimsComponent } from './contract-claims.component';
+import { ContractsService } from '../shared/services/contracts.service';
 import { ClaimsService } from '../shared/services/claims.service';
 import { Auth } from '../shared/services/auth';
 import { ClaimContext, ClaimRecord } from '../shared/models/claim.model';
@@ -48,7 +49,11 @@ describe('ContractClaimsComponent', () => {
     amount100Percent: 10500,
     collectionAmount: 950,
     canEdit: true,
-    canIssue: true,
+    canIssue: false,
+    canPassToInvoicing: true,
+    version: 1,
+    invoicingStatus: 'Ready',
+    cedentName: 'Cedent',
     canPair: false,
     isClosed: false,
     includeInSoa: false,
@@ -61,11 +66,16 @@ describe('ContractClaimsComponent', () => {
       downloadDocument: vi.fn(), archiveDocument: vi.fn(),
     };
     api = {
+      detail: vi.fn().mockReturnValue(of(row)),
       list: vi
         .fn()
         .mockReturnValue(of({ items: [row], totalCount: 1, pageNumber: 1, totalPages: 1 })),
       context: vi.fn().mockReturnValue(of(context)),
       save: vi.fn().mockReturnValue(of(row)),
+      preview: vi.fn().mockReturnValue(of({claim:row,paidLossText:'10000.000',allocationTotalText:'950.000',totalSignedShare:10,panels:[{panelId:11,reinsurerName:'AMI',signedShare:10,amountText:'950.000',suggestedAmount:950}]})),
+      approve: vi.fn().mockReturnValue(of({claimId:4,avoirId:9,avoirNumber:'AV-2026-000001',label:'Storm settlement',documents:[]})),
+      documents: vi.fn().mockReturnValue(new Subject()),
+      invoicing: vi.fn(),
       issue: vi.fn().mockReturnValue(of({ ...row, collectionReference: 'CCN-1' })),
       receipts: vi.fn().mockReturnValue(of([])),
       pair: vi.fn().mockReturnValue(of(row)),
@@ -79,6 +89,7 @@ describe('ContractClaimsComponent', () => {
         provideHttpClient(),
         { provide: ToastrService, useValue: { success: vi.fn(), error: vi.fn() } },
         { provide: ClaimsService, useValue: api },
+        { provide: ContractsService, useValue: {getCurrencies:vi.fn().mockReturnValue(of([{id:1,code:'TND',name:'Dinar',symbol:'DT',decimalPlaces:3},{id:2,code:'USD',name:'US Dollar',symbol:'$',decimalPlaces:2}]))} },
         { provide: DocumentsService, useValue: documentsApi },
         { provide: Auth, useValue: { hasModule: () => true } },
       ],
@@ -153,7 +164,7 @@ describe('ContractClaimsComponent', () => {
   });
   it('renders the claim history and required columns', () => {
     const f = fixture();
-    expect(api.list).toHaveBeenCalledWith(7, 1);
+    expect(api.list).toHaveBeenCalledWith(7, 1, expect.any(Object));
     for (const text of [
       'Claims History',
       'Claim ID',
@@ -174,7 +185,7 @@ describe('ContractClaimsComponent', () => {
     ]);
     expect(clips[0].componentInstance.title).toContain(row.claimNumber);
   });
-  it('uses only the contract currency and sends complete dates while reserve stays separate', () => {
+  it('loads active currencies and submits the chosen currency and optional deductible while reserve stays separate', () => {
     const f = fixture(),
       c = f.componentInstance;
     c.openCreate();
@@ -189,8 +200,8 @@ describe('ContractClaimsComponent', () => {
       otherFees: 0,
       status: 'PaidLoss',
     });
-    expect(c.grossPreview).toBe(10500);
-    expect(f.nativeElement.querySelector('[formControlName="currencyId"]').options.length).toBe(1);
+    expect(c.netPreview).toBe(10500);
+    expect(f.nativeElement.querySelector('[formControlName="currencyId"]').options.length).toBe(3);
     c.save();
     expect(api.save).toHaveBeenCalledWith(
       7,
@@ -203,7 +214,7 @@ describe('ContractClaimsComponent', () => {
         expertFees: 500,
       }),
     );
-    expect(api.save.mock.calls[0][2]).not.toHaveProperty('deductible');
+    expect(api.save.mock.calls[0][2].deductible).toBeNull();
     expect(api.save.mock.calls[0][2]).not.toHaveProperty('collectionAmount');
   });
   it('prevents double submit and keeps backend errors visible', () => {
@@ -231,15 +242,9 @@ describe('ContractClaimsComponent', () => {
     expect(c.error()).toContain('mismatch');
     expect(c.busy()).toBe(false);
   });
-  it('supports both collection-note modes and pairs using actual receipt IDs', () => {
+  it('keeps the existing receipt pairing action for previously issued claims', () => {
     const c = fixture().componentInstance;
-    c.openIssue(row);
-    c.processingMode.setValue('PAIR_WITH_ENCAISSEMENT');
-    c.issue();
-    expect(api.issue).toHaveBeenCalledWith(4, 'PAIR_WITH_ENCAISSEMENT');
-    c.openPair({ ...row, canPair: true });
-    c.receiptId.setValue(55);
-    c.pair();
+    c.openPair({ ...row, canPair: true }); c.receiptId.setValue(55); c.pair();
     expect(api.pair).toHaveBeenCalledWith(4, 55);
   });
   it('cancels stale context responses when switching contracts', () => {
@@ -253,7 +258,7 @@ describe('ContractClaimsComponent', () => {
     pending.next(context);
     expect(c.context()).toBeNull();
     expect(c.mode()).toBeNull();
-    expect(api.list).toHaveBeenLastCalledWith(8, 1);
+    expect(api.list).toHaveBeenLastCalledWith(8, 1, expect.any(Object));
   });
   it('opens issued claims read-only', () => {
     const c = fixture().componentInstance;
@@ -262,4 +267,81 @@ describe('ContractClaimsComponent', () => {
     c.save();
     expect(api.save).not.toHaveBeenCalled();
   });
+  it('restores independent currency and preserves null versus zero deductible', () => {
+    const c = fixture().componentInstance;
+    c.openEdit({...row,currencyId:2,currencyCode:'USD',deductible:0});
+    expect(c.form.controls.currencyId.value).toBe(2); expect(c.form.controls.deductible.value).toBe(0);
+    c.save(); expect(api.save).toHaveBeenLastCalledWith(7,4,expect.objectContaining({currencyId:2,deductible:0}));
+    c.openEdit({...row,deductible:null});expect(c.form.controls.deductible.value).toBeNull();
+  });
+  it('validates label and exact allocation totals before approval and offers the saved bundle', () => {
+    const f=fixture(),c=f.componentInstance;
+    c.openInvoicing(row);f.detectChanges();expect(c.mode()).toBe('invoicing');
+    expect(c.canApprove).toBe(false);c.invoiceLabel.setValue('   ');expect(c.canApprove).toBe(false);
+    c.invoiceLabel.setValue(' Storm settlement ');c.allocations.at(0).setValue('949.999');
+    expect(c.allocationTotals?.remaining).toBe('0.001');expect(c.canApprove).toBe(false);
+    c.allocations.at(0).setValue('950.000');expect(c.canApprove).toBe(true);c.approve();
+    expect(api.approve).toHaveBeenCalledWith(4,{label:'Storm settlement',version:1,allocations:[{panelId:11,amount:'950.000'}]});
+    expect(c.mode()).toBe('documents');expect(api.documents).toHaveBeenCalledWith(4,'bundle',undefined);
+  });
+  it('blocks repeated approval while pending and surfaces a conflict without downloading', () => {
+    const c=fixture().componentInstance;c.openInvoicing(row);c.invoiceLabel.setValue('Storm settlement');
+    const pending=new Subject();api.approve.mockReturnValue(pending);c.approve();c.approve();expect(api.approve).toHaveBeenCalledTimes(1);
+    pending.error({status:409,error:{message:'Claim changed'}});expect(c.busy()).toBe(false);
+    expect(c.error()).toContain('Claim changed'); expect(c.preview()).toBeNull();
+    expect(api.documents).not.toHaveBeenCalled();
+  });
+  it('does not expose invoicing for a completed claim', () => {
+    const c=fixture().componentInstance;c.openInvoicing({...row,canPassToInvoicing:false,invoicingStatus:'Invoiced'});
+    expect(api.preview).not.toHaveBeenCalled();
+  });
+
+  it('fetches and opens the claim from the notification query parameter', () => {
+    TestBed.overrideProvider(ActivatedRoute,{useValue:{queryParamMap:of(convertToParamMap({claimId:'4'}))}});
+    const c=fixture().componentInstance;
+    expect(api.detail).toHaveBeenCalledWith(4);expect(c.selected()?.claimId).toBe(4);expect(c.mode()).toBe('form');
+  });
+
+  it('shows net loss after the claim deductible and the separate contract terms below Status', () => {
+    const f=fixture(), c=f.componentInstance;c.openCreate();
+    c.form.patchValue({currencyId:2,paidLoss:15000,expertFees:1000,otherFees:150,deductible:1000});f.detectChanges();
+    expect(c.netPreview).toBe(15150);
+    const text=f.nativeElement.textContent;
+    expect(text).toContain('Net loss');expect(text).not.toContain('Gross loss');
+    const modal=f.nativeElement.querySelector('.claim-modal');
+    expect(modal.textContent).toContain('Contract signed share');expect(modal.textContent).toContain('10%');
+    expect(modal.textContent).toContain('Contract deductible');expect(modal.textContent).toMatch(/TND\s+1[,\s]?000[.,]000/);
+    expect(Array.from(modal.querySelectorAll('select,dl') as NodeListOf<Element>).at(-1)?.tagName).toBe('DL');
+    c.form.controls.deductible.setValue(null);expect(c.netPreview).toBe(16150);
+    c.form.controls.deductible.setValue(0);expect(c.netPreview).toBe(16150);
+    c.form.controls.deductible.setValue(17000);expect(c.netPreview).toBe(-850);
+  });
+  it('preserves decimal precision when subtracting a claim deductible', () => {
+    const c=fixture().componentInstance;c.openCreate();
+    c.form.patchValue({paidLoss:0.1,expertFees:0.2,otherFees:0,deductible:0.1});
+    expect(c.netPreview).toBe(0.2);
+  });
+
+  it('approves two actual 5% shares as 750 each on net loss 15000, not half of the full loss', () => {
+    const f=fixture(), c=f.componentInstance;
+    api.preview.mockReturnValue(of({claim:{...row,paidLoss:15000,expertFees:2500,otherFees:0,deductible:2500,netLoss:15000},paidLossText:'15000.000',allocationTotalText:'1500.000',totalSignedShare:10,panels:[
+      {panelId:11,reinsurerName:'STAR',signedShare:5,amountText:'750.000',suggestedAmount:750},
+      {panelId:12,reinsurerName:'AMI',signedShare:5,amountText:'750.000',suggestedAmount:750}
+    ]}));
+    c.openInvoicing(row);c.invoiceLabel.setValue('Shared claim');f.detectChanges();
+    expect(c.allocations.getRawValue()).toEqual(['750.000','750.000']);
+    expect(c.allocationTotals).toEqual({total:'1500.000',allocated:'1500.000',remaining:'0.000',valid:true});
+    expect(c.canApprove).toBe(true);expect(f.nativeElement.textContent).toContain('Reinsured total (10%)');
+    c.allocations.at(0).setValue('7500.000');c.allocations.at(1).setValue('7500.000');
+    expect(c.canApprove).toBe(false);
+  });
+
+  it('blocks approval if the running backend still returns the old full-loss preview', () => {
+    const c=fixture().componentInstance;
+    api.preview.mockReturnValue(of({claim:row,paidLossText:'15000.000',panels:[]}));
+    c.openInvoicing(row);
+    expect(c.canApprove).toBe(false);expect(c.error()).toContain('previous allocation calculation');
+    expect(api.approve).not.toHaveBeenCalled();
+  });
+
 });

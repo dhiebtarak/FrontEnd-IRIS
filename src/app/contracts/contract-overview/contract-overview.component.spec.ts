@@ -181,9 +181,12 @@ describe('ContractOverviewComponent', () => {
   });
 
   afterEach(() => {
-    httpMock.verify();
-    localStorage.clear();
-    vi.restoreAllMocks();
+    try { httpMock.verify(); }
+    finally {
+      localStorage.clear();
+      vi.restoreAllMocks();
+      TestBed.resetTestingModule();
+    }
   });
 
   function flushContract(
@@ -1245,7 +1248,7 @@ describe('ContractOverviewComponent', () => {
     httpMock.expectNone('/api/back-office/contracts/123/invoices');
   });
 
-  it('allows an Avoir when fully invoiced and uses the backend credit balance', async () => {
+  it('allows an Avoir when fully invoiced with the backend balance as an optional suggestion', async () => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound' });
     component.openInvoiceModal();
@@ -1273,7 +1276,7 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Create Avoir for Pairing');
     expect(fixture.nativeElement.textContent).toContain('No outgoing remittances will be generated until it is paired.');
     expect(component.availableAvoirAmount()).toBe(45);
-    expect(component.invoiceUnaffectedAmount()).toBe(0);
+    expect(component.invoiceUnaffectedAmount()).toBeNull();
     httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
       invoiceType: 'AVOIR',
@@ -1310,7 +1313,7 @@ describe('ContractOverviewComponent', () => {
       ]
     });
     fixture.detectChanges();
-    expect(component.invoiceUnaffectedAmount()).toBe(35);
+    expect(fixture.nativeElement.textContent).not.toContain('Available after Avoir');
     expect(component.isInvoiceSubmitDisabled()).toBe(false);
     expect(component.isInvoiceAllocationValid()).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('TND 6,000');
@@ -1373,6 +1376,7 @@ describe('ContractOverviewComponent', () => {
     component.openInvoiceModal();
     flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 45 }, []);
     component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    component.invoiceForm.controls.amount.setValue(45);
     component.setAvoirProcessingMode('DIRECT_TO_REMITTANCES');
     fixture.detectChanges();
 
@@ -1448,20 +1452,57 @@ describe('ContractOverviewComponent', () => {
     flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 0 }, []);
   });
 
-  it('blocks Avoir creation when the backend reports no net invoiced balance available to credit', () => {
+  it.each(['INVOICE', 'INVOICE_FEES'])('keeps the remaining balance cap for ordinary %s documents', async type => {
     enableBackOfficeMode();
     flushContract(123, { ...contractResponse, status: 'Bound' });
     component.openInvoiceModal();
-    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 0, alreadyInvoicedAmount: 0 }, []);
-    component.invoiceForm.controls.invoiceType.setValue('AVOIR');
-    fixture.detectChanges();
-
-    expect(component.availableAvoirAmount()).toBe(0);
-    expect(fixture.nativeElement.textContent).toContain('Available credit balance');
+    flushInvoiceContextAndHistory(invoiceContextResponse, []);
+    component.invoiceForm.controls.invoiceType.setValue(type);
+    httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({ contractId: 123, grossAmount: 1250,
+      allocations: [{ panelId: 44, allocatedNetPremium: 1250, grossPremium: 1250, cedentCommissionPct: 0, cedentCommissionAmount: 0 }] });
+    component.invoiceForm.controls.amount.setValue(2000);
+    await flushPreviewDebounce();
+    expect(component.invoiceCreationAvailableAmount()).toBe(1250);
+    expect(component.invoiceForm.controls.amount.hasError('max')).toBe(true);
     expect(component.isInvoiceSubmitDisabled()).toBe(true);
-    component.invoiceForm.controls.amount.setValue(10);
     component.createInvoice();
     httpMock.expectNone('/api/back-office/contracts/123/invoices');
+    httpMock.expectNone('/api/back-office/contracts/123/invoices/preview');
+  });
+
+  it.each([
+    [0, 'PAIR_WITH_ENCAISSEMENT'], [undefined, 'PAIR_WITH_ENCAISSEMENT'], [10, 'PAIR_WITH_ENCAISSEMENT'],
+    [0, 'DIRECT_TO_REMITTANCES'], [undefined, 'DIRECT_TO_REMITTANCES'], [10, 'DIRECT_TO_REMITTANCES'],
+  ])('allows a Back Officer Avoir above the credit balance %s in mode %s', (balance, mode) => {
+    enableBackOfficeMode();
+    flushContract(123, { ...contractResponse, status: 'Bound' });
+    component.openInvoiceModal();
+    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: balance,
+      remainingInvoiceableAmount: 0, blockingReason: 'The contract is fully invoiced.' }, []);
+    component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    component.invoiceForm.controls.amount.setValue(2500);
+    component.setAvoirProcessingMode(mode as 'PAIR_WITH_ENCAISSEMENT' | 'DIRECT_TO_REMITTANCES');
+    const preview = httpMock.expectOne('/api/back-office/contracts/123/invoices/preview');
+    expect(preview.request.body.grossAmount).toBe(2500);
+    preview.flush({ contractId: 123, invoiceType: 'AVOIR', grossAmount: 2500, signedAmount: -2500, isReconciled: true,
+      allocations: [{ panelId: 44, reinsurerName: 'AMI', allocatedNetPremium: 2500,
+        allocatedGrossPremium: 2777.778, grossPremium: 2777.778, allocationRatio: 1,
+        cedentCommissionPct: 10, cedentCommissionAmount: 277.778, netPayableAmount: 2250, signedNetPayableAmount: -2250, currencyCode: 'TND' }] });
+    fixture.detectChanges();
+    expect(component.invoiceError()).toBe('');
+    expect(component.invoiceForm.valid, JSON.stringify(component.invoiceForm.controls.amount.errors)).toBe(true);
+    expect(component.isInvoiceAllocationValid(), JSON.stringify({ preview: component.invoicePreview(), ready: (component as any).invoicePreviewReadyKey, request: (component as any).invoicePreviewRequestKey })).toBe(true);
+    expect(component.invoiceCreationAvailableAmount()).toBeNull();
+    expect(component.invoiceForm.controls.amount.hasError('max')).toBe(false);
+    expect(component.isInvoiceSubmitDisabled()).toBe(false);
+    expect(fixture.nativeElement.textContent).not.toContain('Available credit balance');
+    expect(fixture.nativeElement.textContent).not.toContain('Available after Avoir');
+    expect(fixture.nativeElement.textContent).not.toContain('The contract is fully invoiced.');
+    component.createInvoice();
+    const creation = httpMock.expectOne('/api/back-office/contracts/123/invoices');
+    expect(creation.request.body).toEqual(expect.objectContaining({ invoiceType: 'AVOIR', grossAmount: 2500, processingMode: mode }));
+    creation.flush({ ...invoiceResponse, invoiceId: 96, invoiceType: 'AVOIR', processingMode: mode, grossAmount: 2500, amount: 2500, signedAmount: -2500 });
+    flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 0 }, []);
   });
 
   it('keeps invoice history visible, filters other contracts, and offers invoice debit-note actions', () => {
@@ -1944,6 +1985,7 @@ describe('ContractOverviewComponent', () => {
     component.openInvoiceModal();
     flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 45 }, []);
     component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    component.invoiceForm.controls.amount.setValue(45);
     component.setAvoirProcessingMode('DIRECT_TO_REMITTANCES');
 
     const firstPreview = httpMock.expectOne('/api/back-office/contracts/123/invoices/preview');
@@ -1964,8 +2006,8 @@ describe('ContractOverviewComponent', () => {
     }));
     failedPreview.flush({
       message: 'Avoir allocation validation failed.',
-      detail: 'The Avoir allocation for reinsurer AMI exceeds its available invoiced allocation.',
-      errors: { allocations: ['The Avoir allocation for reinsurer AMI exceeds its available invoiced allocation.'] },
+      detail: 'Every Avoir allocation must have a valid panel, reinsurer, and non-negative net-payable amount.',
+      errors: { allocations: ['Every Avoir allocation must have a valid panel, reinsurer, and non-negative net-payable amount.'] },
       traceId: 'preview-trace-123'
     }, { status: 400, statusText: 'Bad Request' });
     fixture.detectChanges();
@@ -1976,8 +2018,8 @@ describe('ContractOverviewComponent', () => {
     expect(component.isInvoiceSubmitDisabled()).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Avoir allocation validation failed.');
     expect(fixture.nativeElement.textContent).toContain('HTTP 400');
-    expect(fixture.nativeElement.textContent).toContain('The Avoir allocation for reinsurer AMI exceeds its available invoiced allocation.');
-    expect(fixture.nativeElement.textContent).toContain('allocations: The Avoir allocation for reinsurer AMI exceeds its available invoiced allocation.');
+    expect(fixture.nativeElement.textContent).toContain('Every Avoir allocation must have a valid panel, reinsurer, and non-negative net-payable amount.');
+    expect(fixture.nativeElement.textContent).toContain('allocations: Every Avoir allocation must have a valid panel, reinsurer, and non-negative net-payable amount.');
     expect(fixture.nativeElement.textContent).toContain('preview-trace-123');
 
     component.createInvoice();
@@ -1990,6 +2032,7 @@ describe('ContractOverviewComponent', () => {
     component.openInvoiceModal();
     flushInvoiceContextAndHistory({ ...invoiceContextResponse, availableCreditBalance: 45 }, []);
     component.invoiceForm.controls.invoiceType.setValue('AVOIR');
+    component.invoiceForm.controls.amount.setValue(45);
     component.setAvoirProcessingMode('DIRECT_TO_REMITTANCES');
     httpMock.expectOne('/api/back-office/contracts/123/invoices/preview').flush({
       contractId: 123,
@@ -2020,4 +2063,13 @@ describe('ContractOverviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('System.NullReferenceException: object reference was null.');
     expect(fixture.nativeElement.textContent).toContain('create-trace-456');
   });
+  it('shows the persisted Claim badge, claim number and label in Avoir history', () => {
+    enableBackOfficeMode();flushContract(123,{...contractResponse,status:'Bound'});
+    flushInvoiceContextAndHistory(invoiceContextResponse,[{...invoiceResponse,invoiceId:92,contractId:123,invoiceType:'AVOIR',invoiceNumber:'AV-2026-000001',claimId:4,claimNumber:'CL-2026-000004',sourceType:'Claim',label:'Storm settlement'}]);
+    fixture.detectChanges();
+    const text=fixture.nativeElement.textContent;
+    expect(text).toContain('Claim');expect(text).toContain('CL-2026-000004');expect(text).toContain('Storm settlement');
+    expect(text).toContain('Download Avoir');
+  });
+
 });

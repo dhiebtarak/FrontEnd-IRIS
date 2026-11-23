@@ -845,14 +845,10 @@ export class ContractOverviewComponent implements OnInit {
   }
 
   invoiceCreationAvailableAmount(): number | null {
-    return this.isAvoirSelected() ? this.availableAvoirAmount() : this.remainingInvoiceableAmount();
+    return this.isAvoirSelected() ? null : this.remainingInvoiceableAmount();
   }
 
   invoiceAmountLimitMessage(): string {
-    if (this.isAvoirSelected()) {
-      return 'Avoir amount cannot exceed the available net invoiced balance.';
-    }
-
     const remaining = this.remainingInvoiceableAmount();
     const formatted = remaining == null
       ? 'the remaining invoiceable amount'
@@ -1016,18 +1012,19 @@ export class ContractOverviewComponent implements OnInit {
     const amount = Number(raw.amount);
     const isAvoir = this.isAvoirType(raw.invoiceType ?? '');
     const processingMode = raw.processingMode ?? '';
-    const availableAmount = isAvoir ? this.availableAvoirAmount() : this.remainingInvoiceableAmount();
+    const availableAmount = this.remainingInvoiceableAmount();
 
     if (contractId == null || this.invoiceForm.invalid || this.isSubmittingInvoice()
       || (isAvoir && !this.isValidAvoirProcessingMode(processingMode))
-      || availableAmount == null || availableAmount <= 0 || !Number.isFinite(amount) || amount <= 0 || amount > availableAmount
+      || !Number.isFinite(amount) || amount <= 0
+      || (!isAvoir && (availableAmount == null || availableAmount <= 0 || amount > availableAmount))
       || !this.isInvoiceAllocationValid() || this.isLoadingInvoicePreview()
       || this.invoicePreviewReadyKey == null
       || this.invoicePreviewReadyKey !== this.invoicePreviewRequestKey
       || this.isLoadingInvoiceContext()
       || (!isAvoir && !!this.invoiceContext()?.blockingReason)) {
       this.invoiceForm.markAllAsTouched();
-      if (availableAmount != null && amount > availableAmount) {
+      if (!isAvoir && availableAmount != null && amount > availableAmount) {
         this.invoiceForm.controls.amount.setErrors({ exceedsAvailable: true });
       }
       const invalidControls = this.getInvalidInvoiceControlNames();
@@ -1035,7 +1032,7 @@ export class ContractOverviewComponent implements OnInit {
         this.invoiceError.set(`Correct these fields before submitting: ${invalidControls.join(', ')}.`);
       } else if (isAvoir && !this.isValidAvoirProcessingMode(processingMode)) {
         this.invoiceError.set('Choose how this Avoir will be processed.');
-      } else if (availableAmount == null || availableAmount <= 0 || amount > (availableAmount ?? 0)) {
+      } else if (!isAvoir && (availableAmount == null || availableAmount <= 0 || amount > (availableAmount ?? 0))) {
         this.invoiceError.set(this.invoiceAmountLimitMessage());
       } else if (!this.isInvoiceAllocationValid()) {
         this.invoiceError.set('The backend allocation preview is invalid. Review the allocation rows before submitting.');
@@ -1151,14 +1148,12 @@ export class ContractOverviewComponent implements OnInit {
 
   isInvoiceSubmitDisabled(): boolean {
     const isAvoir = this.isAvoirSelected();
-    const availableAmount = isAvoir ? this.availableAvoirAmount() : this.remainingInvoiceableAmount();
+    const availableAmount = this.remainingInvoiceableAmount();
     const commonInvalid = this.isSubmittingInvoice()
       || this.isLoadingInvoiceContext()
       || this.invoiceForm.invalid
       || this.invoiceAmount() <= 0
-      || availableAmount == null
-      || availableAmount <= 0
-      || this.invoiceAmount() > (availableAmount ?? 0)
+      || (!isAvoir && (availableAmount == null || availableAmount <= 0 || this.invoiceAmount() > availableAmount))
       || (isAvoir && !this.isValidAvoirProcessingMode(this.invoiceForm.controls.processingMode.value));
 
     return commonInvalid
@@ -1473,10 +1468,6 @@ export class ContractOverviewComponent implements OnInit {
     if (invoiceType === 'INVOICE' || invoiceType === 'INVOICE_FEES') {
       this.invoiceHistory.update(items => items.some(item => item.invoiceId === invoice.invoiceId) ? items : [invoice, ...items]);
     }
-  }
-
-  isAvoirAvailableBalanceMissing(): boolean {
-    return this.isAvoirSelected() && this.availableAvoirAmount() == null;
   }
 
   isAvoirInvoice(invoice: PremiumDebitNoteResponse): boolean {
@@ -1858,9 +1849,15 @@ export class ContractOverviewComponent implements OnInit {
       this.invoiceForm.controls.processingMode.markAsUntouched();
       this.invoiceSubmissionKey.set(null);
       this.updateInvoiceAmountValidators();
-      const availableAmount = this.invoiceCreationAvailableAmount();
+      const availableAmount = this.isAvoirSelected() ? this.availableAvoirAmount() : this.remainingInvoiceableAmount();
       const currentAmount = Number(this.invoiceForm.controls.amount.value ?? 0);
-      if (availableAmount == null) {
+      if (this.isAvoirSelected()) {
+        // An existing balance is only an optional initial suggestion, never an amount limit.
+        if ((!Number.isFinite(currentAmount) || currentAmount <= 0) && availableAmount != null && availableAmount > 0) {
+          this.invoiceForm.controls.amount.setValue(availableAmount, { emitEvent: false });
+          this.invoiceAmountValue.set(availableAmount);
+        }
+      } else if (availableAmount == null) {
         this.invoiceForm.controls.amount.setValue(null, { emitEvent: false });
         this.invoiceAmountValue.set(0);
       } else if (!Number.isFinite(currentAmount) || currentAmount <= 0 || currentAmount > availableAmount) {
@@ -1945,7 +1942,8 @@ export class ContractOverviewComponent implements OnInit {
     const isAvoir = this.isAvoirType(raw.invoiceType);
     if (contractId == null || !['INVOICE', 'INVOICE_FEES', 'AVOIR'].includes(raw.invoiceType)
       || (isAvoir && !this.isValidAvoirProcessingMode(raw.processingMode))
-      || (!isAvoir && this.invoiceContext()?.blockingReason) || remainingAmount == null || !Number.isFinite(amount) || amount <= 0 || amount > remainingAmount) {
+      || (!isAvoir && (this.invoiceContext()?.blockingReason || remainingAmount == null || amount > remainingAmount))
+      || !Number.isFinite(amount) || amount <= 0) {
       this.invoicePreviewRequestKey = null;
       this.invoicePreviewReadyKey = null;
       this.invoicePreviewRequestId++;
