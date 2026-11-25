@@ -225,7 +225,7 @@ describe('FinancialWorkflowService', () => {
           cedentId: 22,
           cedentName: 'ami',
           counterpartyName: 'ami',
-          invoiceType: 'CEDENT_PREMIUM_INVOICE',
+          invoiceType: 'CEDENT_PREMIUM_INVOICE',isAvoir:false,
           invoiceDate: '2026-09-11',
           invoiceAmount: 500,
           settledAmount: 100,

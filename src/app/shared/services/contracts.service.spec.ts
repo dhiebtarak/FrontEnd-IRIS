@@ -340,6 +340,7 @@ describe('ContractsService', () => {
           grossPremium: 48000,
           brokeragePct: 2,
           otherDeductions: 300,
+          otherDeductionsAmount:300,otherDeductionsPercentage:null,
           netPremium: 46740,
           premiumReference: 'RE-PREM-1',
           status: 'Draft'
@@ -388,6 +389,7 @@ describe('ContractsService', () => {
           grossPremium: 48000,
           brokeragePct: 2,
           otherDeductions: 300,
+          otherDeductionsAmount:300,otherDeductionsPercentage:null,
           netPremium: 46740,
           premiumReference: 'RE-PREM-1',
           status: 'Draft'
@@ -439,6 +441,7 @@ describe('ContractsService', () => {
           grossPremium: 48000,
           brokeragePct: 2,
           otherDeductions: 300,
+          otherDeductionsAmount:300,otherDeductionsPercentage:null,
           netPremium: 46740,
           premiumReference: 'RE-PREM-1',
           status: 'Draft'
@@ -464,6 +467,7 @@ describe('ContractsService', () => {
         grossPremium: 48000,
         brokeragePct: 2,
         otherDeductions: 300,
+          otherDeductionsAmount:300,otherDeductionsPercentage:null,
         netPremium: 46740,
         premiumReference: 'RE-PREM-1',
         status: 'Draft'
@@ -533,6 +537,7 @@ describe('ContractsService', () => {
         grossPremium: 48000,
         brokeragePct: 2,
         otherDeductions: 300,
+          otherDeductionsAmount:300,otherDeductionsPercentage:null,
         netPremium: 46740,
         premiumReference: 'RE-PREM-1',
         status: 'Draft'
@@ -602,6 +607,7 @@ describe('ContractsService', () => {
         grossPremium: 48000,
         brokeragePct: 2,
         otherDeductions: 300,
+          otherDeductionsAmount:300,otherDeductionsPercentage:null,
         netPremium: 47000,
         premiumReference: 'RE-PREM-1',
         status: 'Confirmed'

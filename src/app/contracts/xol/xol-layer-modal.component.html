@@ -1,0 +1,152 @@
+<div class="contract-page modal" contractStyle="modal">
+  <p class="eyebrow" contractStyle="eyebrow">Contract layers</p>
+  <h2 contractStyle="heading2">{{ data.layer.id ? 'Edit' : 'Add' }} layer</h2>
+  <p contractStyle="hint">
+    A layer needs both a cover and a retention. Amounts are entered at 100%.
+  </p>
+  <form class="mt-6 space-y-6" [formGroup]="form" (ngSubmit)="save()">
+    <section class="card grid" contractStyle="grid">
+      <label contractStyle="field"
+        >Cover (cession)<input
+          inputmode="decimal"
+          formControlName="cover"
+          contractStyle="input" /></label
+      ><label contractStyle="field"
+        >Retention (XS)<input inputmode="decimal" formControlName="retention" contractStyle="input"
+      /></label>
+      <label class="wide md:col-span-2" contractStyle="field"
+        >Capacity<input
+          readonly
+          [value]="numberLabel(preview.capacity)"
+          contractStyle="input"
+        /><small contractStyle="hint">Calculated: cover + retention</small></label
+      >
+      <label contractStyle="field"
+        >Annual treaty capacity<input
+          inputmode="decimal"
+          formControlName="annualTreatyCapacity"
+          contractStyle="input" /></label
+      ><label contractStyle="field"
+        >EPI (estimated premium income)<input
+          inputmode="decimal"
+          formControlName="epi"
+          contractStyle="input"
+      /></label>
+      <label contractStyle="field"
+        >MDP (minimum and deposit premium)<input
+          inputmode="decimal"
+          formControlName="mdp"
+          contractStyle="input" /></label
+      ><label contractStyle="field"
+        >Adjustable premium rate %<input
+          inputmode="decimal"
+          formControlName="adjustablePremiumRatePct"
+          contractStyle="input"
+      /></label>
+      <label contractStyle="field"
+        >ROL (rate on line)<input
+          readonly
+          [value]="preview.rolPct === null ? 'Not provided' : numberLabel(preview.rolPct) + '%'"
+          contractStyle="input" /></label
+      ><label contractStyle="field"
+        >Loading<input formControlName="loading" contractStyle="input" /><small contractStyle="hint"
+          >Recorded without applying an unconfirmed calculation.</small
+        ></label
+      >
+      <label contractStyle="field"
+        >Cash loss clause<input
+          inputmode="decimal"
+          formControlName="cashLoss"
+          contractStyle="input"
+      /></label>
+    </section>
+    <section class="card" contractStyle="card">
+      <h3 contractStyle="heading3">Installments</h3>
+      <label contractStyle="field"
+        >Number of installments<input
+          type="number"
+          min="0"
+          max="120"
+          formControlName="numberOfInstallments"
+          (change)="resize('installments')"
+          contractStyle="input"
+      /></label>
+      <div class="table-scroll" formArrayName="installments" contractStyle="scroll">
+        <table contractStyle="table">
+          <thead>
+            <tr>
+              <th contractStyle="column">Installment</th>
+              <th contractStyle="column">Expected settlement</th>
+              <th contractStyle="column">Amount</th>
+              <th contractStyle="column">Settlement date</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of installments.controls; track row; let i = $index) {
+              <tr [formGroupName]="i">
+                <td contractStyle="cell">{{ i + 1 }}</td>
+                <td contractStyle="cell">
+                  <input
+                    type="date"
+                    formControlName="expectedSettlementDate"
+                    [min]="data.inception"
+                    [max]="data.expiry"
+                    contractStyle="input"
+                  />
+                </td>
+                <td contractStyle="cell">
+                  <input inputmode="decimal" formControlName="amount" contractStyle="input" />
+                </td>
+                <td contractStyle="cell">
+                  <input
+                    type="date"
+                    formControlName="settlementDate"
+                    [min]="data.inception"
+                    [max]="data.expiry"
+                    contractStyle="input"
+                  />
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card" contractStyle="card">
+      <h3 contractStyle="heading3">Reinstatements</h3>
+      <label contractStyle="field"
+        >Number of reinstatements<input
+          type="number"
+          min="0"
+          max="100"
+          formControlName="numberOfReinstatements"
+          (change)="resize('reinstatements')"
+          contractStyle="input"
+      /></label>
+      <div formArrayName="reinstatements">
+        @for (row of reinstatements.controls; track row; let i = $index) {
+          <div class="grid" [formGroupName]="i" contractStyle="grid">
+            <label contractStyle="field"
+              >Reinstatement {{ i + 1 }} of {{ reinstatements.length
+              }}<input readonly [value]="i + 1" contractStyle="input" /></label
+            ><label contractStyle="field"
+              >Condition<select formControlName="condition" contractStyle="input">
+                <option value="">Select condition</option>
+                @for (option of conditions; track option.code) {
+                  <option [value]="option.code">{{ option.name }}</option>
+                }
+              </select></label
+            >
+          </div>
+        }
+      </div>
+    </section>
+    @if (error) {
+      <p role="alert" class="error" contractStyle="error">{{ error }}</p>
+    }
+    <footer contractStyle="toolbar">
+      <button type="button" mat-dialog-close contractStyle="button">Cancel</button
+      ><button class="primary" type="submit" contractStyle="primary">Save layer</button>
+    </footer>
+  </form>
+</div>

@@ -12,9 +12,13 @@ import {
   ContractSortDirection,
   ContractSortField,
   ContractTypeReference,
-  CurrencyReference
+  CurrencyReference,
 } from '../../shared/models/contract.model';
-import { getContractStatusClasses, getContractStatusDisplay, normalizeContractStatus } from '../../shared/models/contract-status.util';
+import {
+  getContractStatusClasses,
+  getContractStatusDisplay,
+  normalizeContractStatus,
+} from '../../shared/models/contract-status.util';
 import { Auth } from '../../shared/services/auth';
 import { ContractsService } from '../../shared/services/contracts.service';
 
@@ -25,7 +29,7 @@ type ContractListState = 'loading' | 'loaded' | 'error';
   standalone: true,
   imports: [DatePipe, NgClass, ReactiveFormsModule, RouterLink],
   templateUrl: './contracts-list.component.html',
-  styles: ``
+  styles: ``,
 })
 export class ContractsListComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
@@ -45,17 +49,34 @@ export class ContractsListComponent implements OnInit {
   readonly totalPages = signal(0);
   readonly sortBy = signal<ContractSortField>('updatedAt');
   readonly sortDirection = signal<ContractSortDirection>('desc');
-  readonly startItem = computed(() => this.totalCount() === 0 ? 0 : (this.pageNumber() - 1) * this.pageSize() + 1);
-  readonly endItem = computed(() => Math.min(this.pageNumber() * this.pageSize(), this.totalCount()));
+  readonly startItem = computed(() =>
+    this.totalCount() === 0 ? 0 : (this.pageNumber() - 1) * this.pageSize() + 1,
+  );
+  readonly endItem = computed(() =>
+    Math.min(this.pageNumber() * this.pageSize(), this.totalCount()),
+  );
   readonly isLoading = computed(() => this.listState() === 'loading');
-  readonly isBackOfficeMode = computed(() => this.authService.hasWorkspaceRole('BackOfficer') || this.route.snapshot.data?.['workspace'] === 'back-office');
+  readonly isBackOfficeMode = computed(
+    () =>
+      this.authService.hasWorkspaceRole('BackOfficer') ||
+      this.route.snapshot.data?.['workspace'] === 'back-office',
+  );
   readonly canCreateContract = computed(() => !this.isBackOfficeMode());
   readonly createContractRoute = '/workspace/reassurance/front-officer/contracts/new/type';
-  readonly overviewRoute = computed(() => this.isBackOfficeMode()
-    ? '/workspace/reassurance/back-officer/contracts/overview'
-    : '/workspace/reassurance/front-officer/contracts/new/overview');
+  readonly overviewRoute = computed(() =>
+    this.isBackOfficeMode()
+      ? '/workspace/reassurance/back-officer/contracts/overview'
+      : '/workspace/reassurance/front-officer/contracts/new/overview',
+  );
   readonly pageSizeOptions = [10, 20, 50, 100];
-  readonly contractStatuses = ['Draft', 'ReadyForPlacement', 'PlacementInProgress', 'Bound', 'Expired', 'Cancelled'];
+  readonly contractStatuses = [
+    'Draft',
+    'ReadyForPlacement',
+    'PlacementInProgress',
+    'Bound',
+    'Expired',
+    'Cancelled',
+  ];
   readonly sortOptions: ReadonlyArray<{ value: ContractSortField; label: string }> = [
     { value: 'updatedAt', label: 'Last update' },
     { value: 'createdAt', label: 'Created date' },
@@ -66,7 +87,7 @@ export class ContractsListComponent implements OnInit {
     { value: 'status', label: 'Status' },
     { value: 'receptionDate', label: 'Reception date' },
     { value: 'inceptionDate', label: 'Inception date' },
-    { value: 'expiryDate', label: 'Expiry date' }
+    { value: 'expiryDate', label: 'Expiry date' },
   ];
 
   readonly filters = new FormGroup({
@@ -78,25 +99,23 @@ export class ContractsListComponent implements OnInit {
     inceptionFrom: new FormControl('', { nonNullable: true }),
     inceptionTo: new FormControl('', { nonNullable: true }),
     expiryFrom: new FormControl('', { nonNullable: true }),
-    expiryTo: new FormControl('', { nonNullable: true })
+    expiryTo: new FormControl('', { nonNullable: true }),
   });
 
   constructor(
     private readonly contractsService: ContractsService,
     private readonly authService: Auth,
     private readonly route: ActivatedRoute,
-    private readonly router: Router
+    private readonly router: Router,
   ) {}
 
   ngOnInit(): void {
     this.bindFilterChanges();
 
-    this.route.queryParamMap
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(params => {
-        this.hydrateStateFromUrl(params);
-        this.loadContracts();
-      });
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      this.hydrateStateFromUrl(params);
+      this.loadContracts();
+    });
 
     this.loadReferenceData();
   }
@@ -107,10 +126,11 @@ export class ContractsListComponent implements OnInit {
     this.errorMessage.set('');
     this.contracts.set([]);
 
-    this.listRequest = this.contractsService.getContracts(this.currentFilters())
+    this.listRequest = this.contractsService
+      .getContracts(this.currentFilters())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: response => {
+        next: (response) => {
           this.contracts.set(response.items);
           this.pageNumber.set(response.pageNumber);
           this.pageSize.set(response.pageSize);
@@ -121,7 +141,7 @@ export class ContractsListComponent implements OnInit {
         error: (error: HttpErrorResponse) => {
           this.errorMessage.set(this.getListErrorMessage(error));
           this.listState.set('error');
-        }
+        },
       });
   }
 
@@ -133,11 +153,11 @@ export class ContractsListComponent implements OnInit {
     forkJoin({
       contractTypes: this.contractsService.getContractTypes(),
       currencies: this.contractsService.getCurrencies(),
-      cedents: this.contractsService.searchCedents(null, 1, 50)
+      cedents: this.contractsService.searchCedents(null, 1, 50),
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: response => {
+        next: (response) => {
           this.contractTypes.set(response.contractTypes);
           this.currencies.set(response.currencies);
           this.cedents.set(response.cedents.items);
@@ -148,22 +168,25 @@ export class ContractsListComponent implements OnInit {
           this.referenceError.set('Contract filter reference data could not be loaded.');
           this.isLoadingReferences.set(false);
           this.setReferenceFilterControlsDisabled(false);
-        }
+        },
       });
   }
 
   clearFilters(): void {
-    this.filters.reset({
-      search: '',
-      contractType: '',
-      status: '',
-      counterpartyId: '',
-      currencyId: '',
-      inceptionFrom: '',
-      inceptionTo: '',
-      expiryFrom: '',
-      expiryTo: ''
-    }, { emitEvent: false });
+    this.filters.reset(
+      {
+        search: '',
+        contractType: '',
+        status: '',
+        counterpartyId: '',
+        currencyId: '',
+        inceptionFrom: '',
+        inceptionTo: '',
+        expiryFrom: '',
+        expiryTo: '',
+      },
+      { emitEvent: false },
+    );
 
     void this.router.navigate([], {
       relativeTo: this.route,
@@ -180,10 +203,10 @@ export class ContractsListComponent implements OnInit {
         pageNumber: 1,
         pageSize: 20,
         sortBy: 'updatedAt',
-        sortDirection: 'desc'
+        sortDirection: 'desc',
       },
       queryParamsHandling: 'merge',
-      replaceUrl: true
+      replaceUrl: true,
     });
   }
 
@@ -195,7 +218,7 @@ export class ContractsListComponent implements OnInit {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { pageNumber: page },
-      queryParamsHandling: 'merge'
+      queryParamsHandling: 'merge',
     });
   }
 
@@ -205,7 +228,7 @@ export class ContractsListComponent implements OnInit {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { pageNumber: 1, pageSize },
-      queryParamsHandling: 'merge'
+      queryParamsHandling: 'merge',
     });
   }
 
@@ -215,7 +238,7 @@ export class ContractsListComponent implements OnInit {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { pageNumber: 1, sortBy },
-      queryParamsHandling: 'merge'
+      queryParamsHandling: 'merge',
     });
   }
 
@@ -225,7 +248,7 @@ export class ContractsListComponent implements OnInit {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { pageNumber: 1, sortDirection },
-      queryParamsHandling: 'merge'
+      queryParamsHandling: 'merge',
     });
   }
 
@@ -241,14 +264,41 @@ export class ContractsListComponent implements OnInit {
     return getContractStatusDisplay(contract.status);
   }
 
-  getDetailsRoute(contract: ContractListItem): string {
+  isXol(contract: ContractListItem): boolean {
+    return [contract.contractType, contract.typeOfBusiness].some((value) =>
+      [
+        'xol',
+        'treatyxol',
+        'nonprop',
+        'treatynonprop',
+        'nonproportional',
+        'treatynonproportional',
+        'nonproportionaltreaty',
+      ].includes((value ?? '').toLowerCase().replace(/[^a-z]/g, '')),
+    );
+  }
+  canViewDetails(contract: ContractListItem): boolean {
+    return (
+      Number.isInteger(contract.idContract) &&
+      contract.idContract > 0 &&
+      (this.isFacultative(contract) || this.isXol(contract))
+    );
+  }
+  contractTypeLabel(contract: ContractListItem): string {
+    return this.isXol(contract) ? 'XOL' : (contract.contractType ?? 'Not provided');
+  }
+  getDetailsRoute(contract: ContractListItem): string | null {
+    if (!this.canViewDetails(contract)) return null;
+    if (this.isXol(contract))
+      return `/workspace/reassurance/${this.isBackOfficeMode() ? 'back-officer' : 'front-officer'}/contracts/xol/${contract.idContract}`;
     return this.isBackOfficeMode()
       ? `/workspace/reassurance/back-officer/contracts/${contract.idContract}/overview`
       : this.overviewRoute();
   }
-
   getDetailsQueryParams(contract: ContractListItem): { contractId: number } | null {
-    return this.isBackOfficeMode() ? null : { contractId: contract.idContract };
+    return !this.canViewDetails(contract) || this.isBackOfficeMode() || this.isXol(contract)
+      ? null
+      : { contractId: contract.idContract };
   }
 
   getStatusClasses(status: string): string {
@@ -257,11 +307,7 @@ export class ContractsListComponent implements OnInit {
 
   private bindFilterChanges(): void {
     this.filters.controls.search.valueChanges
-      .pipe(
-        debounceTime(350),
-        distinctUntilChanged(),
-        takeUntilDestroyed(this.destroyRef)
-      )
+      .pipe(debounceTime(350), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyFilters());
 
     merge(
@@ -272,7 +318,7 @@ export class ContractsListComponent implements OnInit {
       this.filters.controls.inceptionFrom.valueChanges,
       this.filters.controls.inceptionTo.valueChanges,
       this.filters.controls.expiryFrom.valueChanges,
-      this.filters.controls.expiryTo.valueChanges
+      this.filters.controls.expiryTo.valueChanges,
     )
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyFilters());
@@ -293,25 +339,28 @@ export class ContractsListComponent implements OnInit {
         inceptionTo: this.toQueryValue(value.inceptionTo),
         expiryFrom: this.toQueryValue(value.expiryFrom),
         expiryTo: this.toQueryValue(value.expiryTo),
-        pageNumber: 1
+        pageNumber: 1,
       },
       queryParamsHandling: 'merge',
-      replaceUrl: true
+      replaceUrl: true,
     });
   }
 
   private hydrateStateFromUrl(params: ParamMap): void {
-    this.filters.setValue({
-      search: params.get('search') ?? '',
-      contractType: params.get('contractType') ?? '',
-      status: params.get('status') ?? '',
-      counterpartyId: params.get('counterpartyId') ?? '',
-      currencyId: params.get('currencyId') ?? '',
-      inceptionFrom: params.get('inceptionFrom') ?? '',
-      inceptionTo: params.get('inceptionTo') ?? '',
-      expiryFrom: params.get('expiryFrom') ?? '',
-      expiryTo: params.get('expiryTo') ?? ''
-    }, { emitEvent: false });
+    this.filters.setValue(
+      {
+        search: params.get('search') ?? '',
+        contractType: params.get('contractType') ?? '',
+        status: params.get('status') ?? '',
+        counterpartyId: params.get('counterpartyId') ?? '',
+        currencyId: params.get('currencyId') ?? '',
+        inceptionFrom: params.get('inceptionFrom') ?? '',
+        inceptionTo: params.get('inceptionTo') ?? '',
+        expiryFrom: params.get('expiryFrom') ?? '',
+        expiryTo: params.get('expiryTo') ?? '',
+      },
+      { emitEvent: false },
+    );
 
     this.pageNumber.set(this.parsePositiveInteger(params.get('pageNumber'), 1));
     this.pageSize.set(Math.min(this.parsePositiveInteger(params.get('pageSize'), 20), 100));
@@ -335,12 +384,14 @@ export class ContractsListComponent implements OnInit {
       expiryFrom: value.expiryFrom,
       expiryTo: value.expiryTo,
       sortBy: this.sortBy(),
-      sortDirection: this.sortDirection()
+      sortDirection: this.sortDirection(),
     };
   }
 
   private parseSortField(value: string | null): ContractSortField {
-    return this.sortOptions.some(option => option.value === value) ? value as ContractSortField : 'updatedAt';
+    return this.sortOptions.some((option) => option.value === value)
+      ? (value as ContractSortField)
+      : 'updatedAt';
   }
 
   private parsePositiveInteger(value: string | null, fallback: number): number {
@@ -361,7 +412,7 @@ export class ContractsListComponent implements OnInit {
     const controls = [
       this.filters.controls.contractType,
       this.filters.controls.counterpartyId,
-      this.filters.controls.currencyId
+      this.filters.controls.currencyId,
     ];
 
     for (const control of controls) {

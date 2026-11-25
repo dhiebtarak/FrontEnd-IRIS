@@ -10,7 +10,7 @@ import { FrontOfficerWorkspaceComponent } from './front-officer-workspace.compon
 describe('FrontOfficerWorkspaceComponent', () => {
   let fixture: ComponentFixture<FrontOfficerWorkspaceComponent>;
   let dashboardResponse: Subject<DashboardSummary>;
-  let authService: Pick<Auth, 'getWorkspaceRoute'>;
+  let authService: Pick<Auth, 'getWorkspaceRoute'|'hasModule'>;
   let contractsService: Pick<ContractsService, 'getDashboardSummary'>;
 
   const summary: DashboardSummary = {
@@ -41,7 +41,7 @@ describe('FrontOfficerWorkspaceComponent', () => {
   beforeEach(async () => {
     dashboardResponse = new Subject<DashboardSummary>();
     authService = {
-      getWorkspaceRoute: vi.fn().mockReturnValue('/workspace/reassurance/front-officer')
+      getWorkspaceRoute: vi.fn().mockReturnValue('/workspace/reassurance/front-officer'), hasModule:vi.fn().mockReturnValue(true)
     };
     contractsService = {
       getDashboardSummary: vi.fn().mockReturnValue(dashboardResponse)
@@ -120,6 +120,7 @@ describe('FrontOfficerWorkspaceComponent', () => {
 
   it('does not show the Create Contract button for other roles', () => {
     vi.mocked(authService.getWorkspaceRoute).mockReturnValue('/workspace/reassurance/back-officer');
+    vi.mocked(authService.hasModule).mockReturnValue(false);
     fixture = TestBed.createComponent(FrontOfficerWorkspaceComponent);
     fixture.detectChanges();
 

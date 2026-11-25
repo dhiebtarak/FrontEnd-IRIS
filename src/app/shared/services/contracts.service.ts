@@ -1,3 +1,4 @@
+import { XolContractRequest, XolContractResponse } from '../models/xol.model';
 import { HttpClient, HttpParams, HttpResponse } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
@@ -28,6 +29,12 @@ export class ContractsService {
   private readonly baseUrl = '/api';
 
   constructor(private readonly httpClient: HttpClient) {}
+
+  getXolContract(id:number):Observable<XolContractResponse> { return this.httpClient.get<XolContractResponse>(`${this.baseUrl}/contracts/xol/${id}`); }
+  saveXolContract(id:number|null,request:XolContractRequest):Observable<XolContractResponse> {
+    return id === null ? this.httpClient.post<XolContractResponse>(`${this.baseUrl}/contracts/xol`,request) : this.httpClient.put<XolContractResponse>(`${this.baseUrl}/contracts/xol/${id}`,request);
+  }
+  getXolOptions():Observable<{xolTypes:string[];lossBases:string[]}> { return this.httpClient.get<{xolTypes:string[];lossBases:string[]}>(`${this.baseUrl}/reference-data/xol-options`); }
 
   getDashboardSummary(): Observable<DashboardSummary> {
     return this.httpClient.get<DashboardSummary>(`${this.baseUrl}/contracts/dashboard-summary`);

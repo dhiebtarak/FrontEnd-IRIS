@@ -6,7 +6,7 @@ import type { Mock } from 'vitest';
 import {
   ContractListFilters,
   ContractListItem,
-  PagedContractResponse
+  PagedContractResponse,
 } from '../../shared/models/contract.model';
 import { ContractsService } from '../../shared/services/contracts.service';
 import { ContractsListComponent } from './contracts-list.component';
@@ -16,7 +16,10 @@ describe('ContractsListComponent', () => {
   let component: ContractsListComponent;
   let router: Router;
   let getContracts: Mock<(filters: ContractListFilters) => Observable<PagedContractResponse>>;
-  let contractsService: Pick<ContractsService, 'getContracts' | 'getContractTypes' | 'getCurrencies' | 'searchCedents'>;
+  let contractsService: Pick<
+    ContractsService,
+    'getContracts' | 'getContractTypes' | 'getCurrencies' | 'searchCedents'
+  >;
 
   const contracts: ContractListItem[] = [
     {
@@ -36,7 +39,7 @@ describe('ContractsListComponent', () => {
       grossPremium: 125000,
       actionRequired: false,
       createdAt: '2026-08-20T10:00:00Z',
-      updatedAt: '2026-08-20T11:24:44Z'
+      updatedAt: '2026-08-20T11:24:44Z',
     },
     {
       idContract: 1,
@@ -55,8 +58,8 @@ describe('ContractsListComponent', () => {
       grossPremium: null,
       actionRequired: false,
       createdAt: '2026-08-19T10:00:00Z',
-      updatedAt: null
-    }
+      updatedAt: null,
+    },
   ];
 
   async function createComponent(): Promise<void> {
@@ -68,39 +71,62 @@ describe('ContractsListComponent', () => {
   }
 
   beforeEach(async () => {
-    getContracts = vi.fn<(filters: ContractListFilters) => Observable<PagedContractResponse>>()
-      .mockImplementation(filters => of({
-      items: contracts,
-      pageNumber: filters.pageNumber,
-      page: filters.pageNumber,
-      pageSize: filters.pageSize,
-      totalCount: 42,
-      totalPages: 3
-    }));
+    getContracts = vi
+      .fn<(filters: ContractListFilters) => Observable<PagedContractResponse>>()
+      .mockImplementation((filters) =>
+        of({
+          items: contracts,
+          pageNumber: filters.pageNumber,
+          page: filters.pageNumber,
+          pageSize: filters.pageSize,
+          totalCount: 42,
+          totalPages: 3,
+        }),
+      );
 
     contractsService = {
-      getContracts: filters => getContracts(filters),
-      getContractTypes: vi.fn().mockReturnValue(of([
-        { code: 'FACULTATIVE', name: 'Facultative', description: '', categoryTags: [], isImplemented: true }
-      ])),
-      getCurrencies: vi.fn().mockReturnValue(of([
-        { id: 1, code: 'TND', name: 'Tunisian Dinar', symbol: 'DT', decimalPlaces: 3, isDefault: true }
-      ])),
-      searchCedents: vi.fn().mockReturnValue(of({
-        items: [{ id: 2, name: 'STAR Assurances', country: null, city: null }],
-        pageNumber: 1,
-        pageSize: 50,
-        totalCount: 1,
-        totalPages: 1
-      }))
+      getContracts: (filters) => getContracts(filters),
+      getContractTypes: vi
+        .fn()
+        .mockReturnValue(
+          of([
+            {
+              code: 'FACULTATIVE',
+              name: 'Facultative',
+              description: '',
+              categoryTags: [],
+              isImplemented: true,
+            },
+          ]),
+        ),
+      getCurrencies: vi
+        .fn()
+        .mockReturnValue(
+          of([
+            {
+              id: 1,
+              code: 'TND',
+              name: 'Tunisian Dinar',
+              symbol: 'DT',
+              decimalPlaces: 3,
+              isDefault: true,
+            },
+          ]),
+        ),
+      searchCedents: vi.fn().mockReturnValue(
+        of({
+          items: [{ id: 2, name: 'STAR Assurances', country: null, city: null }],
+          pageNumber: 1,
+          pageSize: 50,
+          totalCount: 1,
+          totalPages: 1,
+        }),
+      ),
     };
 
     await TestBed.configureTestingModule({
       imports: [ContractsListComponent],
-      providers: [
-        provideRouter([]),
-        { provide: ContractsService, useValue: contractsService }
-      ]
+      providers: [provideRouter([]), { provide: ContractsService, useValue: contractsService }],
     }).compileComponents();
 
     router = TestBed.inject(Router);
@@ -122,7 +148,7 @@ describe('ContractsListComponent', () => {
       expiryFrom: '',
       expiryTo: '',
       sortBy: 'updatedAt',
-      sortDirection: 'desc'
+      sortDirection: 'desc',
     });
     expect(contractsService.getContractTypes).toHaveBeenCalledOnce();
     expect(contractsService.getCurrencies).toHaveBeenCalledOnce();
@@ -146,26 +172,69 @@ describe('ContractsListComponent', () => {
   });
 
   it('routes contract View details actions to the overview page', () => {
-    const row = fixture.nativeElement.querySelector('tbody tr[data-contract-id="2"]') as HTMLTableRowElement;
+    const row = fixture.nativeElement.querySelector(
+      'tbody tr[data-contract-id="2"]',
+    ) as HTMLTableRowElement;
     const link = row.querySelector('a') as HTMLAnchorElement;
 
     expect(row.textContent).toContain('Draft');
-    expect(link.getAttribute('href')).toContain('/workspace/reassurance/front-officer/contracts/new/overview');
+    expect(link.getAttribute('href')).toContain(
+      '/workspace/reassurance/front-officer/contracts/new/overview',
+    );
     expect(link.getAttribute('href')).toContain('contractId=2');
+  });
+
+  it('uses backend XOL identifiers for desktop and mobile links and rejects missing IDs', () => {
+    const xol: ContractListItem = {
+      ...contracts[0],
+      idContract: 73,
+      contractType: 'Treaty',
+      typeOfBusiness: 'XOL',
+    };
+    component.contracts.set([xol]);
+    fixture.detectChanges();
+    const links = fixture.nativeElement.querySelectorAll(
+      '[data-contract-id="73"] a',
+    ) as NodeListOf<HTMLAnchorElement>;
+    expect(links.length).toBe(2);
+    for (const link of links)
+      expect(link.getAttribute('href')).toBe(
+        '/workspace/reassurance/front-officer/contracts/xol/73',
+      );
+    expect(component.getDetailsQueryParams(xol)).toBeNull();
+    for (const type of ['XOL', 'TreatyNonProportional', 'NON_PROPORTIONAL', 'Treaty XOL']) {
+      expect(
+        component.getDetailsRoute({ ...xol, contractType: type, typeOfBusiness: null }),
+      ).toContain('/contracts/xol/73');
+    }
+    const missing = { ...xol, idContract: 0 };
+    expect(component.canViewDetails(missing)).toBe(false);
+    expect(component.getDetailsRoute(missing)).toBeNull();
+    component.contracts.set([missing]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-contract-id="0"] a')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[data-contract-id="0"] button[disabled]'),
+    ).not.toBeNull();
+    expect(component.canViewDetails({ ...contracts[0], contractType: 'TreatyProportional' })).toBe(
+      false,
+    );
   });
 
   it('sends one request after debouncing text search and resets to page one', async () => {
     component.filters.controls.search.setValue('STAR');
     component.filters.controls.search.setValue('STAR Property');
 
-    await new Promise(resolve => setTimeout(resolve, 400));
+    await new Promise((resolve) => setTimeout(resolve, 400));
     await fixture.whenStable();
 
     expect(getContracts).toHaveBeenCalledTimes(2);
-    expect(getContracts.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
-      pageNumber: 1,
-      search: 'STAR Property'
-    }));
+    expect(getContracts.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        pageNumber: 1,
+        search: 'STAR Property',
+      }),
+    );
   });
 
   it('preserves filters when requesting another backend page', async () => {
@@ -175,12 +244,14 @@ describe('ContractsListComponent', () => {
     component.goToPage(2);
     await fixture.whenStable();
 
-    expect(getContracts.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
-      pageNumber: 2,
-      contractType: 'FACULTATIVE',
-      sortBy: 'updatedAt',
-      sortDirection: 'desc'
-    }));
+    expect(getContracts.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        pageNumber: 2,
+        contractType: 'FACULTATIVE',
+        sortBy: 'updatedAt',
+        sortDirection: 'desc',
+      }),
+    );
   });
 
   it('requests backend sorting instead of sorting the returned page locally', async () => {
@@ -189,11 +260,13 @@ describe('ContractsListComponent', () => {
     component.changeSort(event);
     await fixture.whenStable();
 
-    expect(getContracts.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
-      pageNumber: 1,
-      sortBy: 'name',
-      sortDirection: 'desc'
-    }));
+    expect(getContracts.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        pageNumber: 1,
+        sortBy: 'name',
+        sortDirection: 'desc',
+      }),
+    );
     expect(component.contracts()).toEqual(contracts);
   });
 
@@ -206,9 +279,11 @@ describe('ContractsListComponent', () => {
     expect(component.listState()).toBe('error');
     expect(fixture.nativeElement.textContent).toContain('Unable to load contracts');
     expect(fixture.nativeElement.textContent).not.toContain('No contracts match your filters');
-    expect(Array.from(fixture.nativeElement.querySelectorAll('button')).some((button: unknown) =>
-      (button as HTMLButtonElement).textContent?.trim() === 'Retry'
-    )).toBe(true);
+    expect(
+      Array.from(fixture.nativeElement.querySelectorAll('button')).some(
+        (button: unknown) => (button as HTMLButtonElement).textContent?.trim() === 'Retry',
+      ),
+    ).toBe(true);
   });
 
   it('clears all filters, pagination, and sorting through one action', async () => {
@@ -219,19 +294,21 @@ describe('ContractsListComponent', () => {
         pageNumber: 2,
         pageSize: 50,
         sortBy: 'name',
-        sortDirection: 'asc'
-      }
+        sortDirection: 'asc',
+      },
     });
     component.clearFilters();
     await fixture.whenStable();
 
-    expect(getContracts.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
-      pageNumber: 1,
-      pageSize: 20,
-      search: '',
-      contractType: '',
-      sortBy: 'updatedAt',
-      sortDirection: 'desc'
-    }));
+    expect(getContracts.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        pageNumber: 1,
+        pageSize: 20,
+        search: '',
+        contractType: '',
+        sortBy: 'updatedAt',
+        sortDirection: 'desc',
+      }),
+    );
   });
 });

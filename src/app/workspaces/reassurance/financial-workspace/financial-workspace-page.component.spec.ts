@@ -442,7 +442,7 @@ describe('FinancialWorkspacePageComponent', () => {
     fixture.detectChanges();
     expect(save).toHaveBeenCalledWith(file, 'Facture_INV-91.pdf');
     expect(component.downloadingInvoiceIds().size).toBe(0);
-    expect(getButtonsByText('Download Invoice')).toHaveLength(2);
+    expect(getButtonsByText('Download Invoice')).toHaveLength(4);
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
@@ -463,7 +463,7 @@ describe('FinancialWorkspacePageComponent', () => {
     const save = vi.spyOn(component as any, 'saveDownloadedFile').mockImplementation(() => {});
 
     fixture.detectChanges();
-    expect(getButtonsByText('Download Avoir')).toHaveLength(1);
+    expect(getButtonsByText('Download Avoir')).toHaveLength(2);
     getButtonsByText('Download Avoir')[0].click();
 
     expect(workflowService.downloadAvoirPdf).toHaveBeenCalledExactlyOnceWith(12);
@@ -1026,7 +1026,7 @@ describe('FinancialWorkspacePageComponent', () => {
         {
           invoiceId: 2001,
           idInvoice: 2001,
-          invoiceNumber: 'INV-2026-000001',
+          invoiceNumber: 'INV-2026-000001',invoiceAvoirNumber:'INV-2026-000001',
           label: 'Premium invoice',
           contractId: 1001,
           cedentId: 22,
@@ -1061,8 +1061,8 @@ describe('FinancialWorkspacePageComponent', () => {
           reinsurerId: 88,
           reinsurerName: 'Example Reinsurer',
           cedentName: 'Example Cedent',
-          invoiceNumber: 'INV-2026-000001',
-          invoiceLabel: 'Premium invoice',
+          invoiceNumber: 'INV-2026-000001',invoiceAvoirNumber:'INV-2026-000001',
+          invoiceLabel: 'Premium invoice',label:'Premium invoice',
           contractName: 'SODIG 2025',
           umr: 'IT26-F-PD-0001',
           signedSharePct: 40,
@@ -1086,8 +1086,8 @@ describe('FinancialWorkspacePageComponent', () => {
           reinsurerId: 89,
           reinsurerName: 'Second Reinsurer',
           cedentName: 'Example Cedent',
-          invoiceNumber: 'INV-2026-000001',
-          invoiceLabel: 'Premium invoice',
+          invoiceNumber: 'INV-2026-000001',invoiceAvoirNumber:'INV-2026-000001',
+          invoiceLabel: 'Premium invoice',label:'Premium invoice',
           contractName: 'SODIG 2025',
           umr: 'IT26-F-PD-0001',
           signedSharePct: 60,
@@ -2545,7 +2545,7 @@ describe('FinancialWorkspacePageComponent', () => {
     expect(summary).toContain('2 selected');
     expect(summary).toContain(`Premium total: ${fixture.componentInstance.formatSignedRemittanceTotal(5, 'TND')}`);
     expect(summary).toContain('Reinsurer: STAR Assurances');
-    expect(summary).toContain(`Avoir total: ${fixture.componentInstance.formatSignedRemittanceTotal(-2.5, 'TND')}`);
+    expect(summary).toContain(`Avoir / claim total: ${fixture.componentInstance.formatSignedRemittanceTotal(-2.5, 'TND')}`);
     expect(summary).toContain(`Net balance: ${fixture.componentInstance.formatSignedRemittanceTotal(2.5, 'TND')}`);
     expect(fixture.componentInstance.getRemittanceSourceLabel(rows[0] as any)).toBe('Avoir');
     expect(fixture.componentInstance.getRemittanceSourceLabel(rows[1] as any)).toBe('Premium');

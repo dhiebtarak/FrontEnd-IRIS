@@ -54,6 +54,8 @@ export const routes: Routes = [
       { path: 'counterparties/:id', component: AddCounterpartyComponent },
       { path: 'contracts', component: ContractsListComponent },
       { path: 'contracts/new/type', component: ContractTypeSelectionComponent },
+      {path:'contracts/new/xol',loadComponent:()=>import('./contracts/xol/xol-contract.component').then(m=>m.XolContractComponent),canDeactivate:[pendingChangesGuard]},
+      {path:'contracts/xol/:contractId',loadComponent:()=>import('./contracts/xol/xol-contract.component').then(m=>m.XolContractComponent),canDeactivate:[pendingChangesGuard]},
       {
         path: 'contracts/new/facultative',
         component: FacultativeInformationComponent,
@@ -73,6 +75,7 @@ export const routes: Routes = [
       { path: 'receipt-pairing', loadComponent: () => import('./workspaces/reassurance/financial-workspace/financial-workspace-page.component').then(m => m.FinancialWorkspacePageComponent), data: { role: 'back-office', page: 'receipts' } },
       { path: 'outgoing-remittances', loadComponent: () => import('./workspaces/reassurance/financial-workspace/financial-workspace-page.component').then(m => m.FinancialWorkspacePageComponent), data: { role: 'back-office', page: 'remittances' } },
       { path: 'invoices', loadComponent: () => import('./workspaces/reassurance/financial-workspace/financial-workspace-page.component').then(m => m.FinancialWorkspacePageComponent), data: { role: 'back-office', page: 'invoices' } },
+      {path:'contracts/xol/:contractId',loadComponent:()=>import('./contracts/xol/xol-contract.component').then(m=>m.XolContractComponent),data:{workspace:'back-office',readonly:true}},
       { path: 'contracts', component: ContractsListComponent, data: { workspace: 'back-office', readonly: true } },
       { path: 'contracts/:contractId/overview', component: ContractOverviewComponent, data: { workspace: 'back-office', readonly: true } },
       { path: 'contracts/overview', component: ContractOverviewComponent, data: { workspace: 'back-office', readonly: true } },

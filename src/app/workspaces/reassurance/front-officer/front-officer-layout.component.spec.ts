@@ -13,7 +13,7 @@ describe('FrontOfficerLayoutComponent', () => {
       imports: [FrontOfficerLayoutComponent],
       providers: [
         provideRouter([]),
-        { provide: Auth, useValue: { logout: vi.fn().mockReturnValue(of({})) } },
+        { provide: Auth, useValue: { logout: vi.fn().mockReturnValue(of({})),isAdmin:()=>false,hasModule:(module:string)=>['Contracts','Counterparties','Claims'].includes(module) } },
         { provide: ToastrService, useValue: { success: vi.fn() } }
       ]
     }).compileComponents();

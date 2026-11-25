@@ -1,4 +1,4 @@
-<div class="min-h-screen bg-iris-bg font-calibri">
+<div class="contract-page min-h-screen bg-iris-bg font-calibri">
   <header class="border-b border-iris-border/70 bg-white/90 backdrop-blur">
     <div class="mx-auto max-w-7xl px-4 py-6 md:px-8">
       <nav aria-label="Breadcrumb" class="text-sm text-iris-slate">
@@ -9,10 +9,13 @@
         <span class="font-semibold text-iris-navy">Facultative Information</span>
       </nav>
       <div class="mt-4">
-        <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-iris-teal">Contract Intake</p>
+        <p class="text-[11px] font-bold uppercase tracking-[0.28em] text-iris-teal">
+          Contract Intake
+        </p>
         <h1 class="mt-2 font-cambria text-3xl font-bold text-iris-navy">Facultative Information</h1>
         <p class="mt-3 max-w-3xl text-sm text-iris-slate md:text-base">
-          Save an incomplete Draft at any time, then continue to its Contract Overview and complete it progressively.
+          Save an incomplete Draft at any time, then continue to its Contract Overview and complete
+          it progressively.
         </p>
       </div>
     </div>
@@ -22,11 +25,18 @@
     <app-contract-creation-stepper [activeStep]="2" />
 
     @if (generalError()) {
-      <div class="mt-6 rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-900">
+      <div
+        class="mt-6 rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-900"
+      >
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span>{{ generalError() }}</span>
           @if (retrySaveMode()) {
-            <button type="button" (click)="retrySave()" [disabled]="isSaving()" class="rounded-xl bg-rose-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-60">
+            <button
+              type="button"
+              (click)="retrySave()"
+              [disabled]="isSaving()"
+              class="rounded-xl bg-rose-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
               Retry
             </button>
           }
@@ -35,7 +45,9 @@
           <ul class="mt-3 list-inside list-disc space-y-1">
             @for (entry of serverFieldErrorEntries(); track entry.field) {
               @for (message of entry.messages; track $index) {
-                <li><strong>{{ entry.field }}:</strong> {{ message }}</li>
+                <li>
+                  <strong>{{ entry.field }}:</strong> {{ message }}
+                </li>
               }
             }
           </ul>
@@ -44,27 +56,41 @@
     }
 
     @if (isInitialLoading()) {
-      <section class="mt-6 rounded-[28px] border border-iris-border/80 bg-white p-10 shadow-[0_24px_60px_rgba(13,47,79,0.08)]">
+      <section
+        class="mt-6 rounded-[28px] border border-iris-border/80 bg-white p-10 shadow-[0_24px_60px_rgba(13,47,79,0.08)]"
+      >
         <div class="flex flex-col items-center justify-center gap-4 py-16 text-center">
-          <div class="h-12 w-12 animate-spin rounded-full border-4 border-iris-divider border-t-iris-teal"></div>
+          <div
+            class="h-12 w-12 animate-spin rounded-full border-4 border-iris-divider border-t-iris-teal"
+          ></div>
           <div>
-            <h2 class="font-cambria text-2xl font-bold text-iris-navy">Loading contract references</h2>
-            <p class="mt-2 text-sm text-iris-slate">Currencies and form defaults are being prepared.</p>
+            <h2 class="font-cambria text-2xl font-bold text-iris-navy">
+              Loading contract references
+            </h2>
+            <p class="mt-2 text-sm text-iris-slate">
+              Currencies and form defaults are being prepared.
+            </p>
           </div>
         </div>
       </section>
     } @else {
       <div class="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <form [formGroup]="form" class="space-y-6">
-          <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+          <section class="card" contractStyle="card">
             <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 01</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">
+                Section 01
+              </p>
               <h2 class="font-cambria text-2xl font-bold text-iris-navy">General Information</h2>
             </div>
 
             <div class="mt-6 grid gap-5 md:grid-cols-2">
-              <div class="md:col-span-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                <p class="font-semibold">The UMR will be generated automatically when the contract is created.</p>
+              <div
+                class="md:col-span-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900"
+              >
+                <p class="font-semibold">
+                  The UMR will be generated automatically when the contract is created.
+                </p>
                 <p class="mt-1">Expected format: IT26-F-PD-XXXX</p>
                 @if (generatedUmr()) {
                   <p class="mt-2 font-bold">Generated UMR: {{ generatedUmr() }}</p>
@@ -72,96 +98,59 @@
               </div>
 
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="contractName">Contract name</label>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="contractName"
+                  >Contract name</label
+                >
                 <input
                   id="contractName"
                   type="text"
                   formControlName="name"
                   class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                  [ngClass]="hasError('name', 'maxlength') || hasError('name', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  [ngClass]="
+                    hasError('name', 'maxlength') || hasError('name', 'serverError')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
                 />
                 @if (hasError('name', 'maxlength')) {
-                  <p class="mt-2 text-sm text-rose-700">Contract name cannot exceed 255 characters.</p>
+                  <p class="mt-2 text-sm text-rose-700">
+                    Contract name cannot exceed 255 characters.
+                  </p>
                 }
                 @if (hasError('name', 'serverError')) {
-                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.name.errors?.['serverError'] }}</p>
+                  <p class="mt-2 text-sm text-rose-700">
+                    {{ form.controls.name.errors?.['serverError'] }}
+                  </p>
                 }
               </div>
 
-              <div class="md:col-span-2">
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="cedentSearch">Cedent</label>
-                <div class="relative">
-                  <input
-                    id="cedentSearch"
-                    type="text"
-                    [formControl]="cedentSearchControl"
-                    autocomplete="off"
-                    (focus)="openCedentDropdown()"
-                    (click)="openCedentDropdown()"
-                    (keydown)="handleCedentKeydown($event)"
-                    class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    [ngClass]="hasError('counterpartyId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
-                    placeholder="Search cedents by name"
-                    role="combobox"
-                    aria-autocomplete="list"
-                    [attr.aria-expanded]="isCedentDropdownOpen()"
-                    aria-controls="cedent-options"
-                  />
-                  @if (isCedentLoading()) {
-                    <span class="absolute inset-y-0 right-4 flex items-center text-iris-slate">
-                      <span class="h-4 w-4 animate-spin rounded-full border-2 border-iris-border border-t-iris-teal"></span>
-                    </span>
-                  }
-                  @if (isCedentDropdownOpen()) {
-                    <div id="cedent-options" class="absolute z-20 mt-2 max-h-64 w-full overflow-auto rounded-2xl border border-iris-border bg-white p-2 shadow-xl">
-                      @if (isCedentLoading()) {
-                        <p class="px-3 py-3 text-sm text-iris-slate">Loading cedents...</p>
-                      } @else if (cedentLookupError()) {
-                        <p class="px-3 py-3 text-sm text-rose-700">Unable to load cedents</p>
-                      } @else if (cedentResults().length > 0) {
-                        @for (cedent of cedentResults(); track cedent.id; let index = $index) {
-                          <button
-                            type="button"
-                            (click)="selectCedent(cedent)"
-                            (mouseenter)="setActiveCedentIndex(index)"
-                            class="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left text-sm text-iris-navy transition hover:bg-iris-bg"
-                            [ngClass]="activeCedentIndex() === index ? 'bg-iris-bg' : ''"
-                          >
-                            <span class="min-w-0">
-                              <span class="block font-semibold">{{ cedent.name }}</span>
-                              @if (cedentLocationLabel(cedent)) {
-                                <span class="mt-1 block text-xs text-iris-slate">{{ cedentLocationLabel(cedent) }}</span>
-                              }
-                            </span>
-                            <span class="pt-0.5 text-xs text-iris-slate">ID {{ cedent.id }}</span>
-                          </button>
-                        }
-                      } @else {
-                        <p class="px-3 py-3 text-sm text-iris-slate">No cedent found</p>
-                      }
-                    </div>
-                  }
-                </div>
-                @if (hasError('counterpartyId', 'serverError')) {
-                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.counterpartyId.errors?.['serverError'] }}</p>
-                }
-              </div>
+              <app-contract-cedent-selector class="md:col-span-2" [state]="references" />
 
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="currencyId">Currency</label>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="currencyId"
+                  >Currency</label
+                >
                 <div class="relative">
                   <select
                     id="currencyId"
                     formControlName="currencyId"
                     class="w-full appearance-none rounded-2xl border bg-white px-4 py-3 pr-11 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    [ngClass]="hasError('currencyId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                    [ngClass]="
+                      hasError('currencyId', 'serverError')
+                        ? 'border-rose-400'
+                        : 'border-iris-border'
+                    "
                   >
                     <option [ngValue]="null">Select a currency</option>
                     @for (currency of currencies(); track currency.id) {
-                      <option [ngValue]="currency.id">{{ currency.code }} - {{ currency.name }}</option>
+                      <option [ngValue]="currency.id">
+                        {{ currency.code }} - {{ currency.name }}
+                      </option>
                     }
                   </select>
-                  <span class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-iris-slate">
+                  <span
+                    class="pointer-events-none absolute inset-y-0 right-4 flex items-center text-iris-slate"
+                  >
                     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                       <path d="M5.5 7.5 10 12l4.5-4.5" />
                     </svg>
@@ -170,289 +159,177 @@
               </div>
 
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy">Type of business</label>
-                <div class="rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy">
+                <label class="mb-2 block text-sm font-semibold text-iris-navy"
+                  >Type of business</label
+                >
+                <div
+                  class="rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy"
+                >
                   Facultative
                 </div>
               </div>
 
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="receptionDate">Reception date</label>
-                <input id="receptionDate" type="date" formControlName="receptionDate" class="w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="receptionDate"
+                  >Reception date</label
+                >
+                <input
+                  id="receptionDate"
+                  type="date"
+                  formControlName="receptionDate"
+                  class="w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                />
               </div>
 
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="inceptionDate">Inception date</label>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="inceptionDate"
+                  >Inception date</label
+                >
                 <input
                   id="inceptionDate"
                   type="date"
                   formControlName="inceptionDate"
                   class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                  [ngClass]="hasError('inceptionDate', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
+                  [ngClass]="
+                    hasError('inceptionDate', 'serverError')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
                 />
-                <p class="mt-2 text-sm text-iris-slate">The inception year is used by the backend when generating the UMR.</p>
+                <p class="mt-2 text-sm text-iris-slate">
+                  The inception year is used by the backend when generating the UMR.
+                </p>
               </div>
 
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="expiryDate">Expiry date</label>
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="expiryDate"
+                  >Expiry date</label
+                >
                 <input
                   id="expiryDate"
                   type="date"
                   formControlName="expiryDate"
                   class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                  [ngClass]="hasError('expiryDate', 'serverError') || form.hasError('expiryBeforeInception') ? 'border-rose-400' : 'border-iris-border'"
+                  [ngClass]="
+                    hasError('expiryDate', 'serverError') || form.hasError('expiryBeforeInception')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
                 />
-                @if (form.hasError('expiryBeforeInception') && (form.controls.expiryDate.touched || form.controls.inceptionDate.touched)) {
-                  <p class="mt-2 text-sm text-rose-700">Expiry date cannot be earlier than inception date.</p>
+                @if (
+                  form.hasError('expiryBeforeInception') &&
+                  (form.controls.expiryDate.touched || form.controls.inceptionDate.touched)
+                ) {
+                  <p class="mt-2 text-sm text-rose-700">
+                    Expiry date cannot be earlier than inception date.
+                  </p>
                 }
               </div>
 
               <div>
                 <label class="mb-2 block text-sm font-semibold text-iris-navy">Status</label>
-                <div class="rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy">
+                <div
+                  class="rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy"
+                >
                   {{ currentStatus }}
                 </div>
               </div>
             </div>
           </section>
 
-          <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+          <section class="card" contractStyle="card">
             <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 02</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">
+                Section 02
+              </p>
               <h2 class="font-cambria text-2xl font-bold text-iris-navy">Coverage Information</h2>
             </div>
             <div class="mt-6 grid gap-5 md:grid-cols-3">
-              <div class="contents" formGroupName="coverageSelection">
-              <div #coveragePicker class="coverage-picker md:col-span-3" (focusout)="onCoverageFocusOut($event)">
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="mainCoverSearch">Coverage</label>
-                @if (selectedMainCovers().length > 0) {
-                  <div class="mb-3 flex flex-wrap gap-2">
-                    @for (coverage of selectedMainCovers(); track coverage.id) {
-                      <span class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy">
-                        {{ formatCoverageLabel(coverage) }}
-                        @if (isPrimaryMainCover(coverage.id)) {
-                          <span class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white">Primary</span>
-                        } @else {
-                          <button type="button" (click)="makePrimaryMainCover(coverage.id)" class="text-iris-teal underline">Make primary</button>
-                        }
-                        <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(coverage)" (click)="removeMainCover(coverage.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
-                      </span>
-                    }
-                  </div>
-                }
-                <div class="relative">
-                  <input
-                    id="mainCoverSearch"
-                    type="text"
-                    [value]="coverageSearch()"
-                    autocomplete="off"
-                    (input)="onCoverageSearchInput($event)"
-                    (focus)="openCoverageDropdown()"
-                    (click)="openCoverageDropdown()"
-                    (keydown)="handleMainCoverKeydown($event)"
-                    class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    [ngClass]="hasError('coverageSelection.mainCoverId', 'serverError') ? 'border-rose-400' : 'border-iris-border'"
-                    placeholder="Search coverages by code or description"
-                    role="combobox"
-                    aria-autocomplete="list"
-                    [attr.aria-expanded]="isCoverageDropdownOpen()"
-                    aria-controls="main-cover-options"
-                  />
-                  @if (isMainCoverLoading()) {
-                    <span class="absolute inset-y-0 right-4 flex items-center text-iris-slate">
-                      <span class="h-4 w-4 animate-spin rounded-full border-2 border-iris-border border-t-iris-teal"></span>
-                    </span>
-                  }
-                  @if (isCoverageDropdownOpen()) {
-                    <div id="main-cover-options" role="listbox" aria-multiselectable="true" class="absolute z-20 mt-2 max-h-64 w-full overflow-auto rounded-2xl border border-iris-border bg-white p-2 shadow-xl">
-                      @if (isMainCoverLoading()) {
-                        <p class="px-3 py-3 text-sm text-iris-slate">Loading coverages...</p>
-                      } @else if (mainCoverLookupError()) {
-                        <p class="px-3 py-3 text-sm text-rose-700">Unable to load coverages</p>
-                      } @else if (filteredCoverages().length > 0) {
-                        @for (mainCover of filteredCoverages(); track mainCover.id; let index = $index) {
-                          <button
-                            type="button"
-                            role="option"
-                            [attr.aria-selected]="isMainCoverSelected(mainCover.id)"
-                            (click)="toggleMainCover(mainCover)"
-                            (mouseenter)="setActiveMainCoverIndex(index)"
-                            class="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left text-sm text-iris-navy transition hover:bg-iris-bg"
-                            [ngClass]="activeMainCoverIndex() === index ? 'bg-iris-bg' : ''"
-                          >
-                            <span class="flex min-w-0 items-start gap-3">
-                              <input type="checkbox" tabindex="-1" [checked]="isMainCoverSelected(mainCover.id)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)]" />
-                              <span class="min-w-0">
-                              <span class="block font-semibold">{{ formatCoverageLabel(mainCover) }}</span>
-                              <span class="mt-1 block text-xs text-iris-slate">{{ mainCover.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
-                              </span>
-                            </span>
-                          </button>
-                        }
-                      } @else {
-                        <p class="px-3 py-3 text-sm text-iris-slate">No coverages found.</p>
-                      }
-                    </div>
-                  }
-                </div>
-                @if (form.controls.coverageSelection.hasError('primaryCoverageNotSelected')) {
-                  <p class="mt-2 text-sm text-rose-700">Primary Main Cover must be one of the selected coverages.</p>
-                }
-                @if (hasError('coverageSelection.mainCoverId', 'serverError')) {
-                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.coverageSelection.controls.mainCoverId.errors?.['serverError'] }}</p>
-                }
-                <p class="mt-2 text-sm text-iris-slate">The Primary Main Cover code is used by the backend when generating the UMR.</p>
-              </div>
-
-              @if (isSectionsLoading()) {
-                <div class="md:col-span-3">
-                  <p class="text-sm text-iris-slate">Loading sections...</p>
-                </div>
-              } @else if (sectionsError()) {
-                <div class="md:col-span-3">
-                  <p class="text-sm text-rose-700">{{ sectionsError() }}</p>
-                </div>
-              } @else if (availableSections().length > 0) {
-                <div class="md:col-span-3">
-                  <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sectionSearch">Sections</label>
-                  @if (selectedSections().length > 0) {
-                    <div class="mb-3 flex flex-wrap gap-2">
-                      @for (section of selectedSections(); track section.id) {
-                        <span class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy">
-                          {{ formatCoverageLabel(section) }}
-                          @if (isMandatorySection(section)) {
-                            <span class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white">Mandatory</span>
-                          }
-                          @if (!isMandatorySection(section)) {
-                            <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(section)" (click)="removeSection(section.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
-                          }
-                        </span>
-                      }
-                    </div>
-                  }
-                  <input
-                    id="sectionSearch"
-                    type="text"
-                    [value]="sectionSearch()"
-                    (input)="onSectionSearchInput($event)"
-                    class="mb-3 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    placeholder="Search sections by code or description"
-                  />
-                  <div class="rounded-2xl border border-iris-border bg-white p-3">
-                    @if (filteredSections().length === 0) {
-                      <p class="px-2 py-2 text-sm text-iris-slate">No sections match your search.</p>
-                    }
-                    @for (group of groupedFilteredSections(); track group.parentLabel) {
-                      <div class="py-2">
-                        <p class="px-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">{{ group.parentLabel }}</p>
-                        <div class="mt-2 grid gap-2 md:grid-cols-2">
-                          @for (section of group.items; track section.id) {
-                            <label class="flex items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition" [ngClass]="section.isMandatory ? 'cursor-not-allowed bg-iris-bg/70' : 'cursor-pointer hover:bg-iris-bg'">
-                              <input type="checkbox" [checked]="isSectionSelected(section.id)" [disabled]="section.isMandatory" (change)="toggleSection(section)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)] disabled:cursor-not-allowed" />
-                              <span>
-                                <span class="block font-semibold">{{ formatCoverageLabel(section) }}{{ section.isMandatory ? ' (mandatory)' : '' }}</span>
-                                <span class="mt-1 block text-xs text-iris-slate">{{ section.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
-                              </span>
-                            </label>
-                          }
-                        </div>
-                      </div>
-                    }
-                  </div>
-                </div>
-              } @else if (selectedCoverageIds().length > 0) {
-                <div class="md:col-span-3">
-                  <p class="text-sm text-iris-slate">No related sections are available for the selected coverages.</p>
-                </div>
-              }
-
-              @if (isExtensionsLoading()) {
-                <div class="md:col-span-3">
-                  <p class="text-sm text-iris-slate">Loading extensions...</p>
-                </div>
-              } @else if (extensionsError()) {
-                <div class="md:col-span-3">
-                  <p class="text-sm text-rose-700">{{ extensionsError() }}</p>
-                </div>
-              } @else if (availableExtensions().length > 0) {
-                <div class="md:col-span-3">
-                  <label class="mb-2 block text-sm font-semibold text-iris-navy" for="extensionSearch">Extensions</label>
-                  @if (selectedExtensions().length > 0) {
-                    <div class="mb-3 flex flex-wrap gap-2">
-                      @for (extension of selectedExtensions(); track extension.id) {
-                        <span class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy">
-                          {{ formatCoverageLabel(extension) }}
-                          @if (isMandatoryExtension(extension)) {
-                            <span class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white">Mandatory</span>
-                          }
-                          @if (!isMandatoryExtension(extension)) {
-                            <button type="button" [attr.aria-label]="'Remove ' + formatCoverageLabel(extension)" (click)="removeExtension(extension.id)" class="text-base leading-none text-iris-slate hover:text-rose-700">&times;</button>
-                          }
-                        </span>
-                      }
-                    </div>
-                  }
-                  <input
-                    id="extensionSearch"
-                    type="text"
-                    [value]="extensionSearch()"
-                    (input)="onExtensionSearchInput($event)"
-                    class="mb-3 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
-                    placeholder="Search extensions by code or description"
-                  />
-                  <div class="rounded-2xl border border-iris-border bg-white p-3">
-                    @if (filteredExtensions().length === 0) {
-                      <p class="px-2 py-2 text-sm text-iris-slate">No extensions match your search.</p>
-                    }
-                    @for (group of groupedFilteredExtensions(); track group.parentLabel) {
-                      <div class="py-2">
-                        <p class="px-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">{{ group.parentLabel }}</p>
-                        <div class="mt-2 grid gap-2 md:grid-cols-2">
-                          @for (extension of group.items; track extension.id) {
-                            <label class="flex items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition" [ngClass]="extension.isMandatory ? 'cursor-not-allowed bg-iris-bg/70' : 'cursor-pointer hover:bg-iris-bg'">
-                              <input type="checkbox" [checked]="isExtensionSelected(extension.id)" [disabled]="extension.isMandatory" (change)="toggleExtension(extension)" class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)] disabled:cursor-not-allowed" />
-                              <span>
-                                <span class="block font-semibold">{{ formatCoverageLabel(extension) }}{{ extension.isMandatory ? ' (mandatory)' : '' }}</span>
-                                <span class="mt-1 block text-xs text-iris-slate">{{ extension.hasSlip ? 'Slip available' : 'Slip not available' }}</span>
-                              </span>
-                            </label>
-                          }
-                        </div>
-                      </div>
-                    }
-                  </div>
-                </div>
-              } @else if (selectedCoverageIds().length > 0) {
-                <div class="md:col-span-3">
-                  <p class="text-sm text-iris-slate">No related extensions are available for the selected coverages.</p>
-                </div>
-              }
-              </div>
+              <app-contract-coverage-selector class="contents" [state]="references" />
 
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sumInsured">Sum Insured</label>
-                <input id="sumInsured" type="number" formControlName="sumInsured" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('sumInsured', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sumInsured"
+                  >Sum Insured</label
+                >
+                <input
+                  id="sumInsured"
+                  type="number"
+                  formControlName="sumInsured"
+                  min="0"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="
+                    hasError('sumInsured', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'
+                  "
+                />
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="limitOfLiability">Limit of Liability</label>
-                <input id="limitOfLiability" type="number" formControlName="limitOfLiability" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('limitOfLiability', 'nonNegative') || hasError('limitOfLiability', 'serverError') ? 'border-rose-400' : 'border-iris-border'" />
+                <label
+                  class="mb-2 block text-sm font-semibold text-iris-navy"
+                  for="limitOfLiability"
+                  >Limit of Liability</label
+                >
+                <input
+                  id="limitOfLiability"
+                  type="number"
+                  formControlName="limitOfLiability"
+                  min="0"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="
+                    hasError('limitOfLiability', 'nonNegative') ||
+                    hasError('limitOfLiability', 'serverError')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
+                />
                 @if (hasError('limitOfLiability', 'nonNegative')) {
                   <p class="mt-2 text-sm text-rose-700">Limit of Liability cannot be negative.</p>
                 }
                 @if (hasError('limitOfLiability', 'serverError')) {
-                  <p class="mt-2 text-sm text-rose-700">{{ form.controls.limitOfLiability.errors?.['serverError'] }}</p>
+                  <p class="mt-2 text-sm text-rose-700">
+                    {{ form.controls.limitOfLiability.errors?.['serverError'] }}
+                  </p>
                 }
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="deductible">Deductible</label>
-                <input id="deductible" type="number" formControlName="deductible" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('deductible', 'nonNegative') || form.hasError('deductibleExceedsSumInsured') ? 'border-rose-400' : 'border-iris-border'" />
-                @if (form.hasError('deductibleExceedsSumInsured') && (form.controls.deductible.touched || form.controls.sumInsured.touched)) {
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="deductible"
+                  >Deductible</label
+                >
+                <input
+                  id="deductible"
+                  type="number"
+                  formControlName="deductible"
+                  min="0"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="
+                    hasError('deductible', 'nonNegative') ||
+                    form.hasError('deductibleExceedsSumInsured')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
+                />
+                @if (
+                  form.hasError('deductibleExceedsSumInsured') &&
+                  (form.controls.deductible.touched || form.controls.sumInsured.touched)
+                ) {
                   <p class="mt-2 text-sm text-rose-700">Deductible cannot exceed Sum Insured.</p>
                 }
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="premiumRate">Premium rate</label>
-                <input id="premiumRate" type="text" inputmode="decimal" formControlName="premiumRate" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('premiumRate', 'nonNegative') || hasError('premiumRate', 'max') ? 'border-rose-400' : 'border-iris-border'" />
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="premiumRate"
+                  >Premium rate</label
+                >
+                <input
+                  id="premiumRate"
+                  type="text"
+                  inputmode="decimal"
+                  formControlName="premiumRate"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="
+                    hasError('premiumRate', 'nonNegative') || hasError('premiumRate', 'max')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
+                />
                 <p class="mt-2 text-sm text-iris-slate">Enter the premium rate as a percentage.</p>
                 @if (hasError('premiumRate', 'max')) {
                   <p class="mt-2 text-sm text-rose-700">Premium rate must be between 0 and 100.</p>
@@ -461,104 +338,251 @@
             </div>
           </section>
 
-          <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+          <section class="card" contractStyle="card">
             <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 03</p>
-              <h2 class="font-cambria text-2xl font-bold text-iris-navy">Participation and Placement</h2>
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">
+                Section 03
+              </p>
+              <h2 class="font-cambria text-2xl font-bold text-iris-navy">
+                Participation and Placement
+              </h2>
             </div>
 
             <div class="mt-6 grid gap-5 md:grid-cols-2">
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="writtenSharePct">Written share percentage</label>
-                <input id="writtenSharePct" type="number" formControlName="writtenSharePct" min="0" max="100" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('writtenSharePct', 'min') || hasError('writtenSharePct', 'max') ? 'border-rose-400' : 'border-iris-border'" />
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="writtenSharePct"
+                  >Written share percentage</label
+                >
+                <input
+                  id="writtenSharePct"
+                  type="number"
+                  formControlName="writtenSharePct"
+                  min="0"
+                  max="100"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="
+                    hasError('writtenSharePct', 'min') || hasError('writtenSharePct', 'max')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
+                />
                 @if (hasError('writtenSharePct', 'min') || hasError('writtenSharePct', 'max')) {
                   <p class="mt-2 text-sm text-rose-700">Written share must be between 0 and 100.</p>
                 }
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="signedSharePct">Signed share percentage</label>
-                <input id="signedSharePct" type="number" formControlName="signedSharePct" min="0" max="100" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('signedSharePct', 'min') || hasError('signedSharePct', 'max') || form.hasError('signedShareExceedsWrittenShare') ? 'border-rose-400' : 'border-iris-border'" />
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="signedSharePct"
+                  >Signed share percentage</label
+                >
+                <input
+                  id="signedSharePct"
+                  type="number"
+                  formControlName="signedSharePct"
+                  min="0"
+                  max="100"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="
+                    hasError('signedSharePct', 'min') ||
+                    hasError('signedSharePct', 'max') ||
+                    form.hasError('signedShareExceedsWrittenShare')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
+                />
                 @if (hasError('signedSharePct', 'min') || hasError('signedSharePct', 'max')) {
                   <p class="mt-2 text-sm text-rose-700">Signed share must be between 0 and 100.</p>
                 }
-                @if (form.hasError('signedShareExceedsWrittenShare') && (form.controls.signedSharePct.touched || form.controls.writtenSharePct.touched)) {
-                  <p class="mt-2 text-sm text-rose-700">Signed share cannot exceed written share.</p>
+                @if (
+                  form.hasError('signedShareExceedsWrittenShare') &&
+                  (form.controls.signedSharePct.touched || form.controls.writtenSharePct.touched)
+                ) {
+                  <p class="mt-2 text-sm text-rose-700">
+                    Signed share cannot exceed written share.
+                  </p>
                 }
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="fees">Fees</label>
-                <input id="fees" type="number" formControlName="fees" min="0" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('fees', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'" />
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="fees"
+                  >Fees</label
+                >
+                <input
+                  id="fees"
+                  type="number"
+                  formControlName="fees"
+                  min="0"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="
+                    hasError('fees', 'nonNegative') ? 'border-rose-400' : 'border-iris-border'
+                  "
+                />
                 @if (hasError('fees', 'nonNegative')) {
                   <p class="mt-2 text-sm text-rose-700">Fees cannot be negative.</p>
                 }
               </div>
-              <label class="flex items-center justify-between rounded-2xl border border-iris-border bg-iris-bg px-4 py-3">
+              <label
+                class="flex items-center justify-between rounded-2xl border border-iris-border bg-iris-bg px-4 py-3"
+              >
                 <span class="text-sm font-semibold text-iris-navy">High-priority flag</span>
-                <input type="checkbox" formControlName="isHighPriority" class="h-5 w-5 accent-[var(--color-iris-teal)]" />
+                <input
+                  type="checkbox"
+                  formControlName="isHighPriority"
+                  class="h-5 w-5 accent-[var(--color-iris-teal)]"
+                />
               </label>
             </div>
           </section>
 
-          <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+          <section class="card" contractStyle="card">
             <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 04</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">
+                Section 04
+              </p>
               <h2 class="font-cambria text-2xl font-bold text-iris-navy">Premium Information</h2>
             </div>
             <div class="mt-6 grid gap-5 md:grid-cols-2">
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="grossPremium">Gross premium</label>
-                <input id="grossPremium" type="number" formControlName="grossPremium" min="0" readonly (keydown)="preventCalculatedInput($event)" (paste)="preventCalculatedInput($event)" (wheel)="preventCalculatedInput($event)" class="w-full rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy outline-none transition" />
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="grossPremium"
+                  >Gross premium</label
+                >
+                <input
+                  id="grossPremium"
+                  type="number"
+                  formControlName="grossPremium"
+                  min="0"
+                  readonly
+                  (keydown)="preventCalculatedInput($event)"
+                  (paste)="preventCalculatedInput($event)"
+                  (wheel)="preventCalculatedInput($event)"
+                  class="w-full rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy outline-none transition"
+                />
                 <p class="mt-2 text-sm text-iris-slate">Calculated automatically</p>
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="cedentCommissionPct">Cedent Commission percentage</label>
-                <input id="cedentCommissionPct" type="number" formControlName="cedentCommissionPct" min="0" max="100" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('cedentCommissionPct', 'min') || hasError('cedentCommissionPct', 'max') ? 'border-rose-400' : 'border-iris-border'" />
+                <label
+                  class="mb-2 block text-sm font-semibold text-iris-navy"
+                  for="cedentCommissionPct"
+                  >Cedent Commission percentage</label
+                >
+                <input
+                  id="cedentCommissionPct"
+                  type="number"
+                  formControlName="cedentCommissionPct"
+                  min="0"
+                  max="100"
+                  class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                  [ngClass]="
+                    hasError('cedentCommissionPct', 'min') || hasError('cedentCommissionPct', 'max')
+                      ? 'border-rose-400'
+                      : 'border-iris-border'
+                  "
+                />
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="netPremium">Net premium</label>
-                <input id="netPremium" type="number" formControlName="netPremium" min="0" readonly (keydown)="preventCalculatedInput($event)" (paste)="preventCalculatedInput($event)" (wheel)="preventCalculatedInput($event)" class="w-full rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy outline-none transition" />
+                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="netPremium"
+                  >Net premium</label
+                >
+                <input
+                  id="netPremium"
+                  type="number"
+                  formControlName="netPremium"
+                  min="0"
+                  readonly
+                  (keydown)="preventCalculatedInput($event)"
+                  (paste)="preventCalculatedInput($event)"
+                  (wheel)="preventCalculatedInput($event)"
+                  class="w-full rounded-2xl border border-iris-border bg-iris-bg px-4 py-3 text-sm font-semibold text-iris-navy outline-none transition"
+                />
                 <p class="mt-2 text-sm text-iris-slate">Calculated automatically</p>
                 @if (form.hasError('commissionsExceedGrossPremium')) {
-                  <p class="mt-2 text-sm text-rose-700">Cedent commission cannot exceed the gross premium.</p>
+                  <p class="mt-2 text-sm text-rose-700">
+                    Cedent commission cannot exceed the gross premium.
+                  </p>
                 }
               </div>
               <div>
-                <label class="mb-2 block text-sm font-semibold text-iris-navy" for="cedentPremiumReference">Cedent premium reference</label>
-                <input id="cedentPremiumReference" type="text" formControlName="cedentPremiumReference" class="w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" />
+                <label
+                  class="mb-2 block text-sm font-semibold text-iris-navy"
+                  for="cedentPremiumReference"
+                  >Cedent premium reference</label
+                >
+                <input
+                  id="cedentPremiumReference"
+                  type="text"
+                  formControlName="cedentPremiumReference"
+                  class="w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                />
               </div>
             </div>
           </section>
 
-          <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+          <section class="card" contractStyle="card">
             <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 05</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">
+                Section 05
+              </p>
               <h2 class="font-cambria text-2xl font-bold text-iris-navy">Fronting Information</h2>
             </div>
             <div class="mt-6 space-y-5">
-              <label class="flex items-center justify-between rounded-2xl border border-iris-border bg-iris-bg px-4 py-3">
-                <span class="text-sm font-semibold text-iris-navy">Is this a fronting contract?</span>
-                <input type="checkbox" formControlName="isFronting" class="h-5 w-5 accent-[var(--color-iris-teal)]" />
+              <label
+                class="flex items-center justify-between rounded-2xl border border-iris-border bg-iris-bg px-4 py-3"
+              >
+                <span class="text-sm font-semibold text-iris-navy"
+                  >Is this a fronting contract?</span
+                >
+                <input
+                  type="checkbox"
+                  formControlName="isFronting"
+                  class="h-5 w-5 accent-[var(--color-iris-teal)]"
+                />
               </label>
               @if (form.controls.isFronting.value) {
                 <div>
-                  <label class="mb-2 block text-sm font-semibold text-iris-navy" for="frontingReference">Fronting reference</label>
-                  <input id="frontingReference" type="text" formControlName="frontingReference" class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('frontingReference', 'serverError') ? 'border-rose-400' : 'border-iris-border'" />
+                  <label
+                    class="mb-2 block text-sm font-semibold text-iris-navy"
+                    for="frontingReference"
+                    >Fronting reference</label
+                  >
+                  <input
+                    id="frontingReference"
+                    type="text"
+                    formControlName="frontingReference"
+                    class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                    [ngClass]="
+                      hasError('frontingReference', 'serverError')
+                        ? 'border-rose-400'
+                        : 'border-iris-border'
+                    "
+                  />
                 </div>
               }
             </div>
           </section>
 
-          <section class="rounded-[28px] border border-iris-border/80 bg-white p-6 shadow-[0_24px_60px_rgba(13,47,79,0.08)] md:p-7">
+          <section class="card" contractStyle="card">
             <div class="flex flex-col gap-2 border-b border-iris-divider pb-5">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Section 06</p>
+              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">
+                Section 06
+              </p>
               <h2 class="font-cambria text-2xl font-bold text-iris-navy">Internal Memo</h2>
             </div>
             <div class="mt-6">
-              <label class="mb-2 block text-sm font-semibold text-iris-navy" for="memoText">Memo</label>
-              <textarea id="memoText" rows="6" formControlName="memoText" class="w-full rounded-3xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100" [ngClass]="hasError('memoText', 'maxlength') ? 'border-rose-400' : 'border-iris-border'"></textarea>
+              <label class="mb-2 block text-sm font-semibold text-iris-navy" for="memoText"
+                >Memo</label
+              >
+              <textarea
+                id="memoText"
+                rows="6"
+                formControlName="memoText"
+                class="w-full rounded-3xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+                [ngClass]="
+                  hasError('memoText', 'maxlength') ? 'border-rose-400' : 'border-iris-border'
+                "
+              ></textarea>
               <div class="mt-2 flex items-center justify-between gap-3 text-sm">
                 <p class="text-iris-slate">Maximum 500 characters.</p>
-                <span class="font-semibold text-iris-navy">{{ form.controls.memoText.value.length }}/500</span>
+                <span class="font-semibold text-iris-navy"
+                  >{{ form.controls.memoText.value.length }}/500</span
+                >
               </div>
               @if (hasError('memoText', 'maxlength')) {
                 <p class="mt-2 text-sm text-rose-700">Memo cannot exceed 500 characters.</p>
@@ -566,20 +590,45 @@
             </div>
           </section>
 
-          <div class="sticky bottom-0 z-20 rounded-[28px] border border-iris-border/90 bg-white/95 p-4 shadow-[0_-12px_30px_rgba(13,47,79,0.08)] backdrop-blur md:p-5">
+          <div
+            class="sticky bottom-0 z-20 rounded-[28px] border border-iris-border/90 bg-white/95 p-4 shadow-[0_-12px_30px_rgba(13,47,79,0.08)] backdrop-blur md:p-5"
+          >
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p class="text-sm text-iris-slate">Draft status remains backend-managed and stays in `DRAFT` for this flow.</p>
+              <p class="text-sm text-iris-slate">
+                Draft status remains backend-managed and stays in `DRAFT` for this flow.
+              </p>
               <div class="flex flex-col gap-3 sm:flex-row">
-                <button type="button" (click)="navigateBackToType()" [disabled]="isBusy" class="inline-flex items-center justify-center rounded-xl border border-iris-border bg-white px-5 py-3 text-sm font-semibold text-iris-navy transition hover:border-iris-navy-light hover:text-iris-navy disabled:cursor-not-allowed disabled:opacity-60">Back to Contract Type</button>
-                <button type="button" (click)="saveDraft()" [disabled]="isBusy" class="inline-flex items-center justify-center gap-2 rounded-xl border border-iris-border bg-iris-bg px-5 py-3 text-sm font-semibold text-iris-navy transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60">
+                <button
+                  type="button"
+                  (click)="navigateBackToType()"
+                  [disabled]="isBusy"
+                  class="inline-flex items-center justify-center rounded-xl border border-iris-border bg-white px-5 py-3 text-sm font-semibold text-iris-navy transition hover:border-iris-navy-light hover:text-iris-navy disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Back to Contract Type
+                </button>
+                <button
+                  type="button"
+                  (click)="saveDraft()"
+                  [disabled]="isBusy"
+                  class="inline-flex items-center justify-center gap-2 rounded-xl border border-iris-border bg-iris-bg px-5 py-3 text-sm font-semibold text-iris-navy transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   @if (isSaving() && saveMode() === 'draft') {
-                    <span class="h-4 w-4 animate-spin rounded-full border-2 border-iris-border border-t-iris-teal"></span>
+                    <span
+                      class="h-4 w-4 animate-spin rounded-full border-2 border-iris-border border-t-iris-teal"
+                    ></span>
                   }
                   <span>{{ saveDraftLabel }}</span>
                 </button>
-                <button type="button" (click)="continueToOverview()" [disabled]="isBusy" class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-60">
+                <button
+                  type="button"
+                  (click)="continueToOverview()"
+                  [disabled]="isBusy"
+                  class="inline-flex items-center justify-center gap-2 rounded-xl bg-iris-teal px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-200 transition hover:bg-iris-teal-light disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   @if (isSaving() && saveMode() === 'continue') {
-                    <span class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+                    <span
+                      class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    ></span>
                   }
                   <span>{{ continueLabel }}</span>
                 </button>
@@ -589,82 +638,132 @@
         </form>
 
         <aside class="space-y-5">
-          <section class="rounded-[28px] border border-iris-border/80 bg-white p-5 shadow-[0_24px_60px_rgba(13,47,79,0.08)]">
+          <section
+            class="rounded-[28px] border border-iris-border/80 bg-white p-5 shadow-[0_24px_60px_rgba(13,47,79,0.08)]"
+          >
             <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-iris-teal">Summary</p>
             <h2 class="mt-2 font-cambria text-2xl font-bold text-iris-navy">Contract Snapshot</h2>
             <dl class="mt-5 space-y-4 text-sm">
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">UMR</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  UMR
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().umr }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Contract name</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Contract name
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().name }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Cedent</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Cedent
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().cedent }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Currency</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Currency
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().currency }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Contract period</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Contract period
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().period }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Primary Main Cover</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Primary Main Cover
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().mainCover }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Coverages</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Coverages
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().coverages }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Sections</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Sections
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().sections }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Extensions</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Extensions
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().extensions }}</dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Written share</dt>
-                <dd class="mt-1 font-semibold text-iris-navy">{{ summary().writtenSharePct ?? 'Not provided' }}</dd>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Written share
+                </dt>
+                <dd class="mt-1 font-semibold text-iris-navy">
+                  {{ summary().writtenSharePct ?? 'Not provided' }}
+                </dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Signed share</dt>
-                <dd class="mt-1 font-semibold text-iris-navy">{{ summary().signedSharePct ?? 'Not provided' }}</dd>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Signed share
+                </dt>
+                <dd class="mt-1 font-semibold text-iris-navy">
+                  {{ summary().signedSharePct ?? 'Not provided' }}
+                </dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Sum Insured</dt>
-                <dd class="mt-1 font-semibold text-iris-navy">{{ formatMoney(summary().sumInsured) }}</dd>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Sum Insured
+                </dt>
+                <dd class="mt-1 font-semibold text-iris-navy">
+                  {{ formatMoney(summary().sumInsured) }}
+                </dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Limit of Liability</dt>
-                <dd class="mt-1 font-semibold text-iris-navy">{{ formatMoney(summary().limitOfLiability) }}</dd>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Limit of Liability
+                </dt>
+                <dd class="mt-1 font-semibold text-iris-navy">
+                  {{ formatMoney(summary().limitOfLiability) }}
+                </dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Gross premium</dt>
-                <dd class="mt-1 font-semibold text-iris-navy">{{ formatMoney(summary().grossPremium) }}</dd>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Gross premium
+                </dt>
+                <dd class="mt-1 font-semibold text-iris-navy">
+                  {{ formatMoney(summary().grossPremium) }}
+                </dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Estimated net premium</dt>
-                <dd class="mt-1 font-semibold text-iris-navy">{{ formatMoney(summary().estimatedNetPremium) }}</dd>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Estimated net premium
+                </dt>
+                <dd class="mt-1 font-semibold text-iris-navy">
+                  {{ formatMoney(summary().estimatedNetPremium) }}
+                </dd>
               </div>
               <div class="rounded-2xl bg-iris-bg/70 px-4 py-3">
-                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">Current status</dt>
+                <dt class="text-xs font-semibold uppercase tracking-[0.16em] text-iris-slate">
+                  Current status
+                </dt>
                 <dd class="mt-1 font-semibold text-iris-navy">{{ summary().status }}</dd>
               </div>
             </dl>
           </section>
 
           @if (backendNetPremium() !== null) {
-            <section class="rounded-[28px] border border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-[0_24px_60px_rgba(13,47,79,0.08)]">
+            <section
+              class="rounded-[28px] border border-emerald-200 bg-emerald-50 p-5 text-emerald-950 shadow-[0_24px_60px_rgba(13,47,79,0.08)]"
+            >
               <p class="text-[11px] font-bold uppercase tracking-[0.24em]">Backend Result</p>
               <h2 class="mt-2 font-cambria text-2xl font-bold">Saved Net Premium</h2>
-              <p class="mt-3 text-sm">Authoritative backend net premium: {{ formatMoney(backendNetPremium()) }}</p>
+              <p class="mt-3 text-sm">
+                Authoritative backend net premium: {{ formatMoney(backendNetPremium()) }}
+              </p>
             </section>
           }
         </aside>

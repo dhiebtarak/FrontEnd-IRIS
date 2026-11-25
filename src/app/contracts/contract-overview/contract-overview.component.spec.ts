@@ -790,7 +790,7 @@ describe('ContractOverviewComponent', () => {
     expect(component.slipMessage()).toBe('Reinsurer panels could not be refreshed right now.');
     expect(consoleError).toHaveBeenCalledWith('Contract panels response included panels for a different contract.', {
       expectedContractId: 123,
-      panels: [{ ...panelsResponse[0], idContract: 999, limitOfLiability: null }]
+      panels: [{ ...panelsResponse[0], idContract: 999, limitOfLiability: null,otherDeductionsAmount:1000,otherDeductionsPercentage:null }]
     });
   });
 
@@ -1739,7 +1739,7 @@ describe('ContractOverviewComponent', () => {
 
     expect(component.shouldShowInvoiceAction()).toBe(true);
     expect(headerButtons).toContain('Create Invoice');
-    expect(headerButtons).toContain('Create an invoice first');
+    expect(headerButtons).toContain('Download Debit Note');
 
     component.invoiceContext.set({
       ...invoiceContextResponse,
@@ -1748,7 +1748,7 @@ describe('ContractOverviewComponent', () => {
     } as any);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Create an invoice first');
+    expect(fixture.nativeElement.textContent).toContain('Download Debit Note');
   });
 
   it('keeps the contract Debit Note when Avoir history exists', () => {
@@ -1773,7 +1773,7 @@ describe('ContractOverviewComponent', () => {
     } });
   });
 
-  it('downloads a Credit Note using only the selected Avoir ID', () => {
+  it('downloads a Credit Note using only the selected Avoir ID', async () => {
     flushContract(123, { ...contractResponse, status: 'Bound' });
     const downloadBlob = vi.spyOn(
       component as unknown as { downloadBlob: (blob: Blob, filename: string) => void },
@@ -1791,7 +1791,7 @@ describe('ContractOverviewComponent', () => {
       headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Credit_Note_AV-2026-000011.pdf"' }
     });
 
-    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'Credit_Note_AV-2026-000011.pdf');
+    await vi.waitFor(()=>expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'Credit_Note_AV-2026-000011.pdf'));
   });
 
   it('downloads a contract Debit Note without reading or selecting Invoice History', () => {

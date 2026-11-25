@@ -1,0 +1,159 @@
+<div class="contract-page table-scroll" contractStyle="scroll">
+  <table contractStyle="table">
+    <thead>
+      <tr>
+        <th contractStyle="column">Layer</th>
+        <th contractStyle="column">Cover xs retention</th>
+        <th contractStyle="column">Capacity</th>
+        <th contractStyle="column">Our share</th>
+        <th contractStyle="column">EPI</th>
+        <th contractStyle="column">MDP</th>
+        <th contractStyle="column">Rate</th>
+        <th contractStyle="column">ROL</th>
+        <th contractStyle="column">Reinst.</th>
+        <th contractStyle="column">Cash loss</th>
+        <th contractStyle="column">Install.</th>
+        <th contractStyle="column">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (layer of layers(); track $index; let i = $index) {
+        <tr (click)="toggle(i)">
+          <td contractStyle="cell">
+            <button
+              type="button"
+              (click)="$event.stopPropagation(); toggle(i)"
+              [attr.aria-expanded]="expanded().has(i)"
+              contractStyle="button"
+            >
+              {{ expanded().has(i) ? '-' : '+' }} Layer {{ layer.number }}
+            </button>
+          </td>
+          <td contractStyle="cell">
+            {{ money(layer.dueToUsCover) }} xs {{ money(layer.dueToUsRetention) }}
+          </td>
+          <td contractStyle="cell">{{ money(layer.ourShareAmount) }}</td>
+          <td contractStyle="cell">
+            {{
+              layer.ourSharePct === null ? 'Signed share not provided' : percent(layer.ourSharePct)
+            }}<br />{{ money(layer.ourShareAmount) }}
+          </td>
+          <td contractStyle="cell">{{ money(layer.dueToUsEpi) }}</td>
+          <td contractStyle="cell">{{ money(layer.dueToUsMdp) }}</td>
+          <td contractStyle="cell">{{ percent(layer.details.adjustablePremiumRatePct) }}</td>
+          <td contractStyle="cell">{{ percent(layer.rolPct) }}</td>
+          <td contractStyle="cell">{{ layer.details.numberOfReinstatements }}</td>
+          <td contractStyle="cell">{{ money(layer.dueToUsCashLoss) }}</td>
+          <td contractStyle="cell">{{ layer.installments.length }}</td>
+          <td contractStyle="cell">
+            @if (editable()) {
+              <button
+                type="button"
+                (click)="$event.stopPropagation(); edit.emit(layer.details)"
+                contractStyle="button"
+              >
+                Edit layer</button
+              ><button
+                type="button"
+                (click)="$event.stopPropagation(); remove.emit(layer.details)"
+                contractStyle="button"
+              >
+                Remove
+              </button>
+            }
+          </td>
+        </tr>
+        @if (expanded().has(i)) {
+          <tr>
+            <td colspan="12" contractStyle="cell">
+              <div class="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div>
+                  <p class="text-xs font-bold uppercase text-iris-slate">
+                    Cover / retention at 100%
+                  </p>
+                  <p class="text-sm font-semibold text-iris-navy">
+                    {{ fullAmount(layer.details.cover) }} xs
+                    {{ fullAmount(layer.details.retention) }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs font-bold uppercase text-iris-slate">Capacity at 100%</p>
+                  <p class="text-sm font-semibold text-iris-navy">
+                    {{ fullAmount(layer.capacity) }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs font-bold uppercase text-iris-slate">Annual treaty capacity</p>
+                  <p class="text-sm font-semibold text-iris-navy">
+                    {{ fullAmount(layer.details.annualTreatyCapacity) }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs font-bold uppercase text-iris-slate">EPI / MDP at 100%</p>
+                  <p class="text-sm font-semibold text-iris-navy">
+                    {{ fullAmount(layer.details.epi) }} / {{ fullAmount(layer.details.mdp) }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs font-bold uppercase text-iris-slate">Cash loss at 100%</p>
+                  <p class="text-sm font-semibold text-iris-navy">
+                    {{ fullAmount(layer.details.cashLoss) }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-xs font-bold uppercase text-iris-slate">Loading</p>
+                  <p class="text-sm font-semibold text-iris-navy">
+                    {{ layer.details.loading || 'Not provided' }}
+                  </p>
+                </div>
+              </div>
+              <h3 class="mb-3 font-cambria text-xl font-bold text-iris-navy">Installments</h3>
+              <table contractStyle="table">
+                <thead>
+                  <tr>
+                    <th contractStyle="column">Installment</th>
+                    <th contractStyle="column">Expected settlement</th>
+                    <th contractStyle="column">Amount due to us</th>
+                    <th contractStyle="column">Settlement date</th>
+                    <th contractStyle="column">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of layer.installments; track row.details.sequence) {
+                    <tr>
+                      <td contractStyle="cell">{{ row.details.sequence }}</td>
+                      <td contractStyle="cell">
+                        {{ row.details.expectedSettlementDate ?? 'Not provided' }}
+                      </td>
+                      <td contractStyle="cell">{{ money(row.dueToUsAmount) }}</td>
+                      <td contractStyle="cell">{{ row.details.settlementDate || 'Not paid' }}</td>
+                      <td contractStyle="cell">{{ row.status }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="5" contractStyle="cell">No installments.</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              <h3 class="mb-3 mt-5 font-cambria text-xl font-bold text-iris-navy">
+                Reinstatements
+              </h3>
+              @for (row of layer.details.reinstatements; track row.sequence) {
+                <p class="text-sm text-iris-navy">
+                  {{ row.sequence }} - {{ reinstatementLabel(row.condition) }}
+                </p>
+              } @empty {
+                <p class="text-sm text-iris-slate">No reinstatements.</p>
+              }
+            </td>
+          </tr>
+        }
+      } @empty {
+        <tr>
+          <td colspan="12" contractStyle="cell">No layers yet.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

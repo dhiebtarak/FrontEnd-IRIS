@@ -1,3 +1,4 @@
+import { ContractStyleDirective } from '../shared/contract-style.directive';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, ViewChild, computed, inject, isDevMode, signal } from '@angular/core';
@@ -65,7 +66,7 @@ const finiteAmountValidator: ValidatorFn = control => {
 @Component({
   selector: 'app-contract-overview',
   standalone: true,
-  imports: [CommonModule, MatSnackBarModule, ReactiveFormsModule, DocumentAttachmentsComponent, ContractClaimsComponent],
+  imports: [ContractStyleDirective, CommonModule, MatSnackBarModule, ReactiveFormsModule, DocumentAttachmentsComponent, ContractClaimsComponent],
   templateUrl: './contract-overview.component.html',
   styles: ``
 })

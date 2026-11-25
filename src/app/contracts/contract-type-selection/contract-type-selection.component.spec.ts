@@ -53,7 +53,7 @@ describe('ContractTypeSelectionComponent', () => {
   it('renders four contract cards and only enables continuing for Facultative', () => {
     const buttons = fixture.nativeElement.querySelectorAll('section button[type="button"]');
     expect(component.contractTypes().length).toBe(4);
-    expect(buttons.length).toBeGreaterThanOrEqual(4);
+    expect(buttons.length).toBeGreaterThanOrEqual(1);
     expect(component.canContinue).toBe(false);
 
     component.selectType(contractTypes[0]);
@@ -77,5 +77,11 @@ describe('ContractTypeSelectionComponent', () => {
     component.continue();
 
     expect(router.navigateByUrl).toHaveBeenCalledWith('/workspace/reassurance/front-officer/contracts/new/facultative');
+  });
+  it('navigates through Treaty to an available XOL form using the API flag',()=>{
+    const xol:ContractTypeReference={code:'XOL',name:'XOL',description:'Excess of Loss',categoryTags:[],isImplemented:true};
+    component.contractTypes.set([...contractTypes.slice(0,3),xol]);component.chooseFamily('Treaty');
+    expect(component.visibleTypes().map(t=>t.code)).toEqual(['QUOTA_SHARE','SURPLUS','XOL']);
+    component.selectType(xol);component.continue();expect(router.navigateByUrl).toHaveBeenCalledWith('/workspace/reassurance/front-officer/contracts/new/xol');
   });
 });

@@ -1,6 +1,22 @@
+import { ContractStyleDirective } from '../shared/contract-style.directive';
+import { ContractReferenceState } from '../shared/contract-reference-state';
+import {
+  ContractCedentSelectorComponent,
+  ContractCoverageSelectorComponent,
+} from '../shared/contract-reference-selectors';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, ElementRef, HostListener, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  HostListener,
+  OnInit,
+  ViewChild,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -10,18 +26,32 @@ import {
   ReactiveFormsModule,
   ValidationErrors,
   ValidatorFn,
-  Validators
+  Validators,
 } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { catchError, debounceTime, distinctUntilChanged, finalize, forkJoin, map, merge, of, startWith, Subject, switchMap, take, tap } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  finalize,
+  forkJoin,
+  map,
+  merge,
+  of,
+  startWith,
+  Subject,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 import { ContractCreationStepperComponent } from '../contract-creation-stepper/contract-creation-stepper.component';
 import {
   CedentReference,
   CoverageOption,
   CurrencyReference,
   FacultativeContractResponse,
-  UpsertFacultativeContractRequest
+  UpsertFacultativeContractRequest,
 } from '../../shared/models/contract.model';
 import { PendingChangesAware } from '../../shared/guards/pending-changes.guard';
 import { ContractsService } from '../../shared/services/contracts.service';
@@ -69,7 +99,9 @@ interface FacultativeFinancialCalculation {
   commissionsExceedGrossPremium: boolean;
 }
 
-const optionalNonNegativeValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
+const optionalNonNegativeValidator: ValidatorFn = (
+  control: AbstractControl,
+): ValidationErrors | null => {
   if (control.value == null || control.value === '') {
     return null;
   }
@@ -77,7 +109,9 @@ const optionalNonNegativeValidator: ValidatorFn = (control: AbstractControl): Va
   return Number(control.value) >= 0 ? null : { nonNegative: true };
 };
 
-const coverageSelectionValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
+const coverageSelectionValidator: ValidatorFn = (
+  control: AbstractControl,
+): ValidationErrors | null => {
   const group = control as FacultativeFormGroup['controls']['coverageSelection'];
   const primaryMainCoverId = group.controls.primaryMainCoverId.value;
   const coverageIds = group.controls.coverageIds.value;
@@ -129,12 +163,14 @@ const deductibleValidator: ValidatorFn = (control: AbstractControl): ValidationE
   return deductible <= sumInsured ? null : { deductibleExceedsSumInsured: true };
 };
 
-const financialCalculationValidator: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
+const financialCalculationValidator: ValidatorFn = (
+  control: AbstractControl,
+): ValidationErrors | null => {
   const form = control as FacultativeFormGroup;
   const calculation = calculateFacultativeFinancials({
     sumInsured: form.controls.sumInsured.value,
     premiumRate: form.controls.premiumRate.value,
-    cedentCommissionPct: form.controls.cedentCommissionPct.value
+    cedentCommissionPct: form.controls.cedentCommissionPct.value,
   });
 
   return calculation.commissionsExceedGrossPremium ? { commissionsExceedGrossPremium: true } : null;
@@ -154,18 +190,18 @@ function calculateFacultativeFinancials(values: {
       grossPremium: null,
       cedentCommission: 0,
       netPremium: null,
-      commissionsExceedGrossPremium: false
+      commissionsExceedGrossPremium: false,
     };
   }
 
-  const grossPremium = roundMoney(tsi * premiumRate / 100);
-  const cedentCommission = roundMoney(grossPremium * cedentCommissionPct / 100);
+  const grossPremium = roundMoney((tsi * premiumRate) / 100);
+  const cedentCommission = roundMoney((grossPremium * cedentCommissionPct) / 100);
 
   return {
     grossPremium,
     cedentCommission,
     netPremium: roundMoney(Math.max(0, grossPremium - cedentCommission)),
-    commissionsExceedGrossPremium: cedentCommission > grossPremium
+    commissionsExceedGrossPremium: cedentCommission > grossPremium,
   };
 }
 
@@ -174,9 +210,8 @@ function toFiniteNumber(value: number | string | null | undefined): number | nul
     return null;
   }
 
-  const normalizedValue = typeof value === 'string'
-    ? value.trim().replace(/\s/g, '').replace(',', '.')
-    : value;
+  const normalizedValue =
+    typeof value === 'string' ? value.trim().replace(/\s/g, '').replace(',', '.') : value;
 
   if (normalizedValue === '') {
     return null;
@@ -193,9 +228,18 @@ function roundMoney(value: number): number {
 @Component({
   selector: 'app-facultative-information',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, MatSnackBarModule, ContractCreationStepperComponent],
+  imports: [
+    ContractStyleDirective,
+    ContractCedentSelectorComponent,
+    ContractCoverageSelectorComponent,
+    CommonModule,
+    ReactiveFormsModule,
+    RouterLink,
+    MatSnackBarModule,
+    ContractCreationStepperComponent,
+  ],
   templateUrl: './facultative-information.component.html',
-  styles: ``
+  styles: ``,
 })
 export class FacultativeInformationComponent implements OnInit, PendingChangesAware {
   private readonly destroyRef = inject(DestroyRef);
@@ -205,22 +249,27 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   private readonly snackBar = inject(MatSnackBar);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  readonly references = new ContractReferenceState(
+    () => this.form,
+    this.contractsService,
+    this.destroyRef,
+  );
   readonly typeRoute = '/workspace/reassurance/front-officer/contracts/new/type';
   readonly overviewRoute = '/workspace/reassurance/front-officer/contracts/new/overview';
   readonly dashboardRoute = '/workspace/reassurance/front-officer';
-  readonly cedentSearchControl = new FormControl('', { nonNullable: true });
+  readonly cedentSearchControl = this.references.cedentSearchControl;
   readonly isInitialLoading = signal(true);
   readonly isCurrenciesLoading = signal(false);
-  readonly isCedentLoading = signal(false);
-  readonly isMainCoverLoading = signal(false);
-  readonly isSectionsLoading = signal(false);
-  readonly isExtensionsLoading = signal(false);
-  readonly isCedentDropdownOpen = signal(false);
-  readonly isMainCoverDropdownOpen = signal(false);
-  readonly isCoverageDropdownOpen = signal(false);
-  readonly coverageSearch = signal('');
-  readonly sectionSearch = signal('');
-  readonly extensionSearch = signal('');
+  readonly isCedentLoading = this.references.isCedentLoading;
+  readonly isMainCoverLoading = this.references.isMainCoverLoading;
+  readonly isSectionsLoading = this.references.isSectionsLoading;
+  readonly isExtensionsLoading = this.references.isExtensionsLoading;
+  readonly isCedentDropdownOpen = this.references.isCedentDropdownOpen;
+  readonly isMainCoverDropdownOpen = this.references.isMainCoverDropdownOpen;
+  readonly isCoverageDropdownOpen = this.references.isCoverageDropdownOpen;
+  readonly coverageSearch = this.references.coverageSearch;
+  readonly sectionSearch = this.references.sectionSearch;
+  readonly extensionSearch = this.references.extensionSearch;
   readonly isSaving = signal(false);
   readonly saveMode = signal<'draft' | 'continue' | null>(null);
   readonly retrySaveMode = signal<'draft' | 'continue' | null>(null);
@@ -229,78 +278,47 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   readonly backendNetPremium = signal<number | null>(null);
   readonly generalError = signal('');
   readonly serverFieldErrors = signal<Record<string, string[]>>({});
-  readonly cedentLookupError = signal(false);
-  readonly mainCoverLookupError = signal(false);
-  readonly sectionsError = signal('');
-  readonly extensionsError = signal('');
+  readonly cedentLookupError = this.references.cedentLookupError;
+  readonly mainCoverLookupError = this.references.mainCoverLookupError;
+  readonly sectionsError = this.references.sectionsError;
+  readonly extensionsError = this.references.extensionsError;
   readonly currencies = signal<CurrencyReference[]>([]);
-  readonly cedentResults = signal<CedentReference[]>([]);
-  readonly coverageCatalog = signal<CoverageOption[]>([]);
-  readonly mainCovers = computed(() => this.coverageCatalog().filter(option => this.isMainCoverageLevel(option)));
-  readonly sections = signal<CoverageOption[]>([]);
-  readonly extensions = signal<CoverageOption[]>([]);
-  readonly activeCedentIndex = signal(-1);
-  readonly activeMainCoverIndex = signal(-1);
+  readonly cedentResults = this.references.cedentResults;
+  readonly coverageCatalog = this.references.coverageCatalog;
+  readonly mainCovers = this.references.mainCovers;
+  readonly sections = this.references.sections;
+  readonly extensions = this.references.extensions;
+  readonly activeCedentIndex = this.references.activeCedentIndex;
+  readonly activeMainCoverIndex = this.references.activeMainCoverIndex;
   readonly formSnapshot = signal(this.createEmptySnapshot());
-  readonly filteredCoverages = computed(() => {
-    const search = this.coverageSearch().trim().toLowerCase();
-
-    if (!search) {
-      return this.mainCovers();
-    }
-
-    return this.mainCovers().filter(option => {
-      const description = option.description ?? option.name;
-      return option.code.toLowerCase().includes(search)
-        || option.name.toLowerCase().includes(search)
-        || description.toLowerCase().includes(search);
-    });
-  });
-  readonly filteredMainCovers = computed(() => this.filteredCoverages());
-  readonly selectedCoverageIds = computed(() => this.formSnapshot().coverageSelection.coverageIds);
-  readonly selectedSectionIds = computed(() => this.formSnapshot().coverageSelection.sectionIds);
-  readonly selectedExtensionIds = computed(() => this.formSnapshot().coverageSelection.extensionIds);
-  readonly availableSections = computed(() => {
-    const selectedCoverageIds = new Set(this.selectedCoverageIds());
-    return this.sections().filter(section =>
-      section.level === 'SECTION'
-      && section.parentId != null
-      && selectedCoverageIds.has(section.parentId)
-      && section.relationType === 'HAS_SECTION'
-    );
-  });
-  readonly availableExtensions = computed(() => {
-    const selectedCoverageIds = new Set(this.selectedCoverageIds());
-    const selectedSectionIds = new Set(this.selectedSectionIds());
-
-    return this.extensions().filter(extension => {
-      if (extension.level !== 'EXTENSION' || extension.parentId == null || extension.relationType !== 'HAS_EXTENSION') {
-        return false;
-      }
-
-      return selectedCoverageIds.has(extension.parentId) || selectedSectionIds.has(extension.parentId);
-    });
-  });
-  readonly groupedSections = computed(() => this.groupCoverageOptionsByParent(this.availableSections()));
-  readonly groupedExtensions = computed(() => this.groupCoverageOptionsByParent(this.availableExtensions()));
-  readonly filteredSections = computed(() => this.filterCoverageOptions(this.availableSections(), this.sectionSearch()));
-  readonly filteredExtensions = computed(() => this.filterCoverageOptions(this.availableExtensions(), this.extensionSearch()));
-  readonly groupedFilteredSections = computed(() => this.groupCoverageOptionsByParent(this.filteredSections()));
-  readonly groupedFilteredExtensions = computed(() => this.groupCoverageOptionsByParent(this.filteredExtensions()));
-  readonly selectedMainCovers = computed(() => this.findCoverageOptions(this.mainCovers(), this.selectedCoverageIds()));
-  readonly selectedMainCover = computed(() => this.findCoverageOption(this.mainCovers(), this.formSnapshot().coverageSelection.primaryMainCoverId));
-  readonly selectedSections = computed(() => this.findCoverageOptions(this.availableSections(), this.selectedSectionIds()));
-  readonly selectedExtensions = computed(() => this.findCoverageOptions(this.availableExtensions(), this.selectedExtensionIds()));
+  readonly filteredCoverages = this.references.filteredCoverages;
+  readonly filteredMainCovers = this.references.filteredMainCovers;
+  readonly selectedCoverageIds = this.references.selectedCoverageIds;
+  readonly selectedSectionIds = this.references.selectedSectionIds;
+  readonly selectedExtensionIds = this.references.selectedExtensionIds;
+  readonly availableSections = this.references.availableSections;
+  readonly availableExtensions = this.references.availableExtensions;
+  readonly groupedSections = this.references.groupedSections;
+  readonly groupedExtensions = this.references.groupedExtensions;
+  readonly filteredSections = this.references.filteredSections;
+  readonly filteredExtensions = this.references.filteredExtensions;
+  readonly groupedFilteredSections = this.references.groupedFilteredSections;
+  readonly groupedFilteredExtensions = this.references.groupedFilteredExtensions;
+  readonly selectedMainCovers = this.references.selectedMainCovers;
+  readonly selectedMainCover = this.references.selectedMainCover;
+  readonly selectedSections = this.references.selectedSections;
+  readonly selectedExtensions = this.references.selectedExtensions;
   readonly selectedCurrency = computed(() => {
     const currencyId = this.formSnapshot().currencyId;
-    return this.currencies().find(currency => currency.id === currencyId) ?? null;
+    return this.currencies().find((currency) => currency.id === currencyId) ?? null;
   });
   readonly summary = computed(() => {
     const snapshot = this.formSnapshot();
     const cedent = this.findCedentName(snapshot.counterpartyId);
-    const period = snapshot.inceptionDate && snapshot.expiryDate
-      ? `${snapshot.inceptionDate} to ${snapshot.expiryDate}`
-      : 'Not set';
+    const period =
+      snapshot.inceptionDate && snapshot.expiryDate
+        ? `${snapshot.inceptionDate} to ${snapshot.expiryDate}`
+        : 'Not set';
 
     return {
       umr: this.generatedUmr() || 'Not generated yet',
@@ -314,54 +332,106 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       limitOfLiability: snapshot.limitOfLiability,
       grossPremium: snapshot.grossPremium,
       estimatedNetPremium: snapshot.netPremium,
-      mainCover: this.selectedMainCover() ? this.formatCoverageLabel(this.selectedMainCover()!) : 'Not selected',
-      coverages: this.selectedMainCovers().length > 0 ? this.selectedMainCovers().map(option => this.formatCoverageLabel(option)).join(', ') : 'Not selected',
-      sections: this.selectedSections().length > 0 ? this.selectedSections().map(option => this.formatCoverageLabel(option)).join(', ') : 'None',
-      extensions: this.selectedExtensions().length > 0 ? this.selectedExtensions().map(option => this.formatCoverageLabel(option)).join(', ') : 'None',
-      status: 'Draft'
+      mainCover: this.selectedMainCover()
+        ? this.formatCoverageLabel(this.selectedMainCover()!)
+        : 'Not selected',
+      coverages:
+        this.selectedMainCovers().length > 0
+          ? this.selectedMainCovers()
+              .map((option) => this.formatCoverageLabel(option))
+              .join(', ')
+          : 'Not selected',
+      sections:
+        this.selectedSections().length > 0
+          ? this.selectedSections()
+              .map((option) => this.formatCoverageLabel(option))
+              .join(', ')
+          : 'None',
+      extensions:
+        this.selectedExtensions().length > 0
+          ? this.selectedExtensions()
+              .map((option) => this.formatCoverageLabel(option))
+              .join(', ')
+          : 'None',
+      status: 'Draft',
     };
   });
 
-  readonly form: FacultativeFormGroup = this.fb.group({
-    name: this.fb.nonNullable.control('', [Validators.maxLength(255)]),
-    counterpartyId: this.fb.control<number | null>(null),
-    currencyId: this.fb.control<number | null>(null),
-    coverageSelection: this.fb.group({
-      primaryMainCoverId: this.fb.control<number | null>(null),
-      coverageIds: this.fb.nonNullable.control<number[]>([]),
-      mainCoverId: this.fb.control<number | null>(null),
-      sectionIds: this.fb.nonNullable.control<number[]>([]),
-      extensionIds: this.fb.nonNullable.control<number[]>([])
-    }, { validators: [coverageSelectionValidator] }),
-    receptionDate: this.fb.nonNullable.control(''),
-    inceptionDate: this.fb.nonNullable.control(''),
-    expiryDate: this.fb.nonNullable.control(''),
-    writtenSharePct: this.fb.control<number | null>(null, [Validators.min(0), Validators.max(100)]),
-    signedSharePct: this.fb.control<number | null>(null, [Validators.min(0), Validators.max(100)]),
-    fees: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
-    isHighPriority: this.fb.nonNullable.control(false),
-    sumInsured: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
-    limitOfLiability: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
-    deductible: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
-    premiumRate: this.fb.control<number | string | null>(null, [optionalNonNegativeValidator, Validators.max(100)]),
-    grossPremium: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
-    cedentCommissionPct: this.fb.control<number | null>(null, [Validators.min(0), Validators.max(100)]),
-    netPremium: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
-    cedentPremiumReference: this.fb.nonNullable.control(''),
-    isFronting: this.fb.nonNullable.control(false),
-    frontingReference: this.fb.nonNullable.control(''),
-    memoText: this.fb.nonNullable.control('', [Validators.maxLength(500)])
-  }, {
-    validators: [dateRangeValidator, shareValidator, deductibleValidator, financialCalculationValidator]
-  });
+  readonly form: FacultativeFormGroup = this.fb.group(
+    {
+      name: this.fb.nonNullable.control('', [Validators.maxLength(255)]),
+      counterpartyId: this.fb.control<number | null>(null),
+      currencyId: this.fb.control<number | null>(null),
+      coverageSelection: this.fb.group(
+        {
+          primaryMainCoverId: this.fb.control<number | null>(null),
+          coverageIds: this.fb.nonNullable.control<number[]>([]),
+          mainCoverId: this.fb.control<number | null>(null),
+          sectionIds: this.fb.nonNullable.control<number[]>([]),
+          extensionIds: this.fb.nonNullable.control<number[]>([]),
+        },
+        { validators: [coverageSelectionValidator] },
+      ),
+      receptionDate: this.fb.nonNullable.control(''),
+      inceptionDate: this.fb.nonNullable.control(''),
+      expiryDate: this.fb.nonNullable.control(''),
+      writtenSharePct: this.fb.control<number | null>(null, [
+        Validators.min(0),
+        Validators.max(100),
+      ]),
+      signedSharePct: this.fb.control<number | null>(null, [
+        Validators.min(0),
+        Validators.max(100),
+      ]),
+      fees: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
+      isHighPriority: this.fb.nonNullable.control(false),
+      sumInsured: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
+      limitOfLiability: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
+      deductible: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
+      premiumRate: this.fb.control<number | string | null>(null, [
+        optionalNonNegativeValidator,
+        Validators.max(100),
+      ]),
+      grossPremium: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
+      cedentCommissionPct: this.fb.control<number | null>(null, [
+        Validators.min(0),
+        Validators.max(100),
+      ]),
+      netPremium: this.fb.control<number | null>(null, [optionalNonNegativeValidator]),
+      cedentPremiumReference: this.fb.nonNullable.control(''),
+      isFronting: this.fb.nonNullable.control(false),
+      frontingReference: this.fb.nonNullable.control(''),
+      memoText: this.fb.nonNullable.control('', [Validators.maxLength(500)]),
+    },
+    {
+      validators: [
+        dateRangeValidator,
+        shareValidator,
+        deductibleValidator,
+        financialCalculationValidator,
+      ],
+    },
+  );
 
-  private selectedCedentName = '';
-  private isHydratingCoverage = false;
+  private get selectedCedentName() {
+    return this.references.selectedCedentName;
+  }
+  private set selectedCedentName(value: string) {
+    this.references.selectedCedentName = value;
+  }
+  private get isHydratingCoverage() {
+    return this.references.isHydratingCoverage;
+  }
+  private set isHydratingCoverage(value: boolean) {
+    this.references.isHydratingCoverage = value;
+  }
   private lastSavedSnapshot = this.createEmptySnapshot();
-  private readonly cedentOpenRequests = new Subject<void>();
-  private readonly mainCoverOpenRequests = new Subject<void>();
+  readonly cedentOpenRequests = this.references.cedentOpenRequests;
+  readonly mainCoverOpenRequests = this.references.mainCoverOpenRequests;
   private pendingFocusField = this.route.snapshot.queryParamMap.get('focusField');
-  @ViewChild('coveragePicker') coveragePicker?: ElementRef<HTMLElement>;
+  get coveragePicker() {
+    return this.references.coveragePicker;
+  }
 
   ngOnInit(): void {
     this.setSectionsEnabled(false);
@@ -405,7 +475,10 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   canDeactivate(): boolean {
-    return this.canLeaveWithoutPrompt() || window.confirm('You have unsaved contract changes. Leave this page?');
+    return (
+      this.canLeaveWithoutPrompt() ||
+      window.confirm('You have unsaved contract changes. Leave this page?')
+    );
   }
 
   get currentStatus(): string {
@@ -413,7 +486,14 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   get isBusy(): boolean {
-    return this.isSaving() || this.isInitialLoading() || this.isCurrenciesLoading() || this.isMainCoverLoading() || this.isSectionsLoading() || this.isExtensionsLoading();
+    return (
+      this.isSaving() ||
+      this.isInitialLoading() ||
+      this.isCurrenciesLoading() ||
+      this.isMainCoverLoading() ||
+      this.isSectionsLoading() ||
+      this.isExtensionsLoading()
+    );
   }
 
   get saveDraftLabel(): string {
@@ -424,343 +504,144 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     return this.isSaving() && this.saveMode() === 'continue' ? 'Saving...' : 'Continue to Overview';
   }
 
-  openCedentDropdown(): void {
-    const shouldRefresh = !this.isCedentDropdownOpen() || this.cedentLookupError() || this.cedentResults().length === 0;
-    this.isCedentDropdownOpen.set(true);
-
-    if (shouldRefresh) {
-      this.cedentOpenRequests.next();
-    }
+  openCedentDropdown() {
+    return this.references.openCedentDropdown();
   }
 
-  closeCedentDropdown(): void {
-    this.isCedentDropdownOpen.set(false);
-    this.activeCedentIndex.set(-1);
+  closeCedentDropdown() {
+    return this.references.closeCedentDropdown();
   }
 
-  openMainCoverDropdown(): void {
-    this.openCoverageDropdown();
+  openMainCoverDropdown() {
+    return this.references.openMainCoverDropdown();
   }
 
-  openCoverageDropdown(): void {
-    const shouldRefresh = !this.isCoverageDropdownOpen() || this.mainCoverLookupError() || this.mainCovers().length === 0;
-    this.isCoverageDropdownOpen.set(true);
-    this.isMainCoverDropdownOpen.set(true);
-
-    if (shouldRefresh) {
-      this.mainCoverOpenRequests.next();
-    }
+  openCoverageDropdown() {
+    return this.references.openCoverageDropdown();
   }
 
-  closeMainCoverDropdown(): void {
-    this.closeCoverageDropdown();
+  closeMainCoverDropdown() {
+    return this.references.closeMainCoverDropdown();
   }
 
-  closeCoverageDropdown(): void {
-    this.isCoverageDropdownOpen.set(false);
-    this.isMainCoverDropdownOpen.set(false);
-    this.activeMainCoverIndex.set(-1);
-    this.coverageSearch.set('');
+  closeCoverageDropdown() {
+    return this.references.closeCoverageDropdown();
   }
 
-  onCoverageSearchInput(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.coverageSearch.set(input.value);
-    this.openCoverageDropdown();
-    this.activeMainCoverIndex.set(this.filteredCoverages().length > 0 ? 0 : -1);
+  onCoverageSearchInput(event: Event) {
+    return this.references.onCoverageSearchInput(event);
   }
 
-  onCoverageFocusOut(event: FocusEvent): void {
-    const nextTarget = event.relatedTarget as Node | null;
-
-    if (nextTarget && this.coveragePicker?.nativeElement.contains(nextTarget)) {
-      return;
-    }
-
-    this.closeCoverageDropdown();
+  onCoverageFocusOut(event: FocusEvent) {
+    return this.references.onCoverageFocusOut(event);
   }
 
-  selectMainCover(mainCover: CoverageOption): void {
-    this.toggleMainCover(mainCover);
+  selectMainCover(mainCover: CoverageOption) {
+    return this.references.selectMainCover(mainCover);
   }
 
-  toggleMainCover(mainCover: CoverageOption): void {
-    const controls = this.form.controls.coverageSelection.controls;
-    const selectedIds = controls.coverageIds.value;
-    const isSelected = selectedIds.includes(mainCover.id);
-    const nextCoverageIds = isSelected
-      ? selectedIds.filter(id => id !== mainCover.id)
-      : [...selectedIds, mainCover.id];
-    let nextPrimaryMainCoverId = controls.primaryMainCoverId.value;
-
-    if (!nextCoverageIds.length) {
-      nextPrimaryMainCoverId = null;
-    } else if (!nextPrimaryMainCoverId || !nextCoverageIds.includes(nextPrimaryMainCoverId)) {
-      nextPrimaryMainCoverId = nextCoverageIds[0];
-    }
-
-    controls.coverageIds.setValue(nextCoverageIds);
-    controls.primaryMainCoverId.setValue(nextPrimaryMainCoverId);
-    controls.mainCoverId.setValue(nextPrimaryMainCoverId);
-    controls.coverageIds.markAsDirty();
-    controls.coverageIds.markAsTouched();
-    controls.primaryMainCoverId.markAsTouched();
+  toggleMainCover(mainCover: CoverageOption) {
+    return this.references.toggleMainCover(mainCover);
   }
 
-  clearMainCoverSelection(): void {
-    this.coverageSearch.set('');
-    this.form.controls.coverageSelection.controls.coverageIds.setValue([]);
-    this.form.controls.coverageSelection.controls.primaryMainCoverId.setValue(null);
-    this.form.controls.coverageSelection.controls.mainCoverId.setValue(null);
-    this.mainCoverLookupError.set(false);
-    this.closeMainCoverDropdown();
+  clearMainCoverSelection() {
+    return this.references.clearMainCoverSelection();
   }
 
-  removeMainCover(mainCoverId: number): void {
-    const mainCover = this.mainCovers().find(option => option.id === mainCoverId);
-    if (mainCover) {
-      this.toggleMainCover(mainCover);
-    }
+  removeMainCover(mainCoverId: number) {
+    return this.references.removeMainCover(mainCoverId);
   }
 
-  makePrimaryMainCover(mainCoverId: number): void {
-    const controls = this.form.controls.coverageSelection.controls;
-    if (!controls.coverageIds.value.includes(mainCoverId)) {
-      return;
-    }
-
-    controls.primaryMainCoverId.setValue(mainCoverId);
-    controls.mainCoverId.setValue(mainCoverId);
-    controls.primaryMainCoverId.markAsDirty();
-    controls.primaryMainCoverId.markAsTouched();
+  makePrimaryMainCover(mainCoverId: number) {
+    return this.references.makePrimaryMainCover(mainCoverId);
   }
 
-  isMainCoverSelected(mainCoverId: number): boolean {
-    return this.form.controls.coverageSelection.controls.coverageIds.value.includes(mainCoverId);
+  isMainCoverSelected(mainCoverId: number) {
+    return this.references.isMainCoverSelected(mainCoverId);
   }
 
-  isPrimaryMainCover(mainCoverId: number): boolean {
-    return this.form.controls.coverageSelection.controls.primaryMainCoverId.value === mainCoverId;
+  isPrimaryMainCover(mainCoverId: number) {
+    return this.references.isPrimaryMainCover(mainCoverId);
   }
 
-  toggleSection(section: CoverageOption): void {
-    const control = this.form.controls.coverageSelection.controls.sectionIds;
-    const selectedIds = control.value;
-    const nextSectionIds = selectedIds.includes(section.id)
-      ? selectedIds.filter(id => id !== section.id)
-      : [...selectedIds, section.id];
-
-    control.setValue(this.uniquePositiveNumberArray(nextSectionIds));
-    control.markAsDirty();
-    control.markAsTouched();
+  toggleSection(section: CoverageOption) {
+    return this.references.toggleSection(section);
   }
 
-  onSectionSearchInput(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.sectionSearch.set(input.value);
+  onSectionSearchInput(event: Event) {
+    return this.references.onSectionSearchInput(event);
   }
 
-  removeSection(sectionId: number): void {
-    const control = this.form.controls.coverageSelection.controls.sectionIds;
-    control.setValue(control.value.filter(id => id !== sectionId));
-    control.markAsDirty();
-    control.markAsTouched();
+  removeSection(sectionId: number) {
+    return this.references.removeSection(sectionId);
   }
 
-  isSectionSelected(sectionId: number): boolean {
-    return this.form.controls.coverageSelection.controls.sectionIds.value.includes(sectionId);
+  isSectionSelected(sectionId: number) {
+    return this.references.isSectionSelected(sectionId);
   }
 
-  toggleExtension(extension: CoverageOption): void {
-    const control = this.form.controls.coverageSelection.controls.extensionIds;
-    const selectedIds = control.value;
-    const nextExtensionIds = selectedIds.includes(extension.id)
-      ? selectedIds.filter(id => id !== extension.id)
-      : [...selectedIds, extension.id];
-
-    control.setValue(this.uniquePositiveNumberArray(nextExtensionIds));
-    control.markAsDirty();
-    control.markAsTouched();
+  toggleExtension(extension: CoverageOption) {
+    return this.references.toggleExtension(extension);
   }
 
-  onExtensionSearchInput(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.extensionSearch.set(input.value);
+  onExtensionSearchInput(event: Event) {
+    return this.references.onExtensionSearchInput(event);
   }
 
-  removeExtension(extensionId: number): void {
-    const control = this.form.controls.coverageSelection.controls.extensionIds;
-    control.setValue(control.value.filter(id => id !== extensionId));
-    control.markAsDirty();
-    control.markAsTouched();
+  removeExtension(extensionId: number) {
+    return this.references.removeExtension(extensionId);
   }
 
-  isExtensionSelected(extensionId: number): boolean {
-    return this.form.controls.coverageSelection.controls.extensionIds.value.includes(extensionId);
+  isExtensionSelected(extensionId: number) {
+    return this.references.isExtensionSelected(extensionId);
   }
 
-  handleMainCoverKeydown(event: KeyboardEvent): void {
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        if (!this.isCoverageDropdownOpen()) {
-          this.openCoverageDropdown();
-          return;
-        }
-        this.moveActiveMainCover(1);
-        return;
-      case 'ArrowUp':
-        event.preventDefault();
-        if (!this.isCoverageDropdownOpen()) {
-          this.openCoverageDropdown();
-          return;
-        }
-        this.moveActiveMainCover(-1);
-        return;
-      case 'Enter': {
-        if (!this.isCoverageDropdownOpen()) {
-          return;
-        }
-
-        const activeMainCover = this.filteredCoverages()[this.activeMainCoverIndex()];
-
-        if (!activeMainCover) {
-          return;
-        }
-
-        event.preventDefault();
-        this.toggleMainCover(activeMainCover);
-        return;
-      }
-      case ' ':
-      case 'Spacebar': {
-        if (!this.isCoverageDropdownOpen()) {
-          return;
-        }
-
-        const activeMainCover = this.filteredCoverages()[this.activeMainCoverIndex()];
-
-        if (!activeMainCover) {
-          return;
-        }
-
-        event.preventDefault();
-        this.toggleMainCover(activeMainCover);
-        return;
-      }
-      case 'Escape':
-        if (!this.isCoverageDropdownOpen()) {
-          return;
-        }
-
-        event.preventDefault();
-        this.closeCoverageDropdown();
-        return;
-      default:
-        return;
-    }
+  handleMainCoverKeydown(event: KeyboardEvent) {
+    return this.references.handleMainCoverKeydown(event);
   }
 
-  setActiveMainCoverIndex(index: number): void {
-    this.activeMainCoverIndex.set(index);
+  setActiveMainCoverIndex(index: number) {
+    return this.references.setActiveMainCoverIndex(index);
   }
 
-  formatCoverageLabel(option: CoverageOption): string {
-    return `${option.code} — ${option.name}`;
+  formatCoverageLabel(option: CoverageOption) {
+    return this.references.formatCoverageLabel(option);
   }
 
-  isMandatorySection(section: CoverageOption): boolean {
-    return section.isMandatory;
+  isMandatorySection(section: CoverageOption) {
+    return this.references.isMandatorySection(section);
   }
 
-  isMandatoryExtension(extension: CoverageOption): boolean {
-    return extension.isMandatory;
+  isMandatoryExtension(extension: CoverageOption) {
+    return this.references.isMandatoryExtension(extension);
   }
 
-  getCoverageParentLabel(option: CoverageOption): string {
-    if (option.parentId == null) {
-      return 'Coverage';
-    }
-
-    const parent = [...this.mainCovers(), ...this.availableSections()].find(item => item.id === option.parentId);
-    return parent ? this.formatCoverageLabel(parent) : 'Coverage';
+  getCoverageParentLabel(option: CoverageOption) {
+    return this.references.getCoverageParentLabel(option);
   }
 
-  getSelectedCoverageDescription(option: CoverageOption): string {
-    return option.description ?? option.name;
+  getSelectedCoverageDescription(option: CoverageOption) {
+    return this.references.getSelectedCoverageDescription(option);
   }
 
-  selectCedent(cedent: CedentReference): void {
-    this.selectedCedentName = cedent.name;
-    this.cedentSearchControl.setValue(cedent.name, { emitEvent: false });
-    this.form.controls.counterpartyId.setValue(cedent.id);
-    this.form.controls.counterpartyId.markAsDirty();
-    this.form.controls.counterpartyId.markAsTouched();
-    this.syncCedentValidation();
-    this.closeCedentDropdown();
+  selectCedent(cedent: CedentReference) {
+    return this.references.selectCedent(cedent);
   }
 
-  clearCedentSelection(): void {
-    this.selectedCedentName = '';
-    this.cedentSearchControl.setValue('', { emitEvent: false });
-    this.form.controls.counterpartyId.setValue(null);
-    this.cedentResults.set([]);
-    this.cedentLookupError.set(false);
-    this.closeCedentDropdown();
+  clearCedentSelection() {
+    return this.references.clearCedentSelection();
   }
 
-  handleCedentKeydown(event: KeyboardEvent): void {
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        if (!this.isCedentDropdownOpen()) {
-          this.openCedentDropdown();
-          return;
-        }
-        this.moveActiveCedent(1);
-        return;
-      case 'ArrowUp':
-        event.preventDefault();
-        if (!this.isCedentDropdownOpen()) {
-          this.openCedentDropdown();
-          return;
-        }
-        this.moveActiveCedent(-1);
-        return;
-      case 'Enter': {
-        if (!this.isCedentDropdownOpen()) {
-          return;
-        }
-
-        const activeCedent = this.cedentResults()[this.activeCedentIndex()];
-
-        if (!activeCedent) {
-          return;
-        }
-
-        event.preventDefault();
-        this.selectCedent(activeCedent);
-        return;
-      }
-      case 'Escape':
-        if (!this.isCedentDropdownOpen()) {
-          return;
-        }
-
-        event.preventDefault();
-        this.closeCedentDropdown();
-        return;
-      default:
-        return;
-    }
+  handleCedentKeydown(event: KeyboardEvent) {
+    return this.references.handleCedentKeydown(event);
   }
 
-  setActiveCedentIndex(index: number): void {
-    this.activeCedentIndex.set(index);
+  setActiveCedentIndex(index: number) {
+    return this.references.setActiveCedentIndex(index);
   }
 
-  cedentLocationLabel(cedent: CedentReference): string {
-    return [cedent.city, cedent.country].filter((value): value is string => !!value && value.trim().length > 0).join(', ');
+  cedentLocationLabel(cedent: CedentReference) {
+    return this.references.cedentLocationLabel(cedent);
   }
 
   navigateBackToType(): void {
@@ -817,7 +698,10 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   serverFieldErrorEntries(): Array<{ field: string; messages: string[] }> {
-    return Object.entries(this.serverFieldErrors()).map(([field, messages]) => ({ field, messages }));
+    return Object.entries(this.serverFieldErrors()).map(([field, messages]) => ({
+      field,
+      messages,
+    }));
   }
 
   formatMoney(value: number | null): string {
@@ -834,7 +718,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     const decimalPlaces = currency.decimalPlaces ?? 2;
     const number = new Intl.NumberFormat(undefined, {
       minimumFractionDigits: decimalPlaces,
-      maximumFractionDigits: decimalPlaces
+      maximumFractionDigits: decimalPlaces,
     }).format(value);
 
     return `${currency.code} ${number}${currency.symbol ? ` (${currency.symbol})` : ''}`;
@@ -845,14 +729,16 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
   }
 
   private bindFormState(): void {
-    this.form.valueChanges.pipe(
-      startWith(this.form.getRawValue()),
-      map(() => this.createSnapshot()),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(snapshot => {
-      this.formSnapshot.set(snapshot);
-      this.syncCedentValidation();
-    });
+    this.form.valueChanges
+      .pipe(
+        startWith(this.form.getRawValue()),
+        map(() => this.createSnapshot()),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((snapshot) => {
+        this.formSnapshot.set(snapshot);
+        this.syncCedentValidation();
+      });
   }
 
   private bindFinancialCalculations(): void {
@@ -861,20 +747,22 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     merge(
       controls.sumInsured.valueChanges,
       controls.premiumRate.valueChanges,
-      controls.cedentCommissionPct.valueChanges
-    ).pipe(
-      startWith(null),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(() => {
-      this.syncCalculatedFinancialControls();
-    });
+      controls.cedentCommissionPct.valueChanges,
+    )
+      .pipe(startWith(null), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.syncCalculatedFinancialControls();
+      });
   }
 
-  private syncCalculatedFinancialControls(authoritative?: { grossPremium?: number | null; netPremium?: number | null }): void {
+  private syncCalculatedFinancialControls(authoritative?: {
+    grossPremium?: number | null;
+    netPremium?: number | null;
+  }): void {
     const calculation = calculateFacultativeFinancials({
       sumInsured: this.form.controls.sumInsured.value,
       premiumRate: this.form.controls.premiumRate.value,
-      cedentCommissionPct: this.form.controls.cedentCommissionPct.value
+      cedentCommissionPct: this.form.controls.cedentCommissionPct.value,
     });
 
     const grossPremium = authoritative?.grossPremium ?? calculation.grossPremium;
@@ -886,147 +774,30 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     this.formSnapshot.set(this.createSnapshot());
   }
 
-  private bindCedentSearch(): void {
-    const typedSearches$ = this.cedentSearchControl.valueChanges.pipe(
-      tap(value => {
-        if (value !== this.selectedCedentName && this.form.controls.counterpartyId.value !== null) {
-          this.form.controls.counterpartyId.setValue(null);
-        }
-      }),
-      tap(() => {
-        this.isCedentDropdownOpen.set(true);
-      }),
-      map(() => this.getCedentLookupTerm()),
-      debounceTime(300),
-      distinctUntilChanged()
-    );
-
-    const openSearches$ = this.cedentOpenRequests.pipe(
-      map(() => this.getCedentLookupTerm())
-    );
-
-    merge(openSearches$, typedSearches$).pipe(
-      tap(() => {
-        this.isCedentLoading.set(true);
-        this.cedentLookupError.set(false);
-      }),
-      switchMap(search => this.contractsService.searchCedents(search, 1, 20).pipe(
-        map(response => response.items),
-        catchError(() => {
-          this.cedentLookupError.set(true);
-          return of([] as CedentReference[]);
-        }),
-        finalize(() => this.isCedentLoading.set(false))
-      )),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(results => {
-      this.cedentResults.set(results);
-      this.activeCedentIndex.set(results.length > 0 ? 0 : -1);
-    });
+  private bindCedentSearch() {
+    return this.references.bindCedentSearch();
   }
 
-  private bindMainCoverSearch(): void {
-    this.mainCoverOpenRequests.pipe(
-      tap(() => {
-        this.mainCoverLookupError.set(false);
-        this.activeMainCoverIndex.set(this.filteredCoverages().length > 0 ? 0 : -1);
-      }),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe();
+  private bindMainCoverSearch() {
+    return this.references.bindMainCoverSearch();
   }
 
-  private bindCoverageSelection(): void {
-    const coverageControls = this.form.controls.coverageSelection.controls;
-
-    coverageControls.coverageIds.valueChanges.pipe(
-      distinctUntilChanged((previous, current) => this.areNumberArraysEqual(previous, current)),
-      tap(coverageIds => {
-        if (this.isHydratingCoverage) {
-          return;
-        }
-
-        if (!coverageIds.length) {
-          this.clearCoverageChildren();
-          coverageControls.primaryMainCoverId.setValue(null, { emitEvent: false });
-          coverageControls.mainCoverId.setValue(null, { emitEvent: false });
-          return;
-        }
-
-        const primaryMainCoverId = coverageControls.primaryMainCoverId.value;
-        if (!primaryMainCoverId || !coverageIds.includes(primaryMainCoverId)) {
-          const nextPrimaryMainCoverId = coverageIds[0];
-          coverageControls.primaryMainCoverId.setValue(nextPrimaryMainCoverId, { emitEvent: false });
-          coverageControls.mainCoverId.setValue(nextPrimaryMainCoverId, { emitEvent: false });
-        }
-      }),
-      switchMap(coverageIds => {
-        if (this.isHydratingCoverage || coverageIds.length === 0) {
-          return of(null);
-        }
-
-        return this.loadCoverageChildren(
-          coverageIds,
-          coverageControls.sectionIds.value,
-          coverageControls.extensionIds.value
-        );
-      }),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe();
-
-    coverageControls.primaryMainCoverId.valueChanges.pipe(
-      distinctUntilChanged(),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(primaryMainCoverId => {
-      coverageControls.mainCoverId.setValue(primaryMainCoverId, { emitEvent: false });
-    });
-
-    coverageControls.sectionIds.valueChanges.pipe(
-      distinctUntilChanged((previous, current) => this.areNumberArraysEqual(previous, current)),
-      switchMap(sectionIds => {
-        if (this.isHydratingCoverage) {
-          return of(null);
-        }
-
-        const normalizedSectionIds = this.mergeMandatoryIds(sectionIds, this.availableSections());
-
-        if (!this.areNumberArraysEqual(sectionIds, normalizedSectionIds)) {
-          coverageControls.sectionIds.setValue(normalizedSectionIds, { emitEvent: false });
-        }
-
-        return this.loadExtensionsForSelection(normalizedSectionIds, coverageControls.extensionIds.value);
-      }),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe();
-
-    coverageControls.extensionIds.valueChanges.pipe(
-      distinctUntilChanged((previous, current) => this.areNumberArraysEqual(previous, current)),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(extensionIds => {
-      if (this.isHydratingCoverage) {
-        return;
-      }
-
-      const normalizedExtensionIds = this.mergeMandatoryIds(extensionIds, this.availableExtensions());
-
-      if (!this.areNumberArraysEqual(extensionIds, normalizedExtensionIds)) {
-        coverageControls.extensionIds.setValue(normalizedExtensionIds, { emitEvent: false });
-      }
-    });
+  private bindCoverageSelection() {
+    return this.references.bindCoverageSelection();
   }
 
   private bindFrontingValidation(): void {
-    this.form.controls.isFronting.valueChanges.pipe(
-      startWith(this.form.controls.isFronting.value),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(isFronting => {
-      const control = this.form.controls.frontingReference;
+    this.form.controls.isFronting.valueChanges
+      .pipe(startWith(this.form.controls.isFronting.value), takeUntilDestroyed(this.destroyRef))
+      .subscribe((isFronting) => {
+        const control = this.form.controls.frontingReference;
 
-      if (!isFronting) {
-        control.setValue('', { emitEvent: false });
-      }
+        if (!isFronting) {
+          control.setValue('', { emitEvent: false });
+        }
 
-      control.updateValueAndValidity({ emitEvent: false });
-    });
+        control.updateValueAndValidity({ emitEvent: false });
+      });
   }
 
   private loadCurrencies(): void {
@@ -1038,151 +809,59 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     forkJoin({
       currencies: this.contractsService.getCurrencies(),
       mainCovers: this.contractsService.getMainCovers(),
-      contract: contractId == null ? of(null) : this.contractsService.getFacultativeContract(contractId)
-    }).pipe(
-      switchMap(({ currencies, mainCovers, contract }) => {
-        this.currencies.set(currencies);
-        this.coverageCatalog.set(mainCovers);
-        if (contract) {
-          this.applyLoadedContract(contract, contractId);
-          return this.hydrateLoadedCoverage(contract);
-        }
-
-        return of(null);
-      }),
-      finalize(() => {
-        this.isInitialLoading.set(false);
-        this.isCurrenciesLoading.set(false);
-        this.isMainCoverLoading.set(false);
-      })
-    ).subscribe({
-      next: () => {
-        this.lastSavedSnapshot = this.createSnapshot();
-        this.form.markAsPristine();
-        this.focusPendingField();
-      },
-      error: () => {
-        this.generalError.set(contractId == null
-          ? 'Currencies could not be loaded. Refresh the page and try again.'
-          : 'Contract details could not be loaded. Return to the portfolio and try again.');
-      }
-    });
-  }
-
-  private loadCoverageChildren(mainCoverIds: number[], savedSectionIds: number[], savedExtensionIds: number[]) {
-    const validMainCoverIds = this.uniquePositiveNumberArray(mainCoverIds);
-
-    if (!validMainCoverIds.length) {
-      this.clearCoverageChildren();
-      return of(null);
-    }
-
-    this.isSectionsLoading.set(true);
-    this.isExtensionsLoading.set(true);
-    this.sectionsError.set('');
-    this.extensionsError.set('');
-
-    return forkJoin({
-      sectionsByCoverage: forkJoin(validMainCoverIds.map(mainCoverId => this.contractsService.getCoverageChildren(mainCoverId, 'SECTION').pipe(
-        catchError(() => {
-          this.sectionsError.set('Sections could not be loaded for the selected coverages.');
-          return of([] as CoverageOption[]);
-        })
-      ))),
-      directExtensionsByCoverage: forkJoin(validMainCoverIds.map(mainCoverId => this.contractsService.getCoverageChildren(mainCoverId, 'EXTENSION').pipe(
-        catchError(() => {
-          this.extensionsError.set('Extensions could not be loaded for the selected coverages.');
-          return of([] as CoverageOption[]);
-        })
-      )))
-    }).pipe(
-      switchMap(({ sectionsByCoverage, directExtensionsByCoverage }) => {
-        const sections = this.uniqueCoverageOptions(sectionsByCoverage.flat().filter(section =>
-          section.level === 'SECTION'
-          && section.parentId != null
-          && validMainCoverIds.includes(section.parentId)
-          && section.relationType === 'HAS_SECTION'
-        ));
-        const directExtensions = this.uniqueCoverageOptions(directExtensionsByCoverage.flat().filter(extension =>
-          extension.level === 'EXTENSION'
-          && extension.parentId != null
-          && validMainCoverIds.includes(extension.parentId)
-          && extension.relationType === 'HAS_EXTENSION'
-        ));
-        this.sections.set(sections);
-        this.setSectionsEnabled(sections.length > 0);
-
-        const sectionIds = this.mergeMandatoryIds(savedSectionIds, sections);
-        this.form.controls.coverageSelection.controls.sectionIds.setValue(sectionIds, { emitEvent: false });
-        this.formSnapshot.set(this.createSnapshot());
-
-        return this.loadExtensionsForSelection(sectionIds, savedExtensionIds, directExtensions);
-      }),
-      finalize(() => {
-        this.isSectionsLoading.set(false);
-        this.isExtensionsLoading.set(false);
-      })
-    );
-  }
-
-  private loadExtensionsForSelection(sectionIds: number[], savedExtensionIds: number[], directExtensions?: CoverageOption[]) {
-    const mainCoverIds = this.uniquePositiveNumberArray(this.form.controls.coverageSelection.controls.coverageIds.value);
-    const validSectionIds = this.uniquePositiveNumberArray(sectionIds);
-
-    if (!mainCoverIds.length) {
-      this.extensions.set([]);
-      this.setExtensionsEnabled(false);
-      this.form.controls.coverageSelection.controls.extensionIds.setValue([], { emitEvent: false });
-      return of(null);
-    }
-
-    this.isExtensionsLoading.set(true);
-    if (!directExtensions) {
-      this.extensionsError.set('');
-    }
-
-    const directExtensions$ = directExtensions
-      ? of(directExtensions)
-      : forkJoin(mainCoverIds.map(mainCoverId => this.contractsService.getCoverageChildren(mainCoverId, 'EXTENSION').pipe(
-          catchError(() => {
-            this.extensionsError.set('Extensions could not be loaded for the selected coverages.');
-            return of([] as CoverageOption[]);
-          })
-        ))).pipe(map(results => this.uniqueCoverageOptions(results.flat())));
-
-    const sectionExtensionRequests = validSectionIds.map(sectionId =>
-      this.contractsService.getCoverageChildren(sectionId, 'EXTENSION').pipe(
-        catchError(() => {
-          this.extensionsError.set('Some section extensions could not be loaded.');
-          return of([] as CoverageOption[]);
-        })
-      )
-    );
-
-    return forkJoin([
-      directExtensions$,
-      sectionExtensionRequests.length > 0 ? forkJoin(sectionExtensionRequests) : of([] as CoverageOption[][])
-    ]).pipe(
-      tap(([mainCoverExtensions, sectionExtensions]) => {
-        const selectedMainCoverIds = new Set(mainCoverIds);
-        const selectedSectionIds = new Set(validSectionIds);
-        const extensions = this.uniqueCoverageOptions([...mainCoverExtensions, ...sectionExtensions.flat()].filter(extension => {
-          if (extension.level !== 'EXTENSION' || extension.parentId == null || extension.relationType !== 'HAS_EXTENSION') {
-            return false;
+      contract:
+        contractId == null ? of(null) : this.contractsService.getFacultativeContract(contractId),
+    })
+      .pipe(
+        switchMap(({ currencies, mainCovers, contract }) => {
+          this.currencies.set(currencies);
+          this.coverageCatalog.set(mainCovers);
+          if (contract) {
+            this.applyLoadedContract(contract, contractId);
+            return this.hydrateLoadedCoverage(contract);
           }
 
-          return selectedMainCoverIds.has(extension.parentId) || selectedSectionIds.has(extension.parentId);
-        }));
-        this.extensions.set(extensions);
-        this.setExtensionsEnabled(extensions.length > 0);
+          return of(null);
+        }),
+        finalize(() => {
+          this.isInitialLoading.set(false);
+          this.isCurrenciesLoading.set(false);
+          this.isMainCoverLoading.set(false);
+        }),
+      )
+      .subscribe({
+        next: () => {
+          this.lastSavedSnapshot = this.createSnapshot();
+          this.form.markAsPristine();
+          this.focusPendingField();
+        },
+        error: () => {
+          this.generalError.set(
+            contractId == null
+              ? 'Currencies could not be loaded. Refresh the page and try again.'
+              : 'Contract details could not be loaded. Return to the portfolio and try again.',
+          );
+        },
+      });
+  }
 
-        const validSavedExtensionIds = savedExtensionIds.filter(id => extensions.some(option => option.id === id));
-        const extensionIds = this.mergeMandatoryIds(validSavedExtensionIds, extensions);
-        this.form.controls.coverageSelection.controls.extensionIds.setValue(extensionIds, { emitEvent: false });
-        this.formSnapshot.set(this.createSnapshot());
-      }),
-      finalize(() => this.isExtensionsLoading.set(false)),
-      map(() => null)
+  private loadCoverageChildren(
+    mainCoverIds: number[],
+    savedSectionIds: number[],
+    savedExtensionIds: number[],
+  ) {
+    return this.references.loadCoverageChildren(mainCoverIds, savedSectionIds, savedExtensionIds);
+  }
+
+  private loadExtensionsForSelection(
+    sectionIds: number[],
+    savedExtensionIds: number[],
+    directExtensions?: CoverageOption[],
+  ) {
+    return this.references.loadExtensionsForSelection(
+      sectionIds,
+      savedExtensionIds,
+      directExtensions,
     );
   }
 
@@ -1194,7 +873,11 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     }
 
     const primaryMainCoverId = coverage.primaryMainCoverId ?? coverage.mainCoverId ?? null;
-    const coverageIds = coverage.coverageIds?.length ? coverage.coverageIds : primaryMainCoverId == null ? [] : [primaryMainCoverId];
+    const coverageIds = coverage.coverageIds?.length
+      ? coverage.coverageIds
+      : primaryMainCoverId == null
+        ? []
+        : [primaryMainCoverId];
 
     if (!primaryMainCoverId || !coverageIds.length) {
       return of(null);
@@ -1203,28 +886,37 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     this.isHydratingCoverage = true;
 
     const embeddedMainCover = coverage.mainCover;
-    const mainCover = this.mainCovers().find(option => option.id === primaryMainCoverId) ?? embeddedMainCover ?? null;
+    const mainCover =
+      this.mainCovers().find((option) => option.id === primaryMainCoverId) ??
+      embeddedMainCover ??
+      null;
 
     if (mainCover) {
       this.coverageCatalog.set(this.uniqueCoverageOptions([...this.coverageCatalog(), mainCover]));
       this.coverageSearch.set('');
     }
 
-    this.form.controls.coverageSelection.patchValue({
-      coverageIds,
-      primaryMainCoverId,
-      mainCoverId: primaryMainCoverId
-    }, { emitEvent: false });
+    this.form.controls.coverageSelection.patchValue(
+      {
+        coverageIds,
+        primaryMainCoverId,
+        mainCoverId: primaryMainCoverId,
+      },
+      { emitEvent: false },
+    );
     this.formSnapshot.set(this.createSnapshot());
 
     return this.loadCoverageChildren(coverageIds, coverage.sectionIds, coverage.extensionIds).pipe(
       finalize(() => {
         this.isHydratingCoverage = false;
-      })
+      }),
     );
   }
 
-  private applyLoadedContract(contract: FacultativeContractResponse, fallbackContractId: number | null): void {
+  private applyLoadedContract(
+    contract: FacultativeContractResponse,
+    fallbackContractId: number | null,
+  ): void {
     this.contractId.set(this.getPositiveId(contract.contractId) ?? fallbackContractId);
     this.generatedUmr.set(contract.umr ?? '');
     this.backendNetPremium.set(contract.netPremiumCedent);
@@ -1249,23 +941,25 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       cedentPremiumReference: contract.cedentPremiumReference ?? '',
       isFronting: contract.isFronting ?? false,
       frontingReference: contract.frontingReference ?? '',
-      memoText: contract.memoText ?? ''
+      memoText: contract.memoText ?? '',
     });
     this.syncCalculatedFinancialControls({
       grossPremium: contract.grossPremium,
-      netPremium: contract.netPremium ?? contract.netPremiumCedent
+      netPremium: contract.netPremium ?? contract.netPremiumCedent,
     });
 
     this.selectedCedentName = contract.counterpartyName?.trim() ?? '';
     this.cedentSearchControl.setValue(this.selectedCedentName, { emitEvent: false });
 
     if (contract.counterpartyId != null && contract.counterpartyId > 0 && this.selectedCedentName) {
-      this.cedentResults.set([{
-        id: contract.counterpartyId,
-        name: this.selectedCedentName,
-        country: null,
-        city: null
-      }]);
+      this.cedentResults.set([
+        {
+          id: contract.counterpartyId,
+          name: this.selectedCedentName,
+          country: null,
+          city: null,
+        },
+      ]);
     }
   }
 
@@ -1285,7 +979,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       cedentCommissionPct: 'cedentCommissionPct',
       writtenSharePct: 'writtenSharePct',
       signedSharePct: 'signedSharePct',
-      frontingReference: 'frontingReference'
+      frontingReference: 'frontingReference',
     };
     const root = this.elementRef.nativeElement as HTMLElement;
     const element = root.querySelector<HTMLElement>(`#${targetIds[field] ?? 'contractName'}`);
@@ -1319,36 +1013,43 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       ? this.contractsService.createFacultativeContract(this.buildRequest())
       : this.contractsService.updateFacultativeContract(contractId, this.buildRequest());
 
-    request.pipe(
-      take(1),
-      finalize(() => {
-        this.isSaving.set(false);
-        this.saveMode.set(null);
-      })
-    ).subscribe({
-      next: response => {
-        if (isCreating && this.getPositiveId(response.contractId) == null) {
-          const message = 'The server did not return the new contract ID. The contract was not opened in Overview.';
-          this.generalError.set(message);
-          this.snackBar.open(message, 'Dismiss', { duration: 4500, horizontalPosition: 'end', verticalPosition: 'top' });
-          return;
-        }
-        this.applySaveResponse(response);
-        this.snackBar.open(this.getSaveSuccessMessage(response, isCreating), 'Dismiss', {
-          duration: 3000,
-          horizontalPosition: 'end',
-          verticalPosition: 'top'
-        });
+    request
+      .pipe(
+        take(1),
+        finalize(() => {
+          this.isSaving.set(false);
+          this.saveMode.set(null);
+        }),
+      )
+      .subscribe({
+        next: (response) => {
+          if (isCreating && this.getPositiveId(response.contractId) == null) {
+            const message =
+              'The server did not return the new contract ID. The contract was not opened in Overview.';
+            this.generalError.set(message);
+            this.snackBar.open(message, 'Dismiss', {
+              duration: 4500,
+              horizontalPosition: 'end',
+              verticalPosition: 'top',
+            });
+            return;
+          }
+          this.applySaveResponse(response);
+          this.snackBar.open(this.getSaveSuccessMessage(response, isCreating), 'Dismiss', {
+            duration: 3000,
+            horizontalPosition: 'end',
+            verticalPosition: 'top',
+          });
 
-        if (mode === 'continue') {
-          const savedContractId = this.getCurrentContractId();
-          if (savedContractId != null) this.navigateToOverview(savedContractId);
-        }
-      },
-      error: (error: HttpErrorResponse) => {
-        this.handleSaveError(error);
-      }
-    });
+          if (mode === 'continue') {
+            const savedContractId = this.getCurrentContractId();
+            if (savedContractId != null) this.navigateToOverview(savedContractId);
+          }
+        },
+        error: (error: HttpErrorResponse) => {
+          this.handleSaveError(error);
+        },
+      });
   }
 
   private applySaveResponse(response: FacultativeContractResponse): void {
@@ -1360,61 +1061,80 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
 
     this.generatedUmr.set(response.umr ?? '');
     this.backendNetPremium.set(response.netPremiumCedent);
-    this.form.patchValue({
-      fees: response.fees ?? this.form.controls.fees.value,
-      grossPremium: response.grossPremium ?? this.form.controls.grossPremium.value,
-      cedentCommissionPct: response.cedentCommissionPct ?? this.form.controls.cedentCommissionPct.value,
-      netPremium: response.netPremium ?? response.netPremiumCedent ?? this.form.controls.netPremium.value
-    }, { emitEvent: false });
+    this.form.patchValue(
+      {
+        fees: response.fees ?? this.form.controls.fees.value,
+        grossPremium: response.grossPremium ?? this.form.controls.grossPremium.value,
+        cedentCommissionPct:
+          response.cedentCommissionPct ?? this.form.controls.cedentCommissionPct.value,
+        netPremium:
+          response.netPremium ?? response.netPremiumCedent ?? this.form.controls.netPremium.value,
+      },
+      { emitEvent: false },
+    );
     this.syncCalculatedFinancialControls({
       grossPremium: response.grossPremium ?? this.form.controls.grossPremium.value,
-      netPremium: response.netPremium ?? response.netPremiumCedent ?? this.form.controls.netPremium.value
+      netPremium:
+        response.netPremium ?? response.netPremiumCedent ?? this.form.controls.netPremium.value,
     });
     this.lastSavedSnapshot = this.createSnapshot();
     this.form.markAsPristine();
   }
 
-  private getSaveSuccessMessage(response: FacultativeContractResponse, isCreating: boolean): string {
+  private getSaveSuccessMessage(
+    response: FacultativeContractResponse,
+    isCreating: boolean,
+  ): string {
     const umr = response.umr?.trim() ?? '';
     const message = isCreating ? 'Contract created successfully.' : 'Contract saved successfully.';
 
-    return umr
-      ? `${message}\nUMR: ${umr}`
-      : message;
+    return umr ? `${message}\nUMR: ${umr}` : message;
   }
 
   private buildRequest(): UpsertFacultativeContractRequest {
     const raw = this.form.getRawValue();
-    const coverageIds = this.uniquePositiveNumberArray(raw.coverageSelection.coverageIds)
-      .filter(id => this.mainCovers().some(option => option.id === id));
+    const coverageIds = this.uniquePositiveNumberArray(raw.coverageSelection.coverageIds).filter(
+      (id) => this.mainCovers().some((option) => option.id === id),
+    );
     const primaryMainCoverId = coverageIds.includes(raw.coverageSelection.primaryMainCoverId ?? 0)
       ? raw.coverageSelection.primaryMainCoverId
-      : coverageIds[0] ?? null;
-    const availableSectionIds = new Set(this.availableSections().map(section => section.id));
-    const availableExtensionIds = new Set(this.availableExtensions().map(extension => extension.id));
-    const sectionIds = this.uniquePositiveNumberArray(raw.coverageSelection.sectionIds)
-      .filter(id => availableSectionIds.has(id));
-    const extensionIds = this.uniquePositiveNumberArray(raw.coverageSelection.extensionIds)
-      .filter(id => availableExtensionIds.has(id));
+      : (coverageIds[0] ?? null);
+    const availableSectionIds = new Set(this.availableSections().map((section) => section.id));
+    const availableExtensionIds = new Set(
+      this.availableExtensions().map((extension) => extension.id),
+    );
+    const sectionIds = this.uniquePositiveNumberArray(raw.coverageSelection.sectionIds).filter(
+      (id) => availableSectionIds.has(id),
+    );
+    const extensionIds = this.uniquePositiveNumberArray(raw.coverageSelection.extensionIds).filter(
+      (id) => availableExtensionIds.has(id),
+    );
 
     return {
       name: this.toNullableText(raw.name),
       counterpartyId: this.toFiniteNumber(raw.counterpartyId),
       currencyId: this.toFiniteNumber(raw.currencyId),
-      coverageSelection: primaryMainCoverId == null ? null : {
-        primaryMainCoverId,
-        coverageIds,
-        mainCoverId: primaryMainCoverId,
-        sectionIds,
-        extensionIds
-      },
+      coverageSelection:
+        primaryMainCoverId == null
+          ? null
+          : {
+              primaryMainCoverId,
+              coverageIds,
+              mainCoverId: primaryMainCoverId,
+              sectionIds,
+              extensionIds,
+            },
       receptionDate: this.toDateOnlyOrNull(raw.receptionDate),
       inceptionDate: this.toDateOnlyOrNull(raw.inceptionDate),
       expiryDate: this.toDateOnlyOrNull(raw.expiryDate),
       writtenSharePct: this.toFiniteNumber(raw.writtenSharePct),
       signedSharePct: this.toFiniteNumber(raw.signedSharePct),
       fees: this.toFiniteNumber(raw.fees),
-      isHighPriority: raw.isHighPriority ? true : this.form.controls.isHighPriority.dirty ? false : null,
+      isHighPriority: raw.isHighPriority
+        ? true
+        : this.form.controls.isHighPriority.dirty
+          ? false
+          : null,
       sumInsured: this.toFiniteNumber(raw.sumInsured),
       limitOfLiability: this.toFiniteNumber(raw.limitOfLiability),
       deductible: this.toFiniteNumber(raw.deductible),
@@ -1423,12 +1143,14 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       cedentPremiumReference: this.toNullableText(raw.cedentPremiumReference),
       isFronting: raw.isFronting ? true : this.form.controls.isFronting.dirty ? false : null,
       frontingReference: raw.isFronting ? this.toNullableText(raw.frontingReference) : null,
-      memoText: this.toNullableText(raw.memoText)
+      memoText: this.toNullableText(raw.memoText),
     };
   }
 
   private normalizeFormValues(): void {
-    for (const key of Object.keys(this.form.controls) as Array<keyof FacultativeFormGroup['controls']>) {
+    for (const key of Object.keys(this.form.controls) as Array<
+      keyof FacultativeFormGroup['controls']
+    >) {
       const control = this.form.controls[key];
 
       if (typeof control.value === 'string') {
@@ -1445,169 +1167,72 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     }
   }
 
-  private syncCedentValidation(): void {
-    this.clearCedentSelectionError();
+  private syncCedentValidation() {
+    return this.references.syncCedentValidation();
   }
 
-  private hasSelectedCedent(): boolean {
-    return this.form.controls.counterpartyId.value != null && this.cedentSearchControl.value.trim() === this.selectedCedentName;
+  private hasSelectedCedent() {
+    return this.references.hasSelectedCedent();
   }
 
-  private getCedentLookupTerm(): string | null {
-    const trimmedValue = this.cedentSearchControl.value.trim();
-
-    if (!trimmedValue) {
-      return null;
-    }
-
-    return this.hasSelectedCedent() ? null : trimmedValue;
+  private getCedentLookupTerm() {
+    return this.references.getCedentLookupTerm();
   }
 
-  private moveActiveCedent(direction: number): void {
-    const results = this.cedentResults();
-
-    if (results.length === 0) {
-      this.activeCedentIndex.set(-1);
-      return;
-    }
-
-    const currentIndex = this.activeCedentIndex();
-    const nextIndex = currentIndex < 0
-      ? 0
-      : (currentIndex + direction + results.length) % results.length;
-
-    this.activeCedentIndex.set(nextIndex);
+  private moveActiveCedent(direction: number) {
+    return this.references.moveActiveCedent(direction);
   }
 
-  private moveActiveMainCover(direction: number): void {
-    const results = this.filteredCoverages();
-
-    if (results.length === 0) {
-      this.activeMainCoverIndex.set(-1);
-      return;
-    }
-
-    const currentIndex = this.activeMainCoverIndex();
-    const nextIndex = currentIndex < 0
-      ? 0
-      : (currentIndex + direction + results.length) % results.length;
-
-    this.activeMainCoverIndex.set(nextIndex);
+  private moveActiveMainCover(direction: number) {
+    return this.references.moveActiveMainCover(direction);
   }
 
-  private groupCoverageOptionsByParent(options: CoverageOption[]): CoverageOptionGroup[] {
-    const groups = new Map<string, CoverageOption[]>();
-
-    for (const option of options) {
-      const parentLabel = this.getCoverageParentLabel(option);
-      groups.set(parentLabel, [...(groups.get(parentLabel) ?? []), option]);
-    }
-
-    return Array.from(groups.entries()).map(([parentLabel, items]) => ({ parentLabel, items }));
+  private groupCoverageOptionsByParent(options: CoverageOption[]) {
+    return this.references.groupCoverageOptionsByParent(options);
   }
 
-  private clearCoverageChildren(): void {
-    this.sections.set([]);
-    this.extensions.set([]);
-    this.sectionSearch.set('');
-    this.extensionSearch.set('');
-    this.sectionsError.set('');
-    this.extensionsError.set('');
-    this.form.controls.coverageSelection.controls.sectionIds.setValue([], { emitEvent: false });
-    this.form.controls.coverageSelection.controls.extensionIds.setValue([], { emitEvent: false });
-    this.setSectionsEnabled(false);
-    this.setExtensionsEnabled(false);
+  private clearCoverageChildren() {
+    return this.references.clearCoverageChildren();
   }
 
-  private setSectionsEnabled(isEnabled: boolean): void {
-    const control = this.form.controls.coverageSelection.controls.sectionIds;
-
-    if (isEnabled) {
-      control.enable({ emitEvent: false });
-    } else {
-      control.disable({ emitEvent: false });
-    }
+  private setSectionsEnabled(isEnabled: boolean) {
+    return this.references.setSectionsEnabled(isEnabled);
   }
 
-  private setExtensionsEnabled(isEnabled: boolean): void {
-    const control = this.form.controls.coverageSelection.controls.extensionIds;
-
-    if (isEnabled) {
-      control.enable({ emitEvent: false });
-    } else {
-      control.disable({ emitEvent: false });
-    }
+  private setExtensionsEnabled(isEnabled: boolean) {
+    return this.references.setExtensionsEnabled(isEnabled);
   }
 
-  private mergeMandatoryIds(selectedIds: number[], options: CoverageOption[]): number[] {
-    const availableIds = new Set(options.map(option => option.id));
-    const selectedAvailableIds = selectedIds.filter(id => availableIds.has(id));
-    const mandatoryIds = options.filter(option => option.isMandatory).map(option => option.id);
-
-    return [...new Set([...selectedAvailableIds, ...mandatoryIds])];
+  private mergeMandatoryIds(selectedIds: number[], options: CoverageOption[]) {
+    return this.references.mergeMandatoryIds(selectedIds, options);
   }
 
-  private uniqueCoverageOptions(options: CoverageOption[]): CoverageOption[] {
-    const seenIds = new Set<number>();
-
-    return options.filter(option => {
-      if (option.id <= 0 || seenIds.has(option.id)) {
-        return false;
-      }
-
-      seenIds.add(option.id);
-      return true;
-    });
+  private uniqueCoverageOptions(options: CoverageOption[]) {
+    return this.references.uniqueCoverageOptions(options);
   }
 
-  private findCoverageOption(options: CoverageOption[], id: number | null): CoverageOption | null {
-    if (id == null) {
-      return null;
-    }
-
-    return options.find(option => option.id === id) ?? null;
+  private findCoverageOption(options: CoverageOption[], id: number | null) {
+    return this.references.findCoverageOption(options, id);
   }
 
-  private findCoverageOptions(options: CoverageOption[], ids: number[]): CoverageOption[] {
-    const selectedIds = new Set(ids);
-    return options.filter(option => selectedIds.has(option.id));
+  private findCoverageOptions(options: CoverageOption[], ids: number[]) {
+    return this.references.findCoverageOptions(options, ids);
   }
 
-  private filterCoverageOptions(options: CoverageOption[], searchValue: string): CoverageOption[] {
-    const search = searchValue.trim().toLowerCase();
-
-    if (!search) {
-      return options;
-    }
-
-    return options.filter(option => {
-      const description = option.description ?? option.name;
-      return option.code.toLowerCase().includes(search)
-        || option.name.toLowerCase().includes(search)
-        || description.toLowerCase().includes(search);
-    });
+  private filterCoverageOptions(options: CoverageOption[], searchValue: string) {
+    return this.references.filterCoverageOptions(options, searchValue);
   }
 
-  private isMainCoverageLevel(option: CoverageOption): boolean {
-    return option.level === 'MAIN' || option.level === 'MAIN_COVER';
+  private isMainCoverageLevel(option: CoverageOption) {
+    return this.references.isMainCoverageLevel(option);
   }
 
-  private areNumberArraysEqual(previous: number[], current: number[]): boolean {
-    if (previous.length !== current.length) {
-      return false;
-    }
-
-    return previous.every((value, index) => value === current[index]);
+  private areNumberArraysEqual(previous: number[], current: number[]) {
+    return this.references.areNumberArraysEqual(previous, current);
   }
 
-  private clearCedentSelectionError(): void {
-    if (!this.form.controls.counterpartyId.hasError('invalidSelection')) {
-      return;
-    }
-
-    const errors = { ...(this.form.controls.counterpartyId.errors ?? {}) };
-    delete errors['invalidSelection'];
-    this.form.controls.counterpartyId.setErrors(Object.keys(errors).length > 0 ? errors : null);
+  private clearCedentSelectionError() {
+    return this.references.clearCedentSelectionError();
   }
 
   private handleSaveError(error: HttpErrorResponse): void {
@@ -1619,7 +1244,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       this.snackBar.open(message, 'Dismiss', {
         duration: 4500,
         horizontalPosition: 'end',
-        verticalPosition: 'top'
+        verticalPosition: 'top',
       });
       return;
     }
@@ -1642,18 +1267,21 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
 
       control.setErrors({
         ...(control.errors ?? {}),
-        serverError: messages.join(' ')
+        serverError: messages.join(' '),
       });
       control.markAsTouched();
     }
 
-    const backendFieldMessage = Object.values(fieldErrors).flat().find(message => message.trim().length > 0);
-    const genericMessage = backendFieldMessage ?? generalErrors[0] ?? this.getUnexpectedErrorMessage(error);
+    const backendFieldMessage = Object.values(fieldErrors)
+      .flat()
+      .find((message) => message.trim().length > 0);
+    const genericMessage =
+      backendFieldMessage ?? generalErrors[0] ?? this.getUnexpectedErrorMessage(error);
     this.generalError.set(genericMessage);
     this.snackBar.open(genericMessage, 'Dismiss', {
       duration: 4500,
       horizontalPosition: 'end',
-      verticalPosition: 'top'
+      verticalPosition: 'top',
     });
   }
 
@@ -1677,10 +1305,13 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     }
   }
 
-  private extractBackendErrors(payload: unknown): { fieldErrors: Record<string, string[]>; generalErrors: string[] } {
+  private extractBackendErrors(payload: unknown): {
+    fieldErrors: Record<string, string[]>;
+    generalErrors: string[];
+  } {
     const result: { fieldErrors: Record<string, string[]>; generalErrors: string[] } = {
       fieldErrors: {},
-      generalErrors: []
+      generalErrors: [],
     };
 
     if (typeof payload === 'string' && payload.trim()) {
@@ -1745,7 +1376,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       cedentpremiumreference: 'cedentPremiumReference',
       isfronting: 'isFronting',
       frontingreference: 'frontingReference',
-      memotext: 'memoText'
+      memotext: 'memoText',
     };
 
     return map[normalizedField] ?? null;
@@ -1777,7 +1408,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       return '';
     }
 
-    const cedent = this.cedentResults().find(item => item.id === counterpartyId);
+    const cedent = this.cedentResults().find((item) => item.id === counterpartyId);
     return cedent?.name ?? this.selectedCedentName;
   }
 
@@ -1787,7 +1418,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
 
   private navigateToOverview(contractId: number | null): void {
     void this.router.navigate([this.overviewRoute], {
-      queryParams: { contractId: contractId ?? undefined }
+      queryParams: { contractId: contractId ?? undefined },
     });
   }
 
@@ -1819,7 +1450,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
         coverageIds: raw.coverageSelection.coverageIds,
         mainCoverId: raw.coverageSelection.mainCoverId,
         sectionIds: raw.coverageSelection.sectionIds,
-        extensionIds: raw.coverageSelection.extensionIds
+        extensionIds: raw.coverageSelection.extensionIds,
       },
       receptionDate: raw.receptionDate,
       inceptionDate: raw.inceptionDate,
@@ -1838,7 +1469,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       cedentPremiumReference: raw.cedentPremiumReference,
       isFronting: raw.isFronting,
       frontingReference: raw.frontingReference,
-      memoText: raw.memoText
+      memoText: raw.memoText,
     };
   }
 
@@ -1852,7 +1483,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
         coverageIds: [] as number[],
         mainCoverId: null as number | null,
         sectionIds: [] as number[],
-        extensionIds: [] as number[]
+        extensionIds: [] as number[],
       },
       receptionDate: '',
       inceptionDate: '',
@@ -1871,7 +1502,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
       cedentPremiumReference: '',
       isFronting: false,
       frontingReference: '',
-      memoText: ''
+      memoText: '',
     };
   }
 
@@ -1889,7 +1520,7 @@ export class FacultativeInformationComponent implements OnInit, PendingChangesAw
     return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
   }
 
-  private uniquePositiveNumberArray(values: number[]): number[] {
-    return [...new Set(values.filter(value => Number.isInteger(value) && value > 0))];
+  private uniquePositiveNumberArray(values: number[]) {
+    return this.references.uniquePositiveNumberArray(values);
   }
 }

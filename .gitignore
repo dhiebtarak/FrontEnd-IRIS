@@ -94,3 +94,6 @@ pnpm-debug.log*
 
 # Personal editor workspace
 /src/app/shared/pipes/IRIS-FullStack.code-workspace
+
+# Local Treaty requirements and validation output
+/artifacts/xol-analysis/

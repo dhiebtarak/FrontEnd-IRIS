@@ -18,6 +18,7 @@ export class ContractTypeSelectionComponent implements OnInit {
   readonly dashboardRoute = '/workspace/reassurance/front-officer';
   readonly facultativeRoute = '/workspace/reassurance/front-officer/contracts/new/facultative';
   readonly contractTypes = signal<ContractTypeReference[]>([]);
+  readonly selectedFamily = signal<'Facultative'|'Treaty'>('Facultative');
   readonly selectedTypeCode = signal<string | null>(null);
   readonly isLoading = signal(true);
   readonly errorMessage = signal('');
@@ -38,7 +39,7 @@ export class ContractTypeSelectionComponent implements OnInit {
 
   get canContinue(): boolean {
     const selectedType = this.selectedType;
-    return !!selectedType && this.isFacultative(selectedType) && selectedType.isImplemented;
+    return !!selectedType && (this.isFacultative(selectedType) || this.isXol(selectedType)) && selectedType.isImplemented;
   }
 
   loadContractTypes(): void {
@@ -59,7 +60,7 @@ export class ContractTypeSelectionComponent implements OnInit {
   }
 
   selectType(type: ContractTypeReference): void {
-    if (!type.isImplemented || !this.isFacultative(type)) {
+    if (!type.isImplemented || !(this.isFacultative(type) || this.isXol(type))) {
       this.snackBar.open('This contract type is currently under development.', 'Dismiss', {
         duration: 3500,
         horizontalPosition: 'end',
@@ -76,8 +77,13 @@ export class ContractTypeSelectionComponent implements OnInit {
       return;
     }
 
-    void this.router.navigateByUrl(this.facultativeRoute);
+    void this.router.navigateByUrl(this.selectedType && this.isXol(this.selectedType) ? '/workspace/reassurance/front-officer/contracts/new/xol' : this.facultativeRoute);
   }
+
+  familyAvailable(family:'Facultative'|'Treaty'):boolean {return this.contractTypes().some(type=>(family==='Facultative'?this.isFacultative(type):!this.isFacultative(type))&&type.isImplemented);}
+  isXol(type:ContractTypeReference):boolean { return /XOL|NON_PROP/i.test(type.code); }
+  visibleTypes():ContractTypeReference[] {return this.contractTypes().filter(t=>this.selectedFamily()==='Facultative'?this.isFacultative(t):!this.isFacultative(t));}
+  chooseFamily(family:'Facultative'|'Treaty'):void {this.selectedFamily.set(family);this.selectedTypeCode.set(null);}
 
   private isFacultative(type: ContractTypeReference): boolean {
     const normalizedText = `${type.code} ${type.name}`.toLowerCase();

@@ -1,0 +1,328 @@
+<div class="contents">
+  <div
+    #coveragePicker
+    class="coverage-picker md:col-span-3"
+    (focusout)="state.onCoverageFocusOut($event)"
+  >
+    <label class="mb-2 block text-sm font-semibold text-iris-navy" for="mainCoverSearch"
+      >Coverage</label
+    >
+    @if (state.selectedMainCovers().length > 0) {
+      <div class="mb-3 flex flex-wrap gap-2">
+        @for (coverage of state.selectedMainCovers(); track coverage.id) {
+          <span
+            class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy"
+          >
+            {{ state.formatCoverageLabel(coverage) }}
+            @if (state.isPrimaryMainCover(coverage.id)) {
+              <span
+                class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white"
+                >Primary</span
+              >
+            } @else {
+              <button
+                type="button"
+                (click)="state.makePrimaryMainCover(coverage.id)"
+                class="text-iris-teal underline"
+              >
+                Make primary
+              </button>
+            }
+            <button
+              type="button"
+              [attr.aria-label]="'Remove ' + state.formatCoverageLabel(coverage)"
+              (click)="state.removeMainCover(coverage.id)"
+              class="text-base leading-none text-iris-slate hover:text-rose-700"
+            >
+              &times;
+            </button>
+          </span>
+        }
+      </div>
+    }
+    <div class="relative">
+      <input
+        id="mainCoverSearch"
+        type="text"
+        [value]="state.coverageSearch()"
+        autocomplete="off"
+        (input)="state.onCoverageSearchInput($event)"
+        (focus)="state.openCoverageDropdown()"
+        (click)="state.openCoverageDropdown()"
+        (keydown)="state.handleMainCoverKeydown($event)"
+        class="w-full rounded-2xl border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+        [ngClass]="
+          state.hasError('coverageSelection.mainCoverId', 'serverError')
+            ? 'border-rose-400'
+            : 'border-iris-border'
+        "
+        placeholder="Search coverages by code or description"
+        role="combobox"
+        aria-autocomplete="list"
+        [attr.aria-expanded]="state.isCoverageDropdownOpen()"
+        aria-controls="main-cover-options"
+      />
+      @if (state.isMainCoverLoading()) {
+        <span class="absolute inset-y-0 right-4 flex items-center text-iris-slate">
+          <span
+            class="h-4 w-4 animate-spin rounded-full border-2 border-iris-border border-t-iris-teal"
+          ></span>
+        </span>
+      }
+      @if (state.isCoverageDropdownOpen()) {
+        <div
+          id="main-cover-options"
+          role="listbox"
+          aria-multiselectable="true"
+          class="absolute z-20 mt-2 max-h-64 w-full overflow-auto rounded-2xl border border-iris-border bg-white p-2 shadow-xl"
+        >
+          @if (state.isMainCoverLoading()) {
+            <p class="px-3 py-3 text-sm text-iris-slate">Loading coverages...</p>
+          } @else if (state.mainCoverLookupError()) {
+            <p class="px-3 py-3 text-sm text-rose-700">Unable to load coverages</p>
+          } @else if (state.filteredCoverages().length > 0) {
+            @for (mainCover of state.filteredCoverages(); track mainCover.id; let index = $index) {
+              <button
+                type="button"
+                role="option"
+                [attr.aria-selected]="state.isMainCoverSelected(mainCover.id)"
+                (click)="state.toggleMainCover(mainCover)"
+                (mouseenter)="state.setActiveMainCoverIndex(index)"
+                class="flex w-full items-start justify-between gap-3 rounded-xl px-3 py-3 text-left text-sm text-iris-navy transition hover:bg-iris-bg"
+                [ngClass]="state.activeMainCoverIndex() === index ? 'bg-iris-bg' : ''"
+              >
+                <span class="flex min-w-0 items-start gap-3">
+                  <input
+                    type="checkbox"
+                    tabindex="-1"
+                    [checked]="state.isMainCoverSelected(mainCover.id)"
+                    class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)]"
+                  />
+                  <span class="min-w-0">
+                    <span class="block font-semibold">{{
+                      state.formatCoverageLabel(mainCover)
+                    }}</span>
+                    <span class="mt-1 block text-xs text-iris-slate">{{
+                      mainCover.hasSlip ? 'Slip available' : 'Slip not available'
+                    }}</span>
+                  </span>
+                </span>
+              </button>
+            }
+          } @else {
+            <p class="px-3 py-3 text-sm text-iris-slate">No coverages found.</p>
+          }
+        </div>
+      }
+    </div>
+    @if (state.form.controls.coverageSelection.hasError('primaryCoverageNotSelected')) {
+      <p class="mt-2 text-sm text-rose-700">
+        Primary Main Cover must be one of the selected coverages.
+      </p>
+    }
+    @if (state.hasError('coverageSelection.mainCoverId', 'serverError')) {
+      <p class="mt-2 text-sm text-rose-700">
+        {{ state.form.controls.coverageSelection.controls.mainCoverId.errors?.['serverError'] }}
+      </p>
+    }
+    <p class="mt-2 text-sm text-iris-slate">
+      The Primary Main Cover code is used by the backend when generating the UMR.
+    </p>
+  </div>
+
+  @if (state.isSectionsLoading()) {
+    <div class="md:col-span-3">
+      <p class="text-sm text-iris-slate">Loading sections...</p>
+    </div>
+  } @else if (state.sectionsError()) {
+    <div class="md:col-span-3">
+      <p class="text-sm text-rose-700">{{ state.sectionsError() }}</p>
+    </div>
+  } @else if (state.availableSections().length > 0) {
+    <div class="md:col-span-3">
+      <label class="mb-2 block text-sm font-semibold text-iris-navy" for="sectionSearch"
+        >Sections</label
+      >
+      @if (state.selectedSections().length > 0) {
+        <div class="mb-3 flex flex-wrap gap-2">
+          @for (section of state.selectedSections(); track section.id) {
+            <span
+              class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy"
+            >
+              {{ state.formatCoverageLabel(section) }}
+              @if (state.isMandatorySection(section)) {
+                <span
+                  class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white"
+                  >Mandatory</span
+                >
+              }
+              @if (!state.isMandatorySection(section)) {
+                <button
+                  type="button"
+                  [attr.aria-label]="'Remove ' + state.formatCoverageLabel(section)"
+                  (click)="state.removeSection(section.id)"
+                  class="text-base leading-none text-iris-slate hover:text-rose-700"
+                >
+                  &times;
+                </button>
+              }
+            </span>
+          }
+        </div>
+      }
+      <input
+        id="sectionSearch"
+        type="text"
+        [value]="state.sectionSearch()"
+        (input)="state.onSectionSearchInput($event)"
+        class="mb-3 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+        placeholder="Search sections by code or description"
+      />
+      <div class="rounded-2xl border border-iris-border bg-white p-3">
+        @if (state.filteredSections().length === 0) {
+          <p class="px-2 py-2 text-sm text-iris-slate">No sections match your search.</p>
+        }
+        @for (group of state.groupedFilteredSections(); track group.parentLabel) {
+          <div class="py-2">
+            <p class="px-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">
+              {{ group.parentLabel }}
+            </p>
+            <div class="mt-2 grid gap-2 md:grid-cols-2">
+              @for (section of group.items; track section.id) {
+                <label
+                  class="flex items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition"
+                  [ngClass]="
+                    section.isMandatory
+                      ? 'cursor-not-allowed bg-iris-bg/70'
+                      : 'cursor-pointer hover:bg-iris-bg'
+                  "
+                >
+                  <input
+                    type="checkbox"
+                    [checked]="state.isSectionSelected(section.id)"
+                    [disabled]="section.isMandatory"
+                    (change)="state.toggleSection(section)"
+                    class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)] disabled:cursor-not-allowed"
+                  />
+                  <span>
+                    <span class="block font-semibold"
+                      >{{ state.formatCoverageLabel(section)
+                      }}{{ section.isMandatory ? ' (mandatory)' : '' }}</span
+                    >
+                    <span class="mt-1 block text-xs text-iris-slate">{{
+                      section.hasSlip ? 'Slip available' : 'Slip not available'
+                    }}</span>
+                  </span>
+                </label>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  } @else if (state.selectedCoverageIds().length > 0) {
+    <div class="md:col-span-3">
+      <p class="text-sm text-iris-slate">
+        No related sections are available for the selected coverages.
+      </p>
+    </div>
+  }
+
+  @if (state.isExtensionsLoading()) {
+    <div class="md:col-span-3">
+      <p class="text-sm text-iris-slate">Loading extensions...</p>
+    </div>
+  } @else if (state.extensionsError()) {
+    <div class="md:col-span-3">
+      <p class="text-sm text-rose-700">{{ state.extensionsError() }}</p>
+    </div>
+  } @else if (state.availableExtensions().length > 0) {
+    <div class="md:col-span-3">
+      <label class="mb-2 block text-sm font-semibold text-iris-navy" for="extensionSearch"
+        >Extensions</label
+      >
+      @if (state.selectedExtensions().length > 0) {
+        <div class="mb-3 flex flex-wrap gap-2">
+          @for (extension of state.selectedExtensions(); track extension.id) {
+            <span
+              class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-iris-navy"
+            >
+              {{ state.formatCoverageLabel(extension) }}
+              @if (state.isMandatoryExtension(extension)) {
+                <span
+                  class="rounded-full bg-iris-teal px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white"
+                  >Mandatory</span
+                >
+              }
+              @if (!state.isMandatoryExtension(extension)) {
+                <button
+                  type="button"
+                  [attr.aria-label]="'Remove ' + state.formatCoverageLabel(extension)"
+                  (click)="state.removeExtension(extension.id)"
+                  class="text-base leading-none text-iris-slate hover:text-rose-700"
+                >
+                  &times;
+                </button>
+              }
+            </span>
+          }
+        </div>
+      }
+      <input
+        id="extensionSearch"
+        type="text"
+        [value]="state.extensionSearch()"
+        (input)="state.onExtensionSearchInput($event)"
+        class="mb-3 w-full rounded-2xl border border-iris-border bg-white px-4 py-3 text-sm text-iris-navy outline-none transition focus:border-iris-teal focus:ring-4 focus:ring-sky-100"
+        placeholder="Search extensions by code or description"
+      />
+      <div class="rounded-2xl border border-iris-border bg-white p-3">
+        @if (state.filteredExtensions().length === 0) {
+          <p class="px-2 py-2 text-sm text-iris-slate">No extensions match your search.</p>
+        }
+        @for (group of state.groupedFilteredExtensions(); track group.parentLabel) {
+          <div class="py-2">
+            <p class="px-2 text-xs font-bold uppercase tracking-[0.16em] text-iris-slate">
+              {{ group.parentLabel }}
+            </p>
+            <div class="mt-2 grid gap-2 md:grid-cols-2">
+              @for (extension of group.items; track extension.id) {
+                <label
+                  class="flex items-start gap-3 rounded-xl px-3 py-2 text-sm text-iris-navy transition"
+                  [ngClass]="
+                    extension.isMandatory
+                      ? 'cursor-not-allowed bg-iris-bg/70'
+                      : 'cursor-pointer hover:bg-iris-bg'
+                  "
+                >
+                  <input
+                    type="checkbox"
+                    [checked]="state.isExtensionSelected(extension.id)"
+                    [disabled]="extension.isMandatory"
+                    (change)="state.toggleExtension(extension)"
+                    class="mt-1 h-4 w-4 accent-[var(--color-iris-teal)] disabled:cursor-not-allowed"
+                  />
+                  <span>
+                    <span class="block font-semibold"
+                      >{{ state.formatCoverageLabel(extension)
+                      }}{{ extension.isMandatory ? ' (mandatory)' : '' }}</span
+                    >
+                    <span class="mt-1 block text-xs text-iris-slate">{{
+                      extension.hasSlip ? 'Slip available' : 'Slip not available'
+                    }}</span>
+                  </span>
+                </label>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  } @else if (state.selectedCoverageIds().length > 0) {
+    <div class="md:col-span-3">
+      <p class="text-sm text-iris-slate">
+        No related extensions are available for the selected coverages.
+      </p>
+    </div>
+  }
+</div>
